@@ -16,11 +16,13 @@
 | Phase 4: Lorebooks | Done | Model, keyword scanner, prompt integration, UI — see below |
 | Phase 4b: Vector Search | Done | Embedding service, vector math, DB storage, indexing pipeline, runtime search, UI — see below |
 | Phase 5: Regex Runtime | Done | Applied in chat_provider during generation (placement/ephemerality/depth) |
-| UI Refactoring | Done | All 800+ line screens split into widgets/ subdirectories (see below) |
+| UI Refactoring (round 2) | Done | God object decomposition: 6 monoliths → 19 single-responsibility files, -1308 net lines (see below) |
 
-### UI Refactoring (2025-05-05)
+### UI Refactoring (2025-05-05 → 2025-05-06)
 
-Large monolithic screen files were split into focused widget subdirectories following the "No God Objects" rule from AGENTS.md. Every extracted widget has a single responsibility.
+Two rounds of decomposition following the "No God Objects — Parallel Decomposition" rule from AGENTS.md. Every extracted class has a single responsibility; top-level screens are thin orchestrators with zero business logic.
+
+**Round 1** — widget extraction into `widgets/` subdirectories:
 
 | Before | After | Extracted widgets |
 |--------|-------|-------------------|
@@ -29,14 +31,31 @@ Large monolithic screen files were split into focused widget subdirectories foll
 | `character_list_screen.dart` (858 lines) | `character_list_screen.dart` (~250 lines) + `widgets/` | `character_card.dart`, `character_grid.dart`, `empty_state.dart` |
 | `api_settings_screen.dart` (593 lines) | `api_settings_screen.dart` (~130 lines) + `api_editor_screen.dart` + `widgets/` | `mode_selector.dart`, `param_slider.dart` |
 
+**Round 2** — god object decomposition (business logic + state + UI separated):
+
+| Before | After | Extracted files |
+|--------|-------|----------------|
+| `character_list_screen.dart` (895) | `character_list_screen.dart` (139) | Reused existing `widgets/` (character_card, character_grid, empty_state) |
+| `chat_provider.dart` (594) | `chat_provider.dart` (241) | `chat_state.dart`, `chat_generation_service.dart`, `initial_message_builder.dart` |
+| `menu_screen.dart` (521) | `menu_screen.dart` (55) | `about_overlay.dart`, `menu_group.dart` (shared) |
+| `preset_list_screen.dart` (499) | `preset_list_screen.dart` (79) | `silly_tavern_preset_parser.dart`, `preset_list_provider.dart`, `preset_tile.dart` |
+| `prompt_builder.dart` (521) | `prompt_builder.dart` (227) | `fallback_prompt_builder.dart`, `prompt_block_resolver.dart`, `lorebook_merger.dart` |
+| `message_bubble.dart` (465) | `message_bubble.dart` (220) | `message_actions.dart` (context menu + edit dialog) |
+
+Net result: **-1308 lines** across 19 files (8 modified + 11 new).
+
 New directory structure for feature folders:
 ```
 features/
   chat/
     chat_screen.dart
     chat_provider.dart
+    chat_state.dart
+    chat_generation_service.dart
+    initial_message_builder.dart
     widgets/
       message_bubble.dart
+      message_actions.dart
       input_bar.dart
       edit_message_dialog.dart
       raw_prompt_viewer.dart
@@ -46,10 +65,15 @@ features/
       character_card.dart
       character_grid.dart
       empty_state.dart
+  menu/
+    menu_screen.dart
+    about_overlay.dart
   presets/
     preset_list_screen.dart
+    preset_list_provider.dart
     preset_editor_screen.dart
     widgets/
+      preset_tile.dart
       block_tile.dart
       regex_tile.dart
   settings/
@@ -58,9 +82,22 @@ features/
     widgets/
       mode_selector.dart
       param_slider.dart
+core/
+  llm/
+    prompt_builder.dart
+    prompt_block_resolver.dart
+    fallback_prompt_builder.dart
+    lorebook_merger.dart
+    ...
+  import/
+    silly_tavern_preset_parser.dart
+shared/
+  widgets/
+    menu_group.dart
+    ...
 ```
 
-Enums `SortType`/`SortDir` extracted from `_SortType`/`_SortDir` (private) to public in `character_grid.dart` — reused by the screen.
+Enums `SortType`/`SortDir` extracted from `_SortType`/`_SortDir` (private) to public in `character_grid.dart` — reused by the screen. `ChatState`, `NotifyObj`/`ResolvedContent`, `MenuGroup`/`MenuItem`, `ActionButton`, `PresetTile` extracted from private to public single-responsibility files.
 
 ### Phase 4: Lorebooks (2025-05-06)
 
