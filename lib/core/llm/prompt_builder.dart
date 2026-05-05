@@ -129,9 +129,19 @@ PromptResult buildPrompt(PromptPayload payload) {
     if (pos == 'lorebooksMacro') {
       loreMacroBuffer.add(content);
     } else if (pos == 'worldInfoAfter') {
-      loreAfter.add(PromptMessage(role: 'system', content: content));
+      loreAfter.add(PromptMessage(
+        role: 'system',
+        content: content,
+        isLorebook: true,
+        blockName: 'Lorebook: ${entry.comment.isNotEmpty ? entry.comment : entry.id}',
+      ));
     } else {
-      loreBefore.add(PromptMessage(role: 'system', content: content));
+      loreBefore.add(PromptMessage(
+        role: 'system',
+        content: content,
+        isLorebook: true,
+        blockName: 'Lorebook: ${entry.comment.isNotEmpty ? entry.comment : entry.id}',
+      ));
     }
   }
 

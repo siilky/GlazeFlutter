@@ -8,12 +8,14 @@ class InputBar extends StatefulWidget {
   final ValueChanged<String> onSend;
   final bool isGenerating;
   final VoidCallback? onStop;
+  final VoidCallback? onMagicDrawer;
 
   const InputBar({
     super.key,
     required this.onSend,
     required this.isGenerating,
     this.onStop,
+    this.onMagicDrawer,
   });
 
   @override
@@ -90,7 +92,7 @@ class _InputBarState extends State<InputBar> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _CircleBtn(icon: Icons.auto_awesome),
+                    _CircleBtn(icon: Icons.auto_awesome, onTap: widget.onMagicDrawer),
                     const SizedBox(width: 8),
                     _CircleBtn(icon: Icons.image_outlined),
                     const SizedBox(width: 8),
@@ -139,24 +141,28 @@ class _InputBarState extends State<InputBar> {
 
 class _CircleBtn extends StatelessWidget {
   final IconData icon;
-  const _CircleBtn({required this.icon});
+  final VoidCallback? onTap;
+  const _CircleBtn({required this.icon, this.onTap});
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).scaffoldBackgroundColor.withValues(alpha: 0.8),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-            shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).scaffoldBackgroundColor.withValues(alpha: 0.8),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+              shape: BoxShape.circle,
+            ),
+            child: Center(child: Icon(icon, color: AppColors.accent, size: 20)),
           ),
-          child: Center(child: Icon(icon, color: AppColors.accent, size: 20)),
         ),
       ),
     );

@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/models/preset.dart';
+import '../../core/state/active_selection_provider.dart';
 import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
@@ -348,9 +349,20 @@ class _PresetTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeId = ref.watch(activePresetIdProvider);
+    final isActive = activeId == preset.id;
+
     return ListTile(
-      leading: const Icon(Icons.tune),
-      title: Text(preset.name),
+      leading: Icon(
+        isActive ? Icons.tune : Icons.tune_outlined,
+        color: isActive ? AppColors.accent : null,
+      ),
+      title: Text(
+        preset.name,
+        style: isActive
+            ? const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)
+            : null,
+      ),
       subtitle: Text(
         '${preset.blocks.length} blocks · ${preset.regexes.length} regex',
         style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
@@ -358,6 +370,16 @@ class _PresetTile extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          FilledButton.tonal(
+            style: FilledButton.styleFrom(
+              backgroundColor: isActive ? AppColors.accent.withValues(alpha: 0.2) : null,
+              foregroundColor: isActive ? AppColors.accent : null,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              minimumSize: const Size(0, 32),
+            ),
+            onPressed: () => setActivePreset(ref, isActive ? null : preset.id),
+            child: Text(isActive ? 'Active' : 'Set Active', style: const TextStyle(fontSize: 12)),
+          ),
           IconButton(
             icon: const Icon(Icons.upload_file, size: 20),
             tooltip: 'Export',
@@ -380,6 +402,7 @@ class _PresetTile extends ConsumerWidget {
               } else if (value == 'export') {
                 _exportPreset(ref, context, preset);
               } else if (value == 'delete') {
+                if (isActive) setActivePreset(ref, null);
                 ref.read(presetListProvider.notifier).remove(preset.id);
               }
             },
