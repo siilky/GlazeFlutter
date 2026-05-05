@@ -11,6 +11,7 @@ import '../../core/models/preset.dart';
 import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
+import 'preset_editor_screen.dart';
 
 final presetListProvider =
     AsyncNotifierProvider<PresetListNotifier, List<Preset>>(
@@ -94,15 +95,9 @@ class PresetListScreen extends ConsumerWidget {
       type: FileType.any,
       allowMultiple: false,
     );
-    if (result == null || result.files.isEmpty) {
-      debugPrint('IMPORT: file picker returned nothing');
-      return;
-    }
+    if (result == null || result.files.isEmpty) return;
 
     final picked = result.files.first;
-    debugPrint(
-      'IMPORT: picked "${picked.name}", bytes=${picked.bytes?.length}, path=${picked.path}',
-    );
 
     String jsonString;
     if (picked.bytes != null) {
@@ -110,7 +105,6 @@ class PresetListScreen extends ConsumerWidget {
     } else if (picked.path != null && picked.path!.isNotEmpty) {
       jsonString = File(picked.path!).readAsStringSync();
     } else {
-      debugPrint('IMPORT: no bytes and no path');
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -121,11 +115,7 @@ class PresetListScreen extends ConsumerWidget {
 
     try {
       final json = jsonDecode(jsonString) as Map<String, dynamic>;
-      debugPrint('IMPORT: json parsed, keys=${json.keys.toList()}');
       final preset = _parseSillyTavernPreset(json, picked.name);
-      debugPrint(
-        'IMPORT: parsed ${preset.blocks.length} blocks, ${preset.regexes.length} regexes',
-      );
       await ref.read(presetListProvider.notifier).add(preset);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -136,8 +126,7 @@ class PresetListScreen extends ConsumerWidget {
           ),
         );
       }
-    } catch (e, st) {
-      debugPrint('IMPORT ERROR: $e\n$st');
+    } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -372,14 +361,10 @@ class _PresetTile extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.upload_file, size: 20),
             tooltip: 'Export',
-            onPressed: () {
-              debugPrint('EXPORT: icon button pressed for "${preset.name}"');
-              _exportPreset(ref, context, preset);
-            },
+            onPressed: () => _exportPreset(ref, context, preset),
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
-              debugPrint('MENU: selected="$value"');
               if (value == 'edit') {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -411,7 +396,6 @@ class _PresetTile extends ConsumerWidget {
   }
 
   void _exportPreset(WidgetRef ref, BuildContext context, Preset preset) async {
-    debugPrint('EXPORT: start for "${preset.name}"');
     try {
       final exportJson = <String, dynamic>{
         'name': preset.name,
@@ -441,18 +425,13 @@ class _PresetTile extends ConsumerWidget {
         'reasoning': preset.reasoningEnabled,
       };
 
-      debugPrint('EXPORT: json built, blocks=${preset.blocks.length}');
-
       final encoded = const JsonEncoder.withIndent('  ').convert(exportJson);
-      debugPrint('EXPORT: encoded ${encoded.length} chars');
 
       final safeName = preset.name.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
       final desktop = Platform.environment['USERPROFILE'] ?? '.';
       final exportDir = Directory(p.join(desktop, 'Desktop'));
       final file = File(p.join(exportDir.path, '$safeName.json'));
-      debugPrint('EXPORT: writing to ${file.path}');
       file.writeAsStringSync(encoded);
-      debugPrint('EXPORT: done, size=${file.lengthSync()}');
 
       if (context.mounted) {
         showDialog(
@@ -476,8 +455,7 @@ class _PresetTile extends ConsumerWidget {
           ),
         );
       }
-    } catch (e, st) {
-      debugPrint('EXPORT ERROR: $e\n$st');
+    } catch (e) {
       if (context.mounted) {
         showDialog(
           context: context,
@@ -494,450 +472,5 @@ class _PresetTile extends ConsumerWidget {
         );
       }
     }
-  }
-}
-
-class PresetEditorScreen extends ConsumerStatefulWidget {
-  final Preset? preset;
-  const PresetEditorScreen({super.key, this.preset});
-
-  @override
-  ConsumerState<PresetEditorScreen> createState() => _PresetEditorScreenState();
-}
-
-class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen>
-    with SingleTickerProviderStateMixin {
-  late final _nameCtrl = TextEditingController(text: widget.preset?.name ?? '');
-  late List<PresetBlock> _blocks;
-  late List<PresetRegex> _regexes;
-  late bool _reasoningEnabled;
-  late final _reasoningStartCtrl = TextEditingController(
-    text: widget.preset?.reasoningStart ?? '',
-  );
-  late final _reasoningEndCtrl = TextEditingController(
-    text: widget.preset?.reasoningEnd ?? '',
-  );
-
-  late final _tabController = TabController(length: 2, vsync: this);
-
-  @override
-  void initState() {
-    super.initState();
-    _blocks = List.from(widget.preset?.blocks ?? []);
-    _regexes = List.from(widget.preset?.regexes ?? []);
-    _reasoningEnabled = widget.preset?.reasoningEnabled ?? false;
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _reasoningStartCtrl.dispose();
-    _reasoningEndCtrl.dispose();
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GlazeScaffold(
-      title: widget.preset != null ? 'Edit Preset' : 'New Preset',
-      onBack: () => Navigator.of(context).pop(),
-      actions: [
-        TextButton(
-          onPressed: _save,
-          child: const Text('Save', style: TextStyle(color: Colors.white)),
-        ),
-      ],
-      body: Column(
-        children: [
-          TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(text: 'Blocks'),
-              Tab(text: 'Regex'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [_buildBlocksTab(), _buildRegexTab()],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBlocksTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: 'Preset Name'),
-          ),
-        ),
-        SwitchListTile(
-          title: const Text('Reasoning Support'),
-          subtitle: const Text('Parse reasoning tags from model output'),
-          value: _reasoningEnabled,
-          onChanged: (v) => setState(() => _reasoningEnabled = v),
-        ),
-        if (_reasoningEnabled) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _reasoningStartCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Reasoning Start Tag',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _reasoningEndCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Reasoning End Tag',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
-        const Divider(),
-        Expanded(
-          child: ReorderableListView.builder(
-            buildDefaultDragHandles: false,
-            itemCount: _blocks.length,
-            onReorder: (old, neu) {
-              setState(() {
-                final item = _blocks.removeAt(old);
-                _blocks.insert(neu > old ? neu - 1 : neu, item);
-              });
-            },
-            itemBuilder: (_, i) => Dismissible(
-              key: ValueKey(_blocks[i].id),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 20),
-                color: Colors.red,
-                child: const Icon(Icons.delete, color: Colors.white),
-              ),
-              onDismissed: (_) => setState(() => _blocks.removeAt(i)),
-              child: ReorderableDragStartListener(
-                index: i,
-                child: _BlockTile(
-                  block: _blocks[i],
-                  onChanged: (b) => setState(() => _blocks[i] = b),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: OutlinedButton.icon(
-            onPressed: _addBlock,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Block'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRegexTab() {
-    return Column(
-      children: [
-        Expanded(
-          child: _regexes.isEmpty
-              ? Center(
-                  child: Text(
-                    'No regex scripts',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _regexes.length,
-                  itemBuilder: (_, i) => Dismissible(
-                    key: ValueKey(_regexes[i].id),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      color: Colors.red,
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                    onDismissed: (_) => setState(() => _regexes.removeAt(i)),
-                    child: _RegexTile(
-                      regex: _regexes[i],
-                      onChanged: (r) => setState(() => _regexes[i] = r),
-                    ),
-                  ),
-                ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: OutlinedButton.icon(
-            onPressed: _addRegex,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Regex'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _addBlock() {
-    setState(() {
-      _blocks.add(
-        PresetBlock(
-          id: DateTime.now().millisecondsSinceEpoch.toRadixString(36),
-          name: 'Block ${_blocks.length + 1}',
-          role: 'system',
-          content: '',
-        ),
-      );
-    });
-  }
-
-  void _addRegex() {
-    setState(() {
-      _regexes.add(
-        PresetRegex(
-          id: DateTime.now().millisecondsSinceEpoch.toRadixString(36),
-          name: 'Regex ${_regexes.length + 1}',
-          regex: '',
-        ),
-      );
-    });
-  }
-
-  Future<void> _save() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-
-    final preset = Preset(
-      id:
-          widget.preset?.id ??
-          DateTime.now().millisecondsSinceEpoch.toRadixString(36),
-      name: name,
-      author: widget.preset?.author,
-      blocks: _blocks,
-      regexes: _regexes,
-      reasoningEnabled: _reasoningEnabled,
-      reasoningStart: _reasoningEnabled ? _reasoningStartCtrl.text : null,
-      reasoningEnd: _reasoningEnabled ? _reasoningEndCtrl.text : null,
-      createdAt:
-          widget.preset?.createdAt ??
-          DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    );
-
-    await ref.read(presetRepoProvider).put(preset);
-    ref.invalidate(presetListProvider);
-    if (mounted) Navigator.of(context).pop();
-  }
-}
-
-class _BlockTile extends StatelessWidget {
-  final PresetBlock block;
-  final ValueChanged<PresetBlock> onChanged;
-
-  const _BlockTile({required this.block, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return ExpansionTile(
-      title: Row(
-        children: [
-          Switch(
-            value: block.enabled,
-            onChanged: (v) => onChanged(block.copyWith(enabled: v)),
-          ),
-          Expanded(
-            child: Text(
-              block.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          _roleChip(),
-        ],
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: block.role,
-                      decoration: const InputDecoration(labelText: 'Role'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'system',
-                          child: Text('System'),
-                        ),
-                        DropdownMenuItem(value: 'user', child: Text('User')),
-                        DropdownMenuItem(
-                          value: 'assistant',
-                          child: Text('Assistant'),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) onChanged(block.copyWith(role: v));
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: block.insertionMode,
-                      decoration: const InputDecoration(
-                        labelText: 'Точка вставки',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'relative',
-                          child: Text('Относительная'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'depth',
-                          child: Text('По глубине'),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) {
-                          onChanged(block.copyWith(
-                            insertionMode: v,
-                            depth: v == 'depth' ? (block.depth ?? 4) : null,
-                          ));
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 80,
-                    child: TextFormField(
-                      initialValue: block.depth?.toString() ?? '',
-                      decoration: const InputDecoration(labelText: 'Depth'),
-                      keyboardType: TextInputType.number,
-                      enabled: block.insertionMode == 'depth',
-                      onChanged: (v) {
-                        final d = int.tryParse(v);
-                        onChanged(block.copyWith(depth: d));
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: block.name,
-                decoration: const InputDecoration(labelText: 'Block Name'),
-                onChanged: (v) => onChanged(block.copyWith(name: v)),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: block.content,
-                decoration: const InputDecoration(labelText: 'Content'),
-                maxLines: 4,
-                minLines: 2,
-                onChanged: (v) => onChanged(block.copyWith(content: v)),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _roleChip() {
-    final color = switch (block.role) {
-      'system' => Colors.blue,
-      'user' => Colors.green,
-      'assistant' => Colors.orange,
-      _ => Colors.grey,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        block.role,
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class _RegexTile extends StatelessWidget {
-  final PresetRegex regex;
-  final ValueChanged<PresetRegex> onChanged;
-
-  const _RegexTile({required this.regex, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return ExpansionTile(
-      title: Row(
-        children: [
-          Switch(
-            value: !regex.disabled,
-            onChanged: (v) => onChanged(regex.copyWith(disabled: !v)),
-          ),
-          Expanded(
-            child: Text(
-              regex.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Column(
-            children: [
-              TextFormField(
-                initialValue: regex.name,
-                decoration: const InputDecoration(labelText: 'Name'),
-                onChanged: (v) => onChanged(regex.copyWith(name: v)),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: regex.regex,
-                decoration: const InputDecoration(labelText: 'Find (regex)'),
-                onChanged: (v) => onChanged(regex.copyWith(regex: v)),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: regex.replacement,
-                decoration: const InputDecoration(labelText: 'Replace with'),
-                onChanged: (v) => onChanged(regex.copyWith(replacement: v)),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }

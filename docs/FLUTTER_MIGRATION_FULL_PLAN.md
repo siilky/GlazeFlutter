@@ -13,6 +13,51 @@
 | Phase 2: Chat + Import | Done | PNG/JSON/ZIP import, prompt builder in isolate, SSE streaming, abort, edit, branch |
 | Phase 3: Presets & Personas | Done | SillyTavern import, block/regex editor, persona CRUD, active selection |
 | Phase 5: Regex Runtime | Done | Applied in chat_provider during generation (placement/ephemerality/depth) |
+| UI Refactoring | Done | All 800+ line screens split into widgets/ subdirectories (see below) |
+
+### UI Refactoring (2025-05-05)
+
+Large monolithic screen files were split into focused widget subdirectories following the "No God Objects" rule from AGENTS.md. Every extracted widget has a single responsibility.
+
+| Before | After | Extracted widgets |
+|--------|-------|-------------------|
+| `chat_screen.dart` (1047 lines) | `chat_screen.dart` (~300 lines) + `widgets/` | `message_bubble.dart`, `input_bar.dart`, `edit_message_dialog.dart`, `raw_prompt_viewer.dart` |
+| `preset_list_screen.dart` (882 lines) | `preset_list_screen.dart` (~350 lines) + `preset_editor_screen.dart` + `widgets/` | `block_tile.dart`, `regex_tile.dart` |
+| `character_list_screen.dart` (858 lines) | `character_list_screen.dart` (~250 lines) + `widgets/` | `character_card.dart`, `character_grid.dart`, `empty_state.dart` |
+| `api_settings_screen.dart` (593 lines) | `api_settings_screen.dart` (~130 lines) + `api_editor_screen.dart` + `widgets/` | `mode_selector.dart`, `param_slider.dart` |
+
+New directory structure for feature folders:
+```
+features/
+  chat/
+    chat_screen.dart
+    chat_provider.dart
+    widgets/
+      message_bubble.dart
+      input_bar.dart
+      edit_message_dialog.dart
+      raw_prompt_viewer.dart
+  character_list/
+    character_list_screen.dart
+    widgets/
+      character_card.dart
+      character_grid.dart
+      empty_state.dart
+  presets/
+    preset_list_screen.dart
+    preset_editor_screen.dart
+    widgets/
+      block_tile.dart
+      regex_tile.dart
+  settings/
+    api_settings_screen.dart
+    api_editor_screen.dart
+    widgets/
+      mode_selector.dart
+      param_slider.dart
+```
+
+Enums `SortType`/`SortDir` extracted from `_SortType`/`_SortDir` (private) to public in `character_grid.dart` — reused by the screen.
 
 ### Remaining phases (in priority order)
 
@@ -28,15 +73,17 @@
 
 ### Known stubs in current codebase
 
-- `chat_screen.dart` — 3 input bar buttons (image gen, fullscreen, auto) are decorative
+- `chat_screen.dart` → `input_bar.dart` — 3 input bar buttons (image gen, fullscreen, auto) are decorative
 - `character_list_screen.dart` — search button no-op, Catalog tab "coming soon"
-- `tools_screen.dart` — Lorebooks "coming soon"
+- `menu_screen.dart` — Lorebooks "coming soon"
 - `menu_screen.dart` — Theme, Cloud Sync, Backups all "coming soon"
 - `tokenizer.dart` — heuristic (chars/3.35), no real BPE
 
 ### Architecture note
 
 Plan originally specified **Isar**; actual implementation uses **Drift** (SQLite). This is intentional — Drift has better Windows support and doesn't require native binaries per platform. All model/DB references in this doc should be read as "Drift" instead of "Isar".
+
+Also: the project structure now uses **widget subdirectories** per feature folder. Each `features/{feature}/widgets/` contains extracted, focused widgets (cards, tiles, dialogs, etc.) that were previously inline in the screen file. This follows the "No God Objects" rule from AGENTS.md — no file should exceed ~150 lines or take on more than one role.
 
 ---
 

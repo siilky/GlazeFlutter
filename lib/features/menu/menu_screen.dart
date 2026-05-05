@@ -1,7 +1,9 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 
@@ -57,12 +59,8 @@ class MenuScreen extends ConsumerWidget {
                 _MenuCard(
                   icon: Icons.backup_outlined,
                   title: 'Backups',
-                  subtitle: 'Create and restore backups',
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Backups coming soon')),
-                    );
-                  },
+                  subtitle: 'Import from Glaze JS backup',
+                  onTap: () => _importGlzBackup(context, ref),
                 ),
                 _SectionHeader('Info'),
                 _MenuCard(
@@ -77,6 +75,58 @@ class MenuScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _importGlzBackup(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['glz', 'json'],
+      dialogTitle: 'Select Glaze backup file',
+    );
+
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final filePath = file.path;
+    if (filePath == null) return;
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _MigrationProgressDialog(),
+    );
+
+    try {
+      final migration = ref.read(migrationServiceProvider);
+      final migrationResult = await migration.importGlzBackup(filePath);
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Import complete: ${migrationResult.characters} characters, '
+            '${migrationResult.sessions} chats, '
+            '${migrationResult.presets} presets, '
+            '${migrationResult.apiConfigs} API configs, '
+            '${migrationResult.personas} personas',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _showAbout(BuildContext context) {
@@ -145,6 +195,43 @@ class _MenuCard extends StatelessWidget {
       ),
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: onTap,
+    );
+  }
+}
+
+class _MigrationProgressDialog extends StatelessWidget {
+  const _MigrationProgressDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Importing backup...',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This may take a moment',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
