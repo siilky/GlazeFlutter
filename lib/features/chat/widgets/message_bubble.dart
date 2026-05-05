@@ -4,16 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../../core/state/character_provider.dart';
-import '../../settings/app_settings_provider.dart';
 import '../chat_provider.dart';
+import '../../settings/app_settings_provider.dart';
+import '../../../shared/widgets/pencil_animation.dart';
 
 class MessageBubble extends ConsumerWidget {
   final String content;
   final bool isUser;
   final bool isSystem;
   final bool isStreaming;
+  final bool isTyping;
   final String? reasoning;
   final String? genTime;
   final int? tokens;
@@ -30,6 +31,7 @@ class MessageBubble extends ConsumerWidget {
     required this.isUser,
     this.isSystem = false,
     this.isStreaming = false,
+    this.isTyping = false,
     this.reasoning,
     this.genTime,
     this.tokens,
@@ -183,16 +185,43 @@ class MessageBubble extends ConsumerWidget {
                   ],
                 ),
               ),
-            MarkdownBody(
-              data: content,
-              styleSheet: MarkdownStyleSheet(
-                p: TextStyle(
-                  color: (isStandard || !isUser)
-                      ? scheme.onSurface
-                      : scheme.onPrimary,
+            if (isTyping && content.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PencilAnimation(
+                      size: 16,
+                      color: (isStandard || !isUser)
+                          ? scheme.primary
+                          : scheme.onPrimary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Generating...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
+                        color: (isStandard || !isUser)
+                            ? scheme.onSurfaceVariant
+                            : scheme.onPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              MarkdownBody(
+                data: content,
+                styleSheet: MarkdownStyleSheet(
+                  p: TextStyle(
+                    color: (isStandard || !isUser)
+                        ? scheme.onSurface
+                        : scheme.onPrimary,
+                  ),
                 ),
               ),
-            ),
             if (isStreaming)
               Text(
                 '...',
@@ -298,63 +327,101 @@ class MessageBubble extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(Icons.copy),
-                title: const Text('Copy'),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: content));
-                  Navigator.pop(ctx);
-                },
-              ),
-              if (!isError)
+              if (isTyping) ...[
                 ListTile(
-                  leading: const Icon(Icons.edit),
-                  title: const Text('Edit'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showEditDialog(context, ref);
-                  },
-                ),
-              if ((!isUser && isLast && !isGenerating) || isError)
-                ListTile(
-                  leading: const Icon(Icons.refresh),
-                  title: const Text('Regenerate'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    notifier.regenerateLastAssistant();
-                  },
-                ),
-              if (!isError)
-                ListTile(
-                  leading: const Icon(Icons.call_split),
-                  title: const Text('Branch'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    notifier.branchSession(messageIndex);
-                  },
-                ),
-              ListTile(
-                leading: Icon(
-                  isHidden ? Icons.visibility : Icons.visibility_off,
-                ),
-                title: Text(isHidden ? 'Unhide' : 'Hide'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  notifier.toggleMessageHidden(messageIndex);
-                },
-              ),
-              if (isLast && !isGenerating)
-                ListTile(
-                  leading: const Icon(Icons.delete, color: Colors.red),
+                  leading: const Icon(Icons.stop_circle, color: Colors.orange),
                   title: const Text(
-                    'Delete',
-                    style: TextStyle(color: Colors.red),
+                    'Stop Generating',
+                    style: TextStyle(color: Colors.orange),
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
-                    notifier.deleteMessage(messageIndex);
+                    notifier.abortGeneration();
                   },
                 ),
+              ] else ...[
+                ListTile(
+                  leading: const Icon(Icons.copy),
+                  title: const Text('Copy'),
+                  onTap: isGenerating && isLast
+                      ? null
+                      : () {
+                          Clipboard.setData(ClipboardData(text: content));
+                          Navigator.pop(ctx);
+                        },
+                  enabled: !(isGenerating && isLast),
+                ),
+                if (!isError)
+                  ListTile(
+                    leading: const Icon(Icons.edit),
+                    title: const Text('Edit'),
+                    onTap: isGenerating && isLast
+                        ? null
+                        : () {
+                            Navigator.pop(ctx);
+                            _showEditDialog(context, ref);
+                          },
+                    enabled: !(isGenerating && isLast),
+                  ),
+                if ((!isUser && isLast && !isGenerating) || isError)
+                  ListTile(
+                    leading: const Icon(Icons.refresh),
+                    title: const Text('Regenerate'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      notifier.regenerateLastAssistant();
+                    },
+                  ),
+                if (isGenerating && isLast)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.stop_circle,
+                      color: Colors.orange,
+                    ),
+                    title: const Text(
+                      'Stop Generating',
+                      style: TextStyle(color: Colors.orange),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      notifier.abortGeneration();
+                    },
+                  ),
+                if (!isError)
+                  ListTile(
+                    leading: const Icon(Icons.call_split),
+                    title: const Text('Branch'),
+                    onTap: isGenerating && isLast
+                        ? null
+                        : () {
+                            Navigator.pop(ctx);
+                            notifier.branchSession(messageIndex);
+                          },
+                    enabled: !(isGenerating && isLast),
+                  ),
+                ListTile(
+                  leading: Icon(
+                    isHidden ? Icons.visibility : Icons.visibility_off,
+                  ),
+                  title: Text(isHidden ? 'Unhide' : 'Hide'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.toggleMessageHidden(messageIndex);
+                  },
+                ),
+                if (isLast && !isGenerating)
+                  ListTile(
+                    leading: const Icon(Icons.delete, color: Colors.red),
+                    title: const Text(
+                      'Delete',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      notifier.deleteMessage(messageIndex);
+                    },
+                  ),
+              ],
             ],
           ),
         ),

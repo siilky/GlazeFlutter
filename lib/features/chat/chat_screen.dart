@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/llm/prompt_builder.dart';
 import '../../core/llm/prompt_isolate.dart';
-import '../../core/models/chat_message.dart';
 import '../../core/state/active_selection_provider.dart';
 import '../../core/state/character_provider.dart';
 import '../../core/state/db_provider.dart';
@@ -15,7 +14,10 @@ import '../../core/state/lorebook_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import 'chat_provider.dart';
-import 'widgets/widgets.dart';
+import 'widgets/chat_header.dart';
+import 'widgets/chat_input_bar.dart';
+import 'widgets/magic_drawer.dart';
+import 'widgets/message_list.dart';
 
 class ChatScreen extends ConsumerWidget {
   final String charId;
@@ -37,7 +39,7 @@ class ChatScreen extends ConsumerWidget {
       extendBodyBehindHeader: true,
       title: title,
       titleWidget: character != null
-          ? ChatHeaderTitle(character: character, sessionName: sessionName)
+          ? ChatHeader(character: character, sessionName: sessionName)
           : null,
       onBack: () => context.go('/'),
       actions: [
@@ -127,7 +129,7 @@ class ChatScreen extends ConsumerWidget {
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (state) => Stack(
           children: [
-            _MessageList(
+            MessageList(
               messages: state.messages,
               streamingText: state.isGenerating ? state.streamingText : null,
               streamingReasoning: state.isGenerating
@@ -157,7 +159,7 @@ class ChatScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  InputBar(
+                  ChatInputBar(
                     onSend: (text) {
                       if (text.trim().isEmpty) return;
                       ref.read(chatProvider(charId).notifier).sendMessage(text);
@@ -397,88 +399,6 @@ class ChatScreen extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _MessageList extends StatefulWidget {
-  final List<ChatMessage> messages;
-  final String? streamingText;
-  final String? streamingReasoning;
-  final bool isGenerating;
-  final String charId;
-
-  const _MessageList({
-    required this.messages,
-    this.streamingText,
-    this.streamingReasoning,
-    required this.isGenerating,
-    required this.charId,
-  });
-
-  @override
-  State<_MessageList> createState() => _MessageListState();
-}
-
-class _MessageListState extends State<_MessageList> {
-  final _scrollController = ScrollController();
-
-  @override
-  void didUpdateWidget(covariant _MessageList oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _scrollToBottom();
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final showStreaming =
-        widget.streamingText != null && widget.streamingText!.isNotEmpty;
-
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.only(top: 80, bottom: 180),
-      itemCount: widget.messages.length + (showStreaming ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index < widget.messages.length) {
-          final msg = widget.messages[index];
-          return MessageBubble(
-            content: msg.content,
-            isUser: msg.role == 'user',
-            isSystem: msg.role == 'system',
-            reasoning: msg.reasoning,
-            genTime: msg.genTime,
-            tokens: msg.tokens,
-            isHidden: msg.isHidden,
-            isError: msg.isError,
-            messageIndex: index,
-            isLast: index == widget.messages.length - 1,
-            isGenerating: widget.isGenerating,
-            charId: widget.charId,
-          );
-        }
-        return MessageBubble(
-          content: widget.streamingText!,
-          isUser: false,
-          isStreaming: true,
-          reasoning: widget.streamingReasoning,
-          messageIndex: -1,
-          isLast: false,
-          isGenerating: true,
-          charId: widget.charId,
-        );
-      },
     );
   }
 }
