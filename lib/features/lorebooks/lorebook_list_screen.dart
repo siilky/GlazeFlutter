@@ -6,6 +6,7 @@ import '../../core/models/lorebook.dart';
 import '../../core/state/lorebook_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
+import 'embedding_settings_screen.dart';
 import 'lorebook_editor_screen.dart';
 
 class LorebookListScreen extends ConsumerWidget {
@@ -28,9 +29,18 @@ class LorebookListScreen extends ConsumerWidget {
             bottom: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: GlazeAppBar(
+              child:               GlazeAppBar(
                 title: 'Lorebooks',
                 leading: BackButton(onPressed: () => context.go('/tools')),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.search, size: 20),
+                    tooltip: 'Embedding Settings',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const EmbeddingSettingsScreen()),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

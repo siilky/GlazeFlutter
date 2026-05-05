@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/lorebook.dart';
+import '../../core/llm/embedding_service.dart';
+import '../../core/llm/lorebook_vector_search.dart';
 import '../../core/state/lorebook_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
@@ -21,6 +23,8 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   String _scope = 'global';
   List<LorebookEntry> _entries = [];
   bool _loaded = false;
+  bool _isIndexing = false;
+  String _indexStatus = '';
 
   @override
   void initState() {
@@ -93,6 +97,61 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     _save();
   }
 
+  Future<void> _indexEntries() async {
+    final config = ref.read(embeddingConfigProvider);
+    if (config.endpoint.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Set up embedding API in Embedding Settings first')),
+      );
+      return;
+    }
+
+    final vectorEntries = _entries.where((e) => e.vectorSearch && e.enabled && !e.constant).toList();
+    if (vectorEntries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No vector-enabled entries to index')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isIndexing = true;
+      _indexStatus = 'Indexing 0/${vectorEntries.length}...';
+    });
+
+    try {
+      final service = ref.read(lorebookEmbeddingServiceProvider);
+      final result = await service.indexLorebookEntries(
+        widget.lorebookId,
+        _entries,
+        config,
+        onProgress: (current, total, name) {
+          setState(() => _indexStatus = 'Indexing $current/$total...');
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _isIndexing = false;
+          _indexStatus = '';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Indexed: ${result.indexed}, Skipped: ${result.skipped}, Failed: ${result.failed}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isIndexing = false;
+          _indexStatus = '';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Indexing failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   void _toggleEntry(int index) {
     setState(() {
       _entries[index] = _entries[index].copyWith(enabled: !_entries[index].enabled);
@@ -132,6 +191,21 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                   child: GlazeAppBar(
                     title: 'Edit Lorebook',
                     leading: BackButton(onPressed: () => Navigator.pop(context)),
+                    actions: [
+                      if (_isIndexing)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Center(
+                            child: Text(_indexStatus, style: const TextStyle(fontSize: 12, color: AppColors.accent)),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.auto_fix_high, size: 20),
+                          tooltip: 'Index Vector Entries',
+                          onPressed: _indexEntries,
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -263,7 +337,7 @@ class _EntryTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          '${entry.keys.length} keys | order ${entry.order}${entry.constant ? ' | constant' : ''}',
+          '${entry.keys.length} keys | order ${entry.order}${entry.constant ? ' | constant' : ''}${entry.vectorSearch ? ' | vector' : ''}',
           style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
         trailing: Row(

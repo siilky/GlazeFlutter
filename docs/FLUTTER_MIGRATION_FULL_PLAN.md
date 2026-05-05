@@ -14,6 +14,7 @@
 | Phase 2.5: JS Migration | Done | .glz backup import (characters, chats, personas, presets, API configs, active selections), migration UI in menu |
 | Phase 3: Presets & Personas | Done | SillyTavern import, block/regex editor, persona CRUD, active selection |
 | Phase 4: Lorebooks | Done | Model, keyword scanner, prompt integration, UI — see below |
+| Phase 4b: Vector Search | Done | Embedding service, vector math, DB storage, indexing pipeline, runtime search, UI — see below |
 | Phase 5: Regex Runtime | Done | Applied in chat_provider during generation (placement/ephemerality/depth) |
 | UI Refactoring | Done | All 800+ line screens split into widgets/ subdirectories (see below) |
 
@@ -93,16 +94,71 @@ Full keyword-based lorebook system ported from Glaze JS.
 - Route `/tools/lorebooks`, tools_screen tile navigates
 
 **Not yet ported:**
-- Vector/semantic search (embedding API, cosine similarity, top-K)
 - `{{lorebooks}}` macro content in PromptMessage metadata (no `isLorebook` / `blockName` tracking yet)
 - ST lorebook import format converter
 - Character book extraction from PNG cards
+
+### Phase 4b: Lorebook Vector Search (2025-05-06)
+
+Full vector/semantic search system ported from Glaze JS.
+
+**Vector math (`vector_math.dart`):**
+- `cosineSimilarity(a, b)` — standard dot/(||a||*||b||)
+- `findTopKMulti(queryChunks, candidates, k, threshold)` — MaxSim strategy: max similarity across all query-candidate chunk pairs
+- `findTopK(queryVector, candidates, k, threshold)` — single-query wrapper
+- `VectorChunk`, `VectorCandidate`, `TopKResult` data classes
+- `vectorToBytes`/`bytesToVector` — Float64 BLOB serialization for single vectors
+- `vectorListToBytes`/`bytesToVectorList` — multi-vector BLOB serialization (count + dim + floats)
+
+**Embedding service (`embedding_service.dart`):**
+- OpenAI-compatible `/embeddings` endpoint (auto-appends if not in URL)
+- Bearer token auth (optional)
+- Text chunking by `maxChunkTokens` (split at newline → `. ` → space → hard cut)
+- Batch processing with 200ms inter-call delay
+- 429 rate limit detection → `RateLimitException(retryAfter)`
+- Multi-chunk embedding with averaging for `getEmbeddings()` and per-chunk results for `getEmbeddingsWithChunks()`
+- `EmbeddingChunk`, `EmbeddingConfig` data classes
+
+**Embedding DB storage:**
+- Drift `Embeddings` table (schema v5): `entryId` (PK), `sourceType`, `sourceId`, `vectorsBlob` (multi-vector BLOB), `textHash` (SHA-256), `retrievalHintsJson`, `errorJson`, `updatedAt`
+- `EmbeddingRepo` with CRUD + `putEmbeddingVector`/`putEmbeddingError` helpers + `decodeVectors`/`decodeHints`/`decodeError`
+
+**Indexing pipeline (`lorebook_embedding_service.dart`):**
+- `indexLorebookEntries(lorebookId, entries, config, onProgress, retryFailedOnly)`
+- SHA-256 fingerprint cache: skip entries where `textHash` matches stored hash
+- On 429 rate limit: immediately mark all remaining entries as rate-limited errors and stop
+- `extractRetrievalHints(entry)`: up to 32 hints from comment, keys, first 8 content lines, `label: value` patterns
+- `IndexResult` with indexed/skipped/failed/rateLimited counts
+
+**Runtime vector search (`lorebook_vector_search.dart`):**
+- `search(history, currentText, lorebooks, settings, config)` → `List<VectorSearchResult>`
+- Filters active lorebooks, vector-enabled entries (excluding constants)
+- Loads embeddings from DB, skips stale/missing ones
+- Dual query strategy: **focused** (user messages only, bounded by `maxChunkTokens*2`) + **fallback** (all messages, bounded by `maxChunkTokens*3`), merges by higher score
+- Query sanitization: strips HTML, OOC, base64 images
+- Hybrid boost: name/key substring match (+0.18), key token overlap (+0.04/key, max +0.12), descriptor token overlap (+0.025/hint, max +0.10)
+- Applies `vectorThreshold` (default 0.45) and `vectorTopK` (default 10)
+- `embeddingConfigProvider` (StateProvider), `lorebookVectorSearchProvider`, `lorebookEmbeddingServiceProvider`
+
+**Prompt integration:**
+- `PromptPayload` extended with `vectorEntries: List<LorebookEntry>`
+- `_mergeKeywordVector()` in prompt_builder: splits `maxInjectedEntries` budget by `keywordVectorSplit` %, deduplicates by entry ID, unused keyword slots roll over to vector
+- `chat_provider._runVectorSearch()`: runs before `buildPromptInIsolate`, skipped if `searchType == 'keys'` or config endpoint empty
+
+**LorebookGlobalSettings additions:**
+- `vectorThreshold` (default 0.45)
+- `vectorTopK` (default 10)
+
+**UI:**
+- `EntryEditorDialog`: added "Vector Search" and "Keyword Search" chips; vector-only mode when vector=on + keyword=off
+- `LorebookEditorScreen`: index button in AppBar with progress status; calls `LorebookEmbeddingService.indexLorebookEntries`
+- `EmbeddingSettingsScreen`: search mode selector (keyword/vector/both), embedding API config (endpoint, key, model, maxChunkTokens), test connection button, vector params (threshold, topK, scan depth)
+- Route `/tools/embeddings`, search icon in LorebookListScreen navigates to embedding settings
 
 ### Remaining phases (in priority order)
 
 | Phase | Priority | What's Missing |
 |-------|----------|----------------|
-| 4b: Lorebook vector search | Medium | Embedding service, vector math, DB storage, late vector injection pipeline |
 | 6: Chat Import/Export | Medium | ST JSONL import/export, PNG export, backup import |
 | 7: Image Generation | Low | Service, config, gallery, UI |
 | 8: Cloud Sync | Low | Crypto, adapters, manifest, engine, UI |

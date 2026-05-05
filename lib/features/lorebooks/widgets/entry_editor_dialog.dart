@@ -28,6 +28,8 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
   bool _caseSensitive = false;
   bool _preventRecursion = false;
   bool _ignoreBudget = false;
+  bool _vectorSearch = false;
+  bool _useKeywordSearch = true;
   int _selectiveLogic = 5;
   String _position = 'worldInfoBefore';
 
@@ -50,6 +52,8 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
     _caseSensitive = e?.caseSensitive ?? false;
     _preventRecursion = e?.preventRecursion ?? false;
     _ignoreBudget = e?.ignoreBudget ?? false;
+    _vectorSearch = e?.vectorSearch ?? false;
+    _useKeywordSearch = e?.useKeywordSearch ?? true;
     _selectiveLogic = e?.selectiveLogic ?? 5;
     _position = e?.position ?? 'worldInfoBefore';
   }
@@ -89,6 +93,8 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
       cooldown: int.tryParse(_cooldownController.text) ?? 0,
       group: _groupController.text.trim(),
       ignoreBudget: _ignoreBudget,
+      vectorSearch: _vectorSearch,
+      useKeywordSearch: _useKeywordSearch,
     );
   }
 
@@ -174,6 +180,9 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
                       _chip('Case Sensitive', _caseSensitive, (v) => setState(() => _caseSensitive = v)),
                       _chip('Prevent Recursion', _preventRecursion, (v) => setState(() => _preventRecursion = v)),
                       _chip('Ignore Budget', _ignoreBudget, (v) => setState(() => _ignoreBudget = v)),
+                      _chip('Vector Search', _vectorSearch, (v) => setState(() => _vectorSearch = v)),
+                      if (_vectorSearch)
+                        _chip('Keyword Search', _useKeywordSearch, (v) => setState(() => _useKeywordSearch = v)),
                     ],
                   ),
                 ],
