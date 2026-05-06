@@ -255,6 +255,20 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     state = AsyncData(ChatState(session: newSession));
   }
 
+  Future<void> switchSession(int sessionIndex) async {
+    final repo = ref.read(chatRepoProvider);
+    final sessions = await repo.getByCharacterId(arg);
+    final target = sessions.where((s) => s.sessionIndex == sessionIndex).firstOrNull;
+    if (target != null) {
+      state = AsyncData(ChatState(session: target));
+    }
+  }
+
+  Future<List<ChatSession>> getSessions() async {
+    final repo = ref.read(chatRepoProvider);
+    return repo.getByCharacterId(arg);
+  }
+
   Future<void> branchSession(int index) async {
     final current = state.value;
     if (current == null || current.session == null) return;

@@ -28,12 +28,13 @@ class ChatScreen extends ConsumerWidget {
     final sessionName = chatState?.session != null
         ? 'Session #${chatState!.session!.sessionIndex}'
         : 'Loading...';
+    final sessionIndex = chatState?.session?.sessionIndex ?? 0;
 
     return GlazeScaffold(
       extendBodyBehindHeader: true,
       title: title,
       titleWidget: character != null
-          ? ChatHeader(character: character, sessionName: sessionName)
+          ? ChatHeader(character: character, sessionName: sessionName, currentSessionIndex: sessionIndex)
           : null,
       onBack: () => context.go('/'),
       actions: [
