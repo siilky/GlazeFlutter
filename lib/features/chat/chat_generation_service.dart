@@ -32,6 +32,7 @@ class ChatGenerationService {
     String? previousReasoning,
     String? previousGenTime,
     int? previousTokens,
+    String? guidanceText,
   }) async {
     try {
       final charRepo = _ref.read(characterRepoProvider);
@@ -98,6 +99,7 @@ class ChatGenerationService {
         summaryContent: summaryContent,
         memoryContent: memoryResult.content.isNotEmpty ? memoryResult.content : null,
         memoryInjectionTarget: memoryResult.injectionTarget,
+        guidanceText: guidanceText,
       );
 
       debugPrint('CHAT: building prompt for "${character.name}", history=${session.messages.length}, preset=${preset?.name ?? "none"}');

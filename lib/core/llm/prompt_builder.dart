@@ -37,6 +37,7 @@ class PromptPayload {
   final String? summaryPrefix;
   final String? memoryContent;
   final String memoryInjectionTarget;
+  final String? guidanceText;
   final List<Lorebook> lorebooks;
   final LorebookGlobalSettings lorebookSettings;
   final LorebookActivations lorebookActivations;
@@ -54,6 +55,7 @@ class PromptPayload {
     this.summaryPrefix,
     this.memoryContent,
     this.memoryInjectionTarget = 'summary_block',
+    this.guidanceText,
     this.lorebooks = const [],
     this.lorebookSettings = const LorebookGlobalSettings(),
     this.lorebookActivations = const LorebookActivations(),
@@ -110,6 +112,7 @@ PromptResult buildPrompt(PromptPayload payload) {
     charId: char.id,
     sessionId: '',
     summaryContent: payload.summaryContent,
+    guidanceText: payload.guidanceText,
   );
 
   var currentSessionVars = Map<String, String>.from(payload.sessionVars);

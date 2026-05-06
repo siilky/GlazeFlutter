@@ -154,6 +154,10 @@ class ChatScreen extends ConsumerWidget {
                       if (text.trim().isEmpty) return;
                       ref.read(chatProvider(charId).notifier).sendMessage(text);
                     },
+                    onSendWithGuidance: (text, guidance) {
+                      if (text.trim().isEmpty) return;
+                      ref.read(chatProvider(charId).notifier).sendMessage(text, guidanceText: guidance);
+                    },
                     isGenerating: state.isGenerating,
                     onStop: state.isGenerating
                         ? () => ref.read(chatProvider(charId).notifier).abortGeneration()

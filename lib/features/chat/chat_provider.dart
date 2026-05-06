@@ -46,7 +46,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     return ChatState(session: newSession);
   }
 
-  Future<void> sendMessage(String text) async {
+  Future<void> sendMessage(String text, {String? guidanceText}) async {
     final current = state.value;
     if (current == null || current.isGenerating) return;
 
@@ -73,11 +73,12 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       charId: arg,
       currentState: current,
       onStateUpdate: (s) => state = AsyncData(s),
+      guidanceText: guidanceText,
     );
     state = AsyncData(result);
   }
 
-  Future<void> regenerateLastAssistant() async {
+  Future<void> regenerateLastAssistant({String? guidanceText}) async {
     final current = state.value;
     if (current == null || current.session == null || current.isGenerating) return;
 
@@ -115,6 +116,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       previousReasoning: prevAssistant?.reasoning,
       previousGenTime: prevAssistant?.genTime,
       previousTokens: prevAssistant?.tokens,
+      guidanceText: guidanceText,
     );
     state = AsyncData(result);
   }

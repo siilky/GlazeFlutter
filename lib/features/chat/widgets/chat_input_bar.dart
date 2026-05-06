@@ -4,6 +4,7 @@ import '../../../shared/theme/app_colors.dart';
 
 class ChatInputBar extends StatefulWidget {
   final ValueChanged<String> onSend;
+  final void Function(String text, String? guidance)? onSendWithGuidance;
   final bool isGenerating;
   final VoidCallback? onStop;
   final VoidCallback? onMagicDrawer;
@@ -11,6 +12,7 @@ class ChatInputBar extends StatefulWidget {
   const ChatInputBar({
     super.key,
     required this.onSend,
+    this.onSendWithGuidance,
     required this.isGenerating,
     this.onStop,
     this.onMagicDrawer,
@@ -22,18 +24,26 @@ class ChatInputBar extends StatefulWidget {
 
 class _ChatInputBarState extends State<ChatInputBar> {
   final _controller = TextEditingController();
+  final _guidanceController = TextEditingController();
+  bool _guidanceMode = false;
 
   @override
   void dispose() {
     _controller.dispose();
+    _guidanceController.dispose();
     super.dispose();
   }
 
   void _handleSend() {
     final text = _controller.text;
     if (text.trim().isEmpty) return;
-    widget.onSend(text);
+    if (_guidanceMode && _guidanceController.text.trim().isNotEmpty) {
+      widget.onSendWithGuidance?.call(text, _guidanceController.text.trim());
+    } else {
+      widget.onSend(text);
+    }
     _controller.clear();
+    _guidanceController.clear();
   }
 
   @override
@@ -46,6 +56,33 @@ class _ChatInputBarState extends State<ChatInputBar> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_guidanceMode) ...[
+              Container(
+                constraints: const BoxConstraints(minHeight: 44),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.08),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: TextField(
+                  controller: _guidanceController,
+                  maxLines: 3,
+                  minLines: 1,
+                  style: const TextStyle(fontSize: 14, color: Colors.orange),
+                  decoration: InputDecoration(
+                    hintText: 'Guidance instructions...',
+                    hintStyle: TextStyle(color: Colors.orange.withValues(alpha: 0.5), fontSize: 14),
+                    prefixIcon: Icon(Icons.tips_and_updates_outlined, color: Colors.orange.withValues(alpha: 0.7), size: 20),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    filled: false,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             ClipRRect(
               borderRadius: BorderRadius.circular(28),
               child: BackdropFilter(
@@ -57,7 +94,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       context,
                     ).scaffoldBackgroundColor.withValues(alpha: 0.8),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.05),
+                      color: _guidanceMode
+                          ? Colors.orange.withValues(alpha: 0.3)
+                          : Colors.white.withValues(alpha: 0.05),
                     ),
                     borderRadius: BorderRadius.circular(28),
                   ),
@@ -68,12 +107,12 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _handleSend(),
                     style: const TextStyle(fontSize: 16),
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
+                    decoration: InputDecoration(
+                      hintText: _guidanceMode ? 'Message with guidance...' : 'Type a message...',
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         horizontal: 18,
                         vertical: 16,
                       ),
@@ -90,6 +129,15 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    _CircleBtn(
+                      icon: _guidanceMode ? Icons.tips_and_updates : Icons.tips_and_updates_outlined,
+                      onTap: () => setState(() {
+                        _guidanceMode = !_guidanceMode;
+                        if (!_guidanceMode) _guidanceController.clear();
+                      }),
+                      color: _guidanceMode ? Colors.orange : null,
+                    ),
+                    const SizedBox(width: 8),
                     _CircleBtn(icon: Icons.auto_awesome, onTap: widget.onMagicDrawer),
                     const SizedBox(width: 8),
                     _CircleBtn(icon: Icons.image_outlined),
@@ -140,7 +188,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
 class _CircleBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
-  const _CircleBtn({required this.icon, this.onTap});
+  final Color? color;
+  const _CircleBtn({required this.icon, this.onTap, this.color});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -159,7 +208,7 @@ class _CircleBtn extends StatelessWidget {
               border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
               shape: BoxShape.circle,
             ),
-            child: Center(child: Icon(icon, color: AppColors.accent, size: 20)),
+            child: Center(child: Icon(icon, color: color ?? AppColors.accent, size: 20)),
           ),
         ),
       ),
