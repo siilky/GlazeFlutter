@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -136,12 +139,36 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
   late final _promptCtrl = TextEditingController(
     text: widget.existing?.prompt ?? '',
   );
+  String? _avatarPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _avatarPath = widget.existing?.avatarPath;
+  }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _promptCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final filePath = result.files.first.path;
+    if (filePath == null) return;
+
+    final id = widget.existing?.id ?? DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    final imageStorage = ref.read(imageStorageProvider);
+    final bytes = await File(filePath).readAsBytes();
+    final savedPath = await imageStorage.saveAvatar('persona_$id', bytes);
+    if (mounted) setState(() => _avatarPath = savedPath);
   }
 
   @override
@@ -158,6 +185,38 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Center(
+            child: GestureDetector(
+              onTap: _pickAvatar,
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 48,
+                    backgroundColor: AppColors.accent.withValues(alpha: 0.15),
+                    backgroundImage: _avatarPath != null
+                        ? FileImage(File(_avatarPath!))
+                        : null,
+                    child: _avatarPath == null
+                        ? Icon(Icons.person, size: 40, color: AppColors.accent.withValues(alpha: 0.5))
+                        : null,
+                  ),
+                  Positioned(
+                    bottom: 0, right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.background, width: 2),
+                      ),
+                      child: const Icon(Icons.camera_alt, size: 14, color: Colors.black),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _nameCtrl,
             decoration: const InputDecoration(
@@ -192,6 +251,7 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
           DateTime.now().millisecondsSinceEpoch.toRadixString(36),
       name: name,
       prompt: _promptCtrl.text.trim().isEmpty ? null : _promptCtrl.text.trim(),
+      avatarPath: _avatarPath,
     );
 
     await ref.read(personaRepoProvider).put(persona);
