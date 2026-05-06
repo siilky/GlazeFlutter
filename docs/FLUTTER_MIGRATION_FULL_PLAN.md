@@ -607,7 +607,11 @@ core/
 
 | Phase | Priority | What's Missing |
 |-------|----------|----------------|
-| Memory Coverage/Preview | Medium | Coverage analysis (which memories activate), prompt template editor, prompt preview, text preview |
+| Cloud Sync | ~~Medium~~ **DONE** | ~~Dropbox + GDrive adapters, manifest, engine, conflict resolution UI~~ Implemented |
+| Backup Export/Import | ~~Medium~~ **DONE** | ~~.glz backup export, ST backup ZIP import, backup/restore UI~~ Implemented |
+| Character Gallery | ~~Medium~~ **DONE** | ~~Per-character image gallery, add/delete, full-screen viewer~~ Implemented |
+| Persona Connections | ~~Medium~~ **DONE** | ~~Per-character and per-chat persona bindings~~ Implemented |
+| Memory Coverage/Preview | ~~Medium~~ **DONE** | ~~Coverage analysis, prompt preview~~ Implemented: `lorebook_coverage.dart` + `lorebook_coverage_sheet.dart` + `prompt_preview_screen.dart` |
 | Cloud Sync: Deep-links mobile | Low | Android/iOS deep-link config for Dropbox/GDrive OAuth |
 | Glossary / Help | Low | Categorized help articles, inline HelpTip components |
 | Stats Dashboard | Low | Per-chat/char/global stats (tokens, messages, time) |
@@ -620,7 +624,7 @@ core/
 ### Known stubs in current codebase
 
 - `chat_screen.dart` → `input_bar.dart` — 2 input bar buttons (fullscreen, auto) are decorative
-- `tokenizer.dart` — heuristic (chars/3.35), no real BPE
+- `tokenizer.dart` — tiktoken cl100k_base with base64 stripping, chars/3.35 fallback only on error
 
 ### Architecture note
 
