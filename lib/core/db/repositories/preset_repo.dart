@@ -29,6 +29,11 @@ class PresetRepo {
     await (_db.delete(_db.presets)..where((t) => t.presetId.equals(id))).go();
   }
 
+  Future<void> putFromMap(Map<String, dynamic> m) async {
+    final preset = Preset.fromJson(m);
+    await put(preset);
+  }
+
   Preset _toModel(PresetRow c) =>
       Preset.fromJson(jsonDecode(c.dataJson) as Map<String, dynamic>);
 

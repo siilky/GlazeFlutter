@@ -55,6 +55,14 @@ class _CharacterDetailScreenState
           },
         ),
         BottomSheetItem(
+          icon: Icons.photo_library_outlined,
+          label: 'Gallery',
+          onTap: () {
+            Navigator.pop(context);
+            context.go('/character/${widget.charId}/gallery');
+          },
+        ),
+        BottomSheetItem(
           icon: Icons.delete_outline,
           label: 'Delete',
           isDestructive: true,

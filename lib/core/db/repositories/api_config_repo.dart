@@ -27,6 +27,11 @@ class ApiConfigRepo {
     await (_db.delete(_db.apiConfigs)..where((t) => t.configId.equals(id))).go();
   }
 
+  Future<void> putFromMap(Map<String, dynamic> m) async {
+    final config = ApiConfig.fromJson(m);
+    await put(config);
+  }
+
   ApiConfig _toModel(ApiConfigRow c) => ApiConfig(
         id: c.configId,
         name: c.name,

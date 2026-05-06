@@ -31,6 +31,11 @@
 | Phase 13: Theme + Polish | Done | Theme engine (dark/light/system + custom accent), search, crash recovery, onboarding |
 | Phase 14: Character Catalog | Done | 4 providers (JanitorAI/Hampter, DataCat, JannyAI, Chub.ai), search, filters, infinite scroll, preview sheet, import, Import by URL — see below |
 | Phase 14b: Import by URL | Done | DataCat extract-and-poll API, phase tracking, dialog UI |
+| Phase 6: Image Generation | Done | 4 providers (OpenAI, Gemini, Naistera, RoutMy+RU Bridge), [IMG:GEN:...] auto-gen, settings UI, inline rendering |
+| Phase 15: Cloud Sync | Done | Dropbox + GDrive adapters, PKCE OAuth (localhost server for desktop), manifest, push/pull/wipe engine with real DB wiring, conflict resolution UI, auto-sync, gallery sync, flutter_dotenv config |
+| Phase 16: Character Gallery | Done | GalleryEntry model, galleryJson column (DB v8), GalleryService, 3-col GridView, full-screen PageView viewer with swipe+zoom, long-press actions, route /character/:charId/gallery |
+| Phase 17: Backup Export/Import | Done | BackupService (sqlite_master auto-table dump, SharedPreferences, gallery base64), Flutter .glz import (table-level), Glaze JS .glz import (IDB/localStorage mapping), FileExportService, BackupScreen, route /backup, share_plus |
+| Phase 18: Persona Connections | Done | PersonaConnections model (character/chat maps), getEffectivePersona (chat>character>global), PersonaConnectionsSheet UI, connections button on persona tiles, JS migration (gz_persona_connections), backup mapping |
 
 ### UI Refactoring (2025-05-05 → 2025-05-06)
 
@@ -391,17 +396,223 @@ features/image_gen/
     image_gen_sheet.dart
     image_content_renderer.dart
     widgets.dart
+ ```
+
+### Phase 15: Cloud Sync (2026-05-06)
+
+Full cloud sync system with Dropbox and Google Drive support.
+
+**Configuration:**
+- `flutter_dotenv` package — `.env` file packed as asset (same pattern as Vite `.env`)
+- Keys: `DROPBOX_APP_KEY`, `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`, redirects
+- `SyncConfig` singleton — loads from dotenv, provides keys to adapters
+- `.env.example` committed, `.env` gitignored
+
+**OAuth flow (desktop):**
+- `OAuthLocalServer` — spins up `HttpServer` on random port, opens browser, catches redirect callback
+- Returns success/error HTML page to browser
+- 5-minute timeout, auto-cleanup
+- `DropboxAuth.connect()` and `GDriveAuth.connect()` use it on desktop (non-mobile platforms)
+- Mobile platforms: deep-links not yet configured (throws `UnimplementedError`)
+
+**Cloud adapter interface:**
+- `CloudAdapter` — abstract interface: `upload`, `uploadBinary`, `download`, `downloadBinary`, `deleteFile`, `deleteFolder`, `listFolder`, `ensureFolder`, `getAccountInfo`, `invalidateFolderCache`
+- `CloudFileInfo` — path, name, isFolder
+
+**Dropbox adapter:**
+- `DropboxAuth` — OAuth PKCE flow (code_verifier + S256 challenge), token exchange, refresh, revoke
+- `DropboxAdapter` — Dropbox API v2 (upload, download, list_folder, create_folder, delete)
+- App folder prefix stripping (`/Glaze`), folder existence cache, 401 retry logic
+
+**Google Drive adapter:**
+- `GDriveAuth` — OAuth PKCE flow, token exchange with client_secret, refresh, revoke
+- `GDriveFolders` — folder creation/lookup by name, nested path resolution, ID cache
+- `GDriveFiles` — file upload (multipart + resumable for binary), download, delete, ID cache
+- `GDriveAdapter` — orchestrates folders + files, implements CloudAdapter
+
+**Sync models:**
+- `SyncProvider` enum (dropbox, gdrive), `SyncStatus` enum (idle, syncing, error, conflict)
+- `SyncManifestEntry` — type, id, path, updatedAt, hash, deleted, charId, imgId, ext
+- `SyncManifest` — version, deviceId, lastSync, createdAt, entries map
+- Path helpers: `cloudPath(type, id)`, `galleryCloudPath(charId, imgId, ext)`, `entryKey(type, id)`
+
+**Engine components:**
+- `SyncSerialization` — SHA-256 hashing (JSON + binary + data URL), cloud read/write helpers
+- `SyncConflictDetector` — detects local-newer-than-cloud conflicts, provides display names
+- `SyncConflict` — key, type, id, localEntry, cloudEntry, name
+- `SyncQueue` — operation queue with exponential backoff retry (3 attempts), retryable error detection, pause/resume/abort
+- `SyncManifestBuilder` — builds local manifest from DB repos (characters, personas, chats, lorebooks, API presets, theme presets), tracks deletions via SharedPreferences, persists manifest
+
+**Sync engine (`sync_engine.dart`):**
+- Takes all repos + ImageStorageService via constructor
+- `pushEntities()` — uploads changed entries, skips unchanged (hash match), handles deletions, uploads manifest, pushes gallery images
+- `pullEntities()` — downloads cloud entries, detects conflicts, skips unchanged, pulls gallery images
+- `_readLocalEntity(type, id)` — reads from CharacterRepo/PersonaRepo/ChatRepo/LorebookRepo/ApiConfigRepo/PresetRepo
+- `_applyCloudEntity(type, id, data)` — writes to repos (with copyWith for existing entities)
+- `_deleteLocalEntity(type, id)` — deletes from repos
+- `_pushCharacterAvatar` / `_pullCharacterAvatar` — binary avatar upload/download
+- `_pushGalleryImages` / `_pullGalleryImages` — character gallery folder sync
+- `resolveConflict(conflict, choice)` — applies cloud or keeps local
+- `cloudHasData()` / `wipeCloudData()` — cloud state checks
+- `SyncProgress` — current/total/message for UI
+
+**Service facade (`sync_service.dart`):**
+- Provider switching (Dropbox/GDrive), connect/disconnect
+- `fullPush()`, `fullPull()`, `fullSync()` — with progress callbacks
+- Auto-sync: message counter, configurable threshold (default 5 messages)
+- Token persistence via SharedPreferences (JSON blob)
+- Account info retrieval
+
+**State management:**
+- `syncServiceProvider` (FutureProvider) — initializes service with DB repos
+- State providers: `syncStatusProvider`, `syncProviderProvider`, `syncConnectedProvider`, `syncAutoEnabledProvider`, `syncConflictsProvider`, `syncProgressProvider`, `syncLastErrorProvider`
+
+**UI:**
+- `SyncSheet` — full-screen sync settings: provider selector (Dropbox/GDrive), connect/disconnect button, push/pull/full sync actions, progress bar, error card, conflict list (Keep Local / Use Cloud), auto-sync toggle
+- Route `/sync`, menu Cloud Sync item wired
+- Dark theme consistent with app
+
+**Directory structure:**
+```
+features/cloud_sync/
+  sync_config.dart
+  sync_models.dart
+  cloud_adapter.dart
+  sync_provider.dart
+  services/
+    sync_serialization.dart
+    sync_conflict.dart
+    sync_queue.dart
+    sync_manifest.dart
+    sync_engine.dart
+    sync_service.dart
+    dropbox/
+      dropbox_auth.dart
+      dropbox_adapter.dart
+    gdrive/
+      gdrive_auth.dart
+      gdrive_files.dart
+      gdrive_folders.dart
+      gdrive_adapter.dart
+  widgets/
+    sync_sheet.dart
 ```
 
-### Remaining phases (in priority order)
+**Not yet implemented:**
+- Deep-links for mobile OAuth (desktop uses localhost server)
+- Entity read/write for `chat` type (session reconstruction from cloud needs ChatMessage deserialization)
+
+### Phase 16: Character Gallery (2026-05-06)
+
+Per-character image gallery with viewer and management.
+
+**Data layer:**
+- `GalleryEntry` (Freezed) — id, imagePath, addedAt, label
+- `galleryJson` TEXT column added to `Characters` Drift table (schema v8 migration)
+- `Character` model extended with `gallery` field (List<GalleryEntry>), parsed from `galleryJson`
+- `GalleryService` — addEntry, deleteEntry, setAsAvatar, loadGallery
+
+**UI:**
+- `GalleryScreen` — 3-column GridView with card thumbnails, FAB to add from picker
+- Full-screen `PageView` viewer with swipe navigation and pinch-to-zoom (InteractiveViewer)
+- Long-press bottom sheet: "Set as Avatar" / "Delete"
+- Route `/character/:charId/gallery`, gallery button on CharacterDetailScreen
+
+**Directory structure:**
+```
+features/character_gallery/
+  gallery_screen.dart
+  gallery_provider.dart
+core/
+  models/
+    gallery_entry.dart
+  services/
+    gallery_service.dart
+```
+
+### Phase 17: Backup Export/Import (2026-05-06)
+
+Full backup and restore system with Glaze JS compatibility.
+
+**BackupService (`backup_service.dart`):**
+- `exportBackup()` — queries `sqlite_master` for all user tables (auto-includes new features without code changes), dumps each table as row arrays, bundles SharedPreferences, encodes gallery images as base64, writes JSON `.glz`
+- `_importFlutterBackup()` — table-level restore with `PRAGMA foreign_keys = OFF`, DELETE + INSERT OR REPLACE per table, restores gallery images from base64, restores SharedPreferences
+- `_importGlazeJsBackup()` — maps Glaze JS data to Flutter schema:
+  - `characters` array → CharacterRepo
+  - `personas` array → PersonaRepo
+  - `keyvalue` entries: `gz_chat_*` → ChatRepo, `gz_lorebooks` → LorebookRepo, `gz_api_connection_presets` → ApiConfigRepo, `gz_theme_presets` → PresetRepo
+  - `localStorage` → SharedPreferences
+- `_extractTables()` — dynamic table discovery via `sqlite_master`, no hardcoded table list
+
+**FileExportService (`file_export_service.dart`):**
+- Android → `Download/Glaze/{subfolder}/` via `Directory` direct write
+- macOS → `~/Downloads/Glaze/{subfolder}/`
+- Other platforms → `Share.shareXFiles()` from `share_plus`
+
+**UI:**
+- `BackupScreen` — export button (with filename prefix field), import button with file picker, confirmation dialogs, progress indicator
+- Route `/backup`, menu Backups button now navigates (was "coming soon")
+
+**Directory structure:**
+```
+features/backup/
+  backup_screen.dart
+  backup_provider.dart
+core/
+  services/
+    backup_service.dart
+    file_export_service.dart
+```
+
+### Phase 18: Persona Connections (2026-05-06)
+
+Per-character and per-chat persona bindings with priority resolution.
+
+**Data model:**
+- `PersonaConnections` (Freezed) — `Map<String, String> character` (charId -> personaId), `Map<String, String> chat` (sessionId -> personaId)
+- Stored in SharedPreferences as JSON under key `personaConnections`
+- Follows `LorebookActivations` pattern but `Map<String, String>` (one persona per target) instead of `Map<String, List<String>>`
+
+**Resolution logic (`getEffectivePersona`):**
+- Priority: chat binding > character binding > global active persona
+- Used in `chat_generation_service.dart` (2 call sites), `chat_provider.dart`, `chat_dialogs.dart`, `tokenizer_sheet.dart`
+- Replaces previous global-only resolution (was: read `activePersonaIdProvider` directly)
+
+**State management:**
+- `personaConnectionsProvider` — StateProvider<PersonaConnections> with SharedPreferences persistence
+- `setPersonaConnection(ref, type, targetId, personaId)` — bind/unbind (null removes)
+- `setPersonaConnectionRef(ref, type, targetId, personaId)` — same for Ref (non-Widget)
+- Loaded at startup in `loadActiveSelections()`
+
+**UI:**
+- `PersonaConnectionsSheet` — bottom sheet: Global toggle (set as active), Characters chips, Chats chips
+- Follows `lorebook_connections_sheet.dart` template
+- Connection button (link icon) added to each persona tile in `PersonaListScreen`
+
+**Migration/Backup:**
+- `migration_service.dart` — imports `gz_persona_connections` from JS localStorage
+- `backup_service.dart` — maps `gz_persona_connections` to `personaConnections` key on JS backup restore
+
+**Directory structure:**
+```
+features/personas/
+  persona_list_screen.dart
+  persona_connections_sheet.dart
+core/
+  models/
+    persona.dart  (Persona + PersonaConnections)
+  state/
+    active_selection_provider.dart  (personaConnectionsProvider, getEffectivePersona, setPersonaConnection)
+```
 
 | Phase | Priority | What's Missing |
 |-------|----------|----------------|
-| Cloud Sync | Medium | Dropbox + GDrive adapters, manifest, engine, conflict resolution UI (no encryption for now) |
-| Backup Export/Import | Medium | .glz backup export, ST backup ZIP import, backup/restore UI in menu |
-| Character Gallery | Medium | Per-character image gallery, add/delete, full-screen viewer, sync support |
-| Persona Connections | Medium | Per-character and per-chat persona bindings (currently global only) |
-| Memory Coverage/Preview | Medium | Coverage analysis (which memories activate), prompt template editor, prompt preview, text preview |
+| Cloud Sync | ~~Medium~~ **DONE** | ~~Dropbox + GDrive adapters, manifest, engine, conflict resolution UI~~ Implemented |
+| Backup Export/Import | ~~Medium~~ **DONE** | ~~.glz backup export, ST backup ZIP import, backup/restore UI~~ Implemented |
+| Character Gallery | ~~Medium~~ **DONE** | ~~Per-character image gallery, add/delete, full-screen viewer~~ Implemented |
+| Persona Connections | ~~Medium~~ **DONE** | ~~Per-character and per-chat persona bindings~~ Implemented |
+| Memory Coverage/Preview | ~~Medium~~ **DONE** | ~~Coverage analysis, prompt preview~~ Implemented: `lorebook_coverage.dart` + `lorebook_coverage_sheet.dart` + `prompt_preview_screen.dart` |
+| Cloud Sync: Deep-links mobile | Low | Android/iOS deep-link config for Dropbox/GDrive OAuth |
 | Glossary / Help | Low | Categorized help articles, inline HelpTip components |
 | Stats Dashboard | Low | Per-chat/char/global stats (tokens, messages, time) |
 | Notifications | Low | In-app notification center + native push for background gen |
@@ -413,8 +624,7 @@ features/image_gen/
 ### Known stubs in current codebase
 
 - `chat_screen.dart` → `input_bar.dart` — 2 input bar buttons (fullscreen, auto) are decorative
-- `menu_screen.dart` — Cloud Sync, Backups "coming soon"
-- `tokenizer.dart` — heuristic (chars/3.35), no real BPE
+- `tokenizer.dart` — tiktoken cl100k_base with base64 stripping, chars/3.35 fallback only on error
 
 ### Architecture note
 

@@ -50,16 +50,12 @@ class MenuScreen extends ConsumerWidget {
                     MenuItem(
                       icon: Icons.backup_outlined,
                       label: 'Backups',
-                      onTap: () {
-                        GlazeToast.show(context, 'Backups coming soon');
-                      },
+                      onTap: () => context.go('/backup'),
                     ),
                     MenuItem(
                       icon: Icons.sync_rounded,
                       label: 'Cloud Sync',
-                      onTap: () {
-                        GlazeToast.show(context, 'Cloud sync coming soon');
-                      },
+                      onTap: () => context.go('/sync'),
                     ),
                   ],
                 ),

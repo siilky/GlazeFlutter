@@ -1,0 +1,74 @@
+import 'dart:math';
+
+class SyncQueue {
+  static const _maxRetries = 3;
+  static const _baseDelayMs = 1000;
+  static const _maxDelayMs = 30000;
+
+  int _pendingCount = 0;
+  bool _isPaused = false;
+  bool _isAborted = false;
+
+  int get pendingCount => _pendingCount;
+
+  Future<T> enqueue<T>(Future<T> Function() operation, {String? label}) async {
+    while (_isPaused) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    if (_isAborted) throw Exception('Sync queue aborted');
+
+    _pendingCount++;
+    try {
+      return await _retryWithBackoff(operation, label);
+    } finally {
+      _pendingCount--;
+    }
+  }
+
+  Future<T> _retryWithBackoff<T>(
+    Future<T> Function() operation,
+    String? label,
+  ) async {
+    var attempt = 0;
+    while (true) {
+      try {
+        if (_isAborted) throw Exception('Sync queue aborted');
+        return await operation();
+      } catch (e) {
+        attempt++;
+        if (attempt >= _maxRetries || !_isRetryableError(e)) {
+          rethrow;
+        }
+        final delay = _calculateDelay(attempt);
+        await Future.delayed(Duration(milliseconds: delay));
+      }
+    }
+  }
+
+  int _calculateDelay(int attempt) {
+    final exponential = _baseDelayMs * (1 << (attempt - 1));
+    final capped = exponential.clamp(0, _maxDelayMs);
+    final jitter = Random().nextInt(1000) - 500;
+    return (capped + jitter).clamp(0, _maxDelayMs);
+  }
+
+  bool _isRetryableError(dynamic e) {
+    final msg = e.toString();
+    if (msg.contains('429')) return true;
+    if (msg.contains('5') && RegExp(r'5\d\d').hasMatch(msg)) return true;
+    if (msg.contains('SocketException') || msg.contains('TimeoutException')) return true;
+    if (msg.contains('Sync queue aborted')) return false;
+    if (msg.contains('4') && RegExp(r'4\d\d').hasMatch(msg)) return false;
+    return false;
+  }
+
+  void pause() => _isPaused = true;
+  void resume() => _isPaused = false;
+  void abort() => _isAborted = true;
+  void reset() {
+    _isPaused = false;
+    _isAborted = false;
+    _pendingCount = 0;
+  }
+}

@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 
 import '../app_db.dart';
 import '../../models/character.dart';
+import '../../models/gallery_entry.dart';
 
 class CharacterRepo {
   final AppDatabase _db;
@@ -101,6 +102,11 @@ class CharacterRepo {
         alternateGreetings: c.alternateGreetingsJson != null
             ? List<String>.from(jsonDecode(c.alternateGreetingsJson!))
             : [],
+        gallery: c.galleryJson != null
+            ? (jsonDecode(c.galleryJson!) as List)
+                .map((e) => GalleryEntry.fromJson(e as Map<String, dynamic>))
+                .toList()
+            : [],
       );
 
   CharactersCompanion _toCompanion(Character m) => CharactersCompanion(
@@ -120,5 +126,6 @@ class CharacterRepo {
         updatedAt: Value(m.updatedAt),
         tagsJson: Value(jsonEncode(m.tags)),
         alternateGreetingsJson: Value(jsonEncode(m.alternateGreetings)),
+        galleryJson: Value(jsonEncode(m.gallery.map((e) => e.toJson()).toList())),
       );
 }

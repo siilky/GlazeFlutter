@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
+import '../../features/cloud_sync/services/sync_deletion_tracker.dart';
 import 'db_provider.dart';
 
 final charactersProvider =
@@ -41,5 +42,6 @@ class CharactersNotifier extends AsyncNotifier<List<Character>> {
   Future<void> remove(String id) async {
     final repo = ref.read(characterRepoProvider);
     await repo.delete(id);
+    await SyncDeletionTracker.record('character', id);
   }
 }

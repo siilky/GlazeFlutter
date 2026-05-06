@@ -29,6 +29,11 @@ class LorebookRepo {
     await (_db.delete(_db.lorebooks)..where((t) => t.lorebookId.equals(id))).go();
   }
 
+  Future<void> putFromJson(Map<String, dynamic> json) async {
+    final lorebook = Lorebook.fromJson(json);
+    await put(lorebook);
+  }
+
   Future<void> createEntryFromCatalog({
     required String characterId,
     required List<String> keys,

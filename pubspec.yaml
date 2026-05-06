@@ -29,6 +29,8 @@ dependencies:
   flutter_svg: ^2.0.16
   tiktoken: ^1.0.3
   cached_network_image: ^3.4.1
+  flutter_dotenv: ^5.2.1
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:
@@ -43,6 +45,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logos/
+    - .env
 
 dependency_overrides:
   path_provider: 2.1.5

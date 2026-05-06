@@ -9,6 +9,8 @@ import 'core/services/onboarding_service.dart';
 import 'features/character_list/character_detail_screen.dart';
 import 'features/character_list/character_editor_screen.dart';
 import 'features/character_list/character_list_screen.dart';
+import 'features/character_gallery/gallery_screen.dart';
+import 'features/backup/backup_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/chat_history/chat_history_screen.dart';
 import 'features/lorebooks/lorebook_list_screen.dart';
@@ -18,6 +20,7 @@ import 'features/personas/persona_list_screen.dart';
 import 'features/presets/preset_list_screen.dart';
 import 'features/regex/regex_list_screen.dart';
 import 'features/settings/api_settings_screen.dart';
+import 'features/cloud_sync/widgets/sync_sheet.dart';
 import 'features/settings/app_settings_screen.dart';
 import 'features/tools/tools_screen.dart';
 import 'shared/shell/shell_screen.dart';
@@ -103,10 +106,17 @@ final routerProvider = Provider<GoRouter>(
             builder: (_, state) =>
                 CharacterEditorScreen(charId: state.pathParameters['charId']!),
           ),
+          GoRoute(
+            path: 'gallery',
+            builder: (_, state) =>
+                GalleryScreen(charId: state.pathParameters['charId']!),
+          ),
         ],
       ),
 
       GoRoute(path: '/settings', builder: (_, __) => const AppSettingsScreen()),
+      GoRoute(path: '/sync', builder: (_, __) => const SyncSheet()),
+      GoRoute(path: '/backup', builder: (_, __) => const BackupScreen()),
     ],
   ),
 );
