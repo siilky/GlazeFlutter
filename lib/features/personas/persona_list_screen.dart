@@ -10,6 +10,7 @@ import '../../core/state/db_provider.dart';
 import '../cloud_sync/services/sync_deletion_tracker.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
+import 'persona_connections_sheet.dart';
 
 final personaListProvider =
     AsyncNotifierProvider<PersonaListNotifier, List<Persona>>(
@@ -104,21 +105,31 @@ class _PersonaTile extends ConsumerWidget {
       subtitle: persona.prompt != null && persona.prompt!.isNotEmpty
           ? Text(persona.prompt!, maxLines: 1, overflow: TextOverflow.ellipsis)
           : null,
-      trailing: PopupMenuButton<String>(
-        onSelected: (value) {
-          if (value == 'edit') {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => _PersonaEditorScreen(existing: persona),
-              ),
-            );
-          } else if (value == 'delete') {
-            ref.read(personaListProvider.notifier).remove(persona.id);
-          }
-        },
-        itemBuilder: (_) => [
-          const PopupMenuItem(value: 'edit', child: Text('Edit')),
-          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.link, size: 18),
+            tooltip: 'Connections',
+            onPressed: () => showPersonaConnections(context, persona.id),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'edit') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => _PersonaEditorScreen(existing: persona),
+                  ),
+                );
+              } else if (value == 'delete') {
+                ref.read(personaListProvider.notifier).remove(persona.id);
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'edit', child: Text('Edit')),
+              const PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
         ],
       ),
     );
