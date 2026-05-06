@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'gallery_entry.dart';
+
 part 'character.freezed.dart';
 part 'character.g.dart';
 
@@ -22,6 +24,7 @@ class Character with _$Character {
     @Default([]) List<String> alternateGreetings,
     String? color,
     @Default(0) int updatedAt,
+    @Default([]) List<GalleryEntry> gallery,
   }) = _Character;
 
   factory Character.fromJson(Map<String, dynamic> json) =>
