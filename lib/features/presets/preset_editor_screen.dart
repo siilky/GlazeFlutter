@@ -6,7 +6,6 @@ import '../../../core/services/preset_defaults.dart';
 import '../../../core/state/db_provider.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
 import 'preset_list_provider.dart';
-import 'preset_list_screen.dart';
 import 'widgets/widgets.dart';
 
 class PresetEditorScreen extends ConsumerStatefulWidget {
