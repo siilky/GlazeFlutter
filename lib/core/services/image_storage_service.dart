@@ -55,6 +55,27 @@ class ImageStorageService {
     if (await thumbFile.exists()) await thumbFile.delete();
   }
 
+  Future<String> saveBytes(
+    Uint8List bytes,
+    String subfolder,
+    String filename,
+    String ext,
+  ) async {
+    final dir = Directory(p.join(baseDir, subfolder));
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final path = p.join(dir.path, '$filename.$ext');
+    await File(path).writeAsBytes(bytes);
+    return path;
+  }
+
+  String? absolutePath(String? relativePath) {
+    if (relativePath == null) return null;
+    if (File(relativePath).isAbsolute) return relativePath;
+    return p.join(baseDir, relativePath);
+  }
+
   Uint8List? _dataUrlToBytes(String dataUrl) {
     final commaIndex = dataUrl.indexOf(',');
     if (commaIndex == -1) return null;

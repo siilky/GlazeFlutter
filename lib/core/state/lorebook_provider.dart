@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/repositories/lorebook_repo.dart';
 import '../models/lorebook.dart';
+import '../../features/cloud_sync/services/sync_deletion_tracker.dart';
 import 'db_provider.dart';
 
 final lorebooksProvider = AsyncNotifierProvider<LorebooksNotifier, List<Lorebook>>(
@@ -49,6 +50,7 @@ class LorebooksNotifier extends AsyncNotifier<List<Lorebook>> {
   Future<void> deleteLorebook(String id) async {
     final repo = ref.read(lorebookRepoProvider);
     await repo.delete(id);
+    await SyncDeletionTracker.record('lorebooks', id);
     ref.invalidateSelf();
   }
 }

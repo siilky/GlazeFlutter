@@ -1,0 +1,228 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+
+import '../../cloud_adapter.dart';
+import 'dropbox_auth.dart';
+
+class DropboxAdapter implements CloudAdapter {
+  static const _apiBase = 'https://api.dropboxapi.com/2';
+  static const _contentBase = 'https://content.dropboxapi.com/2';
+  static const _appFolderPrefix = '/Glaze';
+
+  final DropboxAuth _auth;
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 120),
+  ));
+
+  final Set<String> _ensuredFolders = {};
+
+  DropboxAdapter(this._auth);
+
+  String _stripPrefix(String path) {
+    if (path.startsWith(_appFolderPrefix)) {
+      return path.substring(_appFolderPrefix.length);
+    }
+    return path;
+  }
+
+  Future<Map<String, String>> _headers() async {
+    final token = await _auth.getValidToken();
+    return {'Authorization': 'Bearer $token'};
+  }
+
+  Future<T> _apiCall<T>(
+    String endpoint,
+    Map<String, dynamic> body, {
+    T Function(Map<String, dynamic>)? fromJson,
+  }) async {
+    final headers = await _headers();
+    headers['Content-Type'] = 'application/json';
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$_apiBase$endpoint',
+      data: jsonEncode(body),
+      options: Options(headers: headers),
+    );
+    if (fromJson != null && response.data != null) {
+      return fromJson(response.data!);
+    }
+    return response.data as T;
+  }
+
+  Future<T> _retryOn401<T>(Future<T> Function() fn) async {
+    try {
+      return await fn();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        await _auth.getValidToken();
+        return await fn();
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> isConnected() => _auth.isConnected ? Future.value(true) : Future.value(false);
+
+  @override
+  Future<void> ensureFolder(String path) async {
+    final stripped = _stripPrefix(path);
+    if (_ensuredFolders.contains(stripped)) return;
+
+    final parts = stripped.split('/').where((s) => s.isNotEmpty).toList();
+    var current = '';
+    for (final part in parts) {
+      current += '/$part';
+      if (_ensuredFolders.contains(current)) continue;
+      try {
+        await _retryOn401(() => _apiCall<dynamic>(
+              '/files/create_folder_v2',
+              {'path': current},
+            ));
+      } on DioException catch (e) {
+        if (e.response?.statusCode != 409) rethrow;
+      }
+      _ensuredFolders.add(current);
+    }
+  }
+
+  @override
+  Future<void> upload(String path, String data) async {
+    await _retryOn401(() async {
+      final headers = await _headers();
+      headers['Content-Type'] = 'application/octet-stream';
+      headers['Dropbox-API-Arg'] = jsonEncode({
+        'path': _stripPrefix(path),
+        'mode': 'overwrite',
+        'autorename': false,
+        'mute': true,
+      });
+      await _dio.post(
+        '$_contentBase/files/upload',
+        data: data,
+        options: Options(headers: headers),
+      );
+    });
+  }
+
+  @override
+  Future<void> uploadBinary(String path, Uint8List data) async {
+    await _retryOn401(() async {
+      final headers = await _headers();
+      headers['Content-Type'] = 'application/octet-stream';
+      headers['Dropbox-API-Arg'] = jsonEncode({
+        'path': _stripPrefix(path),
+        'mode': 'overwrite',
+        'autorename': false,
+        'mute': true,
+      });
+      await _dio.post(
+        '$_contentBase/files/upload',
+        data: Stream.fromIterable([data]),
+        options: Options(headers: headers, contentType: 'application/octet-stream'),
+      );
+    });
+  }
+
+  @override
+  Future<String> download(String path) async {
+    return _retryOn401(() async {
+      final headers = await _headers();
+      headers['Dropbox-API-Arg'] = jsonEncode({'path': _stripPrefix(path)});
+      final response = await _dio.post<String>(
+        '$_contentBase/files/download',
+        options: Options(headers: headers, responseType: ResponseType.plain),
+      );
+      return response.data ?? '';
+    });
+  }
+
+  @override
+  Future<Uint8List> downloadBinary(String path) async {
+    return _retryOn401(() async {
+      final headers = await _headers();
+      headers['Dropbox-API-Arg'] = jsonEncode({'path': _stripPrefix(path)});
+      final response = await _dio.post<List<int>>(
+        '$_contentBase/files/download',
+        options: Options(headers: headers, responseType: ResponseType.bytes),
+      );
+      return Uint8List.fromList(response.data ?? []);
+    });
+  }
+
+  @override
+  Future<void> deleteFile(String path) async {
+    await _retryOn401(() => _apiCall<dynamic>(
+          '/files/delete_v2',
+          {'path': _stripPrefix(path)},
+        ));
+  }
+
+  @override
+  Future<void> deleteFolder(String path) async {
+    await _retryOn401(() => _apiCall<dynamic>(
+          '/files/delete_v2',
+          {'path': _stripPrefix(path)},
+        ));
+    _ensuredFolders.remove(_stripPrefix(path));
+  }
+
+  @override
+  Future<List<CloudFileInfo>> listFolder(String path) async {
+    return _retryOn401(() async {
+      final result = <CloudFileInfo>[];
+      var response = await _apiCall<Map<String, dynamic>>(
+        '/files/list_folder',
+        {'path': _stripPrefix(path), 'recursive': true},
+      );
+      result.addAll(_parseEntries(response['entries'] as List? ?? []));
+
+      var hasMore = response['has_more'] as bool? ?? false;
+      while (hasMore) {
+        response = await _apiCall<Map<String, dynamic>>(
+          '/files/list_folder/continue',
+          {'cursor': response['cursor']},
+        );
+        result.addAll(_parseEntries(response['entries'] as List? ?? []));
+        hasMore = response['has_more'] as bool? ?? false;
+      }
+      return result;
+    });
+  }
+
+  List<CloudFileInfo> _parseEntries(List entries) {
+    return entries
+        .whereType<Map<String, dynamic>>()
+        .map((e) => CloudFileInfo(
+              path: e['path_display'] as String? ?? '',
+              name: e['name'] as String? ?? '',
+              isFolder: e['.tag'] == 'folder',
+            ))
+        .toList();
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getAccountInfo() async {
+    try {
+      final result = await _apiCall<Map<String, dynamic>>(
+        '/users/get_current_account',
+        {},
+      );
+      return {
+        'name': result['name']?['display_name'],
+        'email': result['email'],
+        'account_id': result['account_id'],
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> invalidateFolderCache() {
+    _ensuredFolders.clear();
+    return Future.value();
+  }
+}

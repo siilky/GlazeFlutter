@@ -35,9 +35,7 @@ class MenuScreen extends ConsumerWidget {
                   MenuItem(icon: Icons.backup_outlined, label: 'Backups', onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backups coming soon')));
                   }),
-                  MenuItem(icon: Icons.sync_rounded, label: 'Cloud Sync', onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cloud sync coming soon')));
-                  }),
+                  MenuItem(icon: Icons.sync_rounded, label: 'Cloud Sync', onTap: () => context.go('/sync')),
                 ]),
                 MenuGroup(header: 'Info', items: [
                   MenuItem(icon: Icons.info_outline_rounded, label: 'About', onTap: () => showGlazeAbout(context)),

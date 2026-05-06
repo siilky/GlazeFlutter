@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/preset.dart';
 import '../../core/state/db_provider.dart';
+import '../cloud_sync/services/sync_deletion_tracker.dart';
 
 final presetListProvider =
     AsyncNotifierProvider<PresetListNotifier, List<Preset>>(
@@ -21,6 +22,7 @@ class PresetListNotifier extends AsyncNotifier<List<Preset>> {
 
   Future<void> remove(String id) async {
     await ref.read(presetRepoProvider).delete(id);
+    await SyncDeletionTracker.record('theme_presets', id);
     ref.invalidateSelf();
   }
 }

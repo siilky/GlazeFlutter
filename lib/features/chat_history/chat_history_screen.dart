@@ -9,6 +9,7 @@ import '../../core/models/chat_message.dart';
 import '../../core/db/repositories/chat_repo.dart' show SessionMetadata;
 import '../../core/db/repositories/character_repo.dart' show CharacterRepo;
 import '../../core/state/db_provider.dart';
+import '../cloud_sync/services/sync_deletion_tracker.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 
@@ -68,6 +69,7 @@ class ChatHistoryNotifier extends AsyncNotifier<List<ChatSessionInfo>> {
 
   Future<void> deleteSession(String sessionId) async {
     await ref.read(chatRepoProvider).delete(sessionId);
+    await SyncDeletionTracker.record('chat', sessionId);
   }
 
   Future<void> clearChat(String sessionId) async {

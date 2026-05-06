@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/persona.dart';
 import '../../core/state/db_provider.dart';
+import '../cloud_sync/services/sync_deletion_tracker.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 
@@ -28,6 +29,7 @@ class PersonaListNotifier extends AsyncNotifier<List<Persona>> {
 
   Future<void> remove(String id) async {
     await ref.read(personaRepoProvider).delete(id);
+    await SyncDeletionTracker.record('persona', id);
     ref.invalidateSelf();
   }
 }
