@@ -42,6 +42,8 @@ class _TokenizerSheetState extends ConsumerState<TokenizerSheet> {
   TokenBreakdown? _breakdown;
   int? _contextSize;
   bool _loading = false;
+  int _visibleCount = 0;
+  int _hiddenCount = 0;
 
   @override
   void initState() {
@@ -80,6 +82,9 @@ class _TokenizerSheetState extends ConsumerState<TokenizerSheet> {
       final chatState = ref.read(chatProvider(widget.charId)).value;
       final session = chatState?.session;
       if (session == null) { setState(() => _loading = false); return; }
+
+      _visibleCount = session.messages.where((m) => !m.isHidden).length;
+      _hiddenCount = session.messages.where((m) => m.isHidden).length;
 
       final payload = PromptPayload(
         character: character,
@@ -149,6 +154,8 @@ class _TokenizerSheetState extends ConsumerState<TokenizerSheet> {
                             _NearLimitWarning(historyFill: historyFill),
                           ],
                           const SizedBox(height: 16),
+                          _ActionButtons(charId: widget.charId, visibleCount: _visibleCount, hiddenCount: _hiddenCount, onRefresh: _calculate),
+                          const SizedBox(height: 8),
                           OutlinedButton.icon(
                             onPressed: _calculate,
                             icon: const Icon(Icons.refresh, size: 16),
@@ -441,6 +448,84 @@ class _BreakdownRows extends StatelessWidget {
               '~${breakdown.totalTokens} tok',
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accent),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionButtons extends ConsumerWidget {
+  final String charId;
+  final int visibleCount;
+  final int hiddenCount;
+  final VoidCallback onRefresh;
+
+  const _ActionButtons({
+    required this.charId,
+    required this.visibleCount,
+    required this.hiddenCount,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hideCount = (visibleCount * 0.3).ceil().clamp(1, visibleCount > 1 ? visibleCount - 1 : 0);
+
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: hideCount > 0
+                ? () => _confirmHide(context, ref, hideCount)
+                : null,
+            icon: const Icon(Icons.visibility_off, size: 16),
+            label: Text('Hide top $hideCount'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF2980b9),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ),
+        ),
+        if (hiddenCount > 0) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await ref.read(chatProvider(charId).notifier).unhideAllMessages();
+                if (context.mounted) onRefresh();
+              },
+              icon: const Icon(Icons.visibility, size: 16),
+              label: Text('Unhide all ($hiddenCount)'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.accent,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _confirmHide(BuildContext context, WidgetRef ref, int count) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hide Messages'),
+        content: Text('Hide the top $count visible message${count > 1 ? 's' : ''} from prompt? They will still be visible in chat (dimmed) but excluded from generation.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await ref.read(chatProvider(charId).notifier).hideTopMessages(count);
+              onRefresh();
+            },
+            child: Text('Hide $count'),
           ),
         ],
       ),

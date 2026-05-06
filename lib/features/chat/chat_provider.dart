@@ -188,6 +188,31 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     state = AsyncData(ChatState(session: newSession));
   }
 
+  Future<void> hideTopMessages(int count) async {
+    final current = state.value;
+    if (current == null || current.session == null) return;
+
+    final visibleIndices = <int>[];
+    for (int i = 0; i < current.messages.length; i++) {
+      if (!current.messages[i].isHidden) visibleIndices.add(i);
+    }
+
+    final toHide = visibleIndices.take(count).toList();
+    if (toHide.isEmpty) return;
+
+    final newMessages = List<ChatMessage>.from(current.messages);
+    for (final idx in toHide) {
+      newMessages[idx] = newMessages[idx].copyWith(isHidden: true);
+    }
+
+    final newSession = current.session!.copyWith(
+      messages: newMessages,
+      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
+    await ref.read(chatRepoProvider).put(newSession);
+    state = AsyncData(ChatState(session: newSession));
+  }
+
   Future<void> branchSession(int index) async {
     final current = state.value;
     if (current == null || current.session == null) return;

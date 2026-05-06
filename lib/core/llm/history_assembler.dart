@@ -15,6 +15,7 @@ class HistoryAssembler {
 
     for (int i = 0; i < history.length; i++) {
       final msg = history[i];
+      if (msg.isHidden) continue;
       final macroResult = replaceMacros(msg.content, macroCtx);
       messages.add(PromptMessage(
         role: msg.role,
