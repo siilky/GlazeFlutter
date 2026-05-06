@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -14,11 +15,23 @@ class CharacterRepo {
     return rows.map(_toModel).toList();
   }
 
+  Stream<List<Character>> watchAll() {
+    return _db.select(_db.characters).watch().map((rows) => rows.map(_toModel).toList());
+  }
+
   Future<Character?> getById(String id) async {
     final row = await (_db.select(_db.characters)
           ..where((t) => t.charId.equals(id)))
         .getSingleOrNull();
     return row != null ? _toModel(row) : null;
+  }
+
+  Future<Map<String, Character>> getByIds(Set<String> ids) async {
+    if (ids.isEmpty) return {};
+    final rows = await (_db.select(_db.characters)
+          ..where((t) => t.charId.isIn(ids.toList())))
+        .get();
+    return {for (final r in rows) r.charId: _toModel(r)};
   }
 
   Future<void> put(Character character) async {

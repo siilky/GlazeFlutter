@@ -5,6 +5,7 @@ import '../../core/models/chat_message.dart';
 import '../../core/models/persona.dart';
 import '../../core/state/active_selection_provider.dart';
 import '../../core/state/db_provider.dart';
+import '../chat_history/chat_history_screen.dart' show chatHistoryProvider;
 import 'chat_generation_service.dart';
 import 'chat_state.dart';
 import 'initial_message_builder.dart';
@@ -65,6 +66,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     );
 
     await ref.read(chatRepoProvider).put(updatedSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: updatedSession, isGenerating: true));
 
     final service = ChatGenerationService(ref);
@@ -107,6 +109,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(trimmedSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: trimmedSession, isGenerating: true));
 
     final service = ChatGenerationService(ref);
@@ -149,6 +152,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
 
     final clearedSession = current.session!.copyWith(messages: initialMessages);
     await ref.read(chatRepoProvider).put(clearedSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: clearedSession));
   }
 
@@ -167,6 +171,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -181,6 +186,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -197,6 +203,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -217,6 +224,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -242,6 +250,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -266,6 +275,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -306,6 +316,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     );
 
     await repo.put(newSession);
+    _invalidateHistory();
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -319,6 +330,8 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   }
 
   String _generateId() => DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+
+  void _invalidateHistory() => ref.invalidate(chatHistoryProvider);
 
   void abortGeneration() {
     _cancelToken?.cancel();
@@ -339,6 +352,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final finalSession = current.session!.copyWith(messages: finalMessages, updatedAt: now);
       ref.read(chatRepoProvider).put(finalSession);
+      _invalidateHistory();
       state = AsyncData(ChatState(session: finalSession));
     } else {
       state = AsyncData(current.copyWith(isGenerating: false));
