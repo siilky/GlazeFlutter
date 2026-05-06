@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/llm/lorebook_vector_search.dart';
+import '../../core/llm/memory_injection_service.dart';
 import '../../core/llm/prompt_builder.dart';
 import '../../core/llm/prompt_isolate.dart';
 import '../../core/llm/sse_client.dart';
 import '../../core/llm/stream_accumulator.dart';
+import '../../core/llm/summary_service.dart';
 import '../../core/models/chat_message.dart';
 import '../../core/models/lorebook.dart';
 import '../../core/state/active_selection_provider.dart';
@@ -25,6 +27,12 @@ class ChatGenerationService {
     required String charId,
     required ChatState currentState,
     required void Function(ChatState) onStateUpdate,
+    List<String>? previousSwipes,
+    int previousSwipeId = 0,
+    String? previousReasoning,
+    String? previousGenTime,
+    int? previousTokens,
+    String? guidanceText,
   }) async {
     try {
       final charRepo = _ref.read(characterRepoProvider);
@@ -61,6 +69,21 @@ class ChatGenerationService {
         session.messages.lastOrNull?.content ?? '',
       );
 
+      final summaryService = _ref.read(summaryServiceProvider);
+      final summaryContent = await summaryService.getSummary(session.id);
+
+      final memoryService = _ref.read(memoryInjectionServiceProvider);
+      final historyText = session.messages
+          .where((m) => m.role == 'user' || m.role == 'assistant')
+          .map((m) => m.content)
+          .join('\n');
+      final memoryResult = await memoryService.buildInjection(
+        sessionId: session.id,
+        historyText: historyText,
+        messageCount: session.messages.length,
+        summaryExcerpt: summaryContent,
+      );
+
       final payload = PromptPayload(
         character: character,
         persona: persona,
@@ -73,6 +96,10 @@ class ChatGenerationService {
         lorebookSettings: _ref.read(lorebookSettingsProvider),
         lorebookActivations: _ref.read(lorebookActivationsProvider),
         vectorEntries: vectorEntries,
+        summaryContent: summaryContent,
+        memoryContent: memoryResult.content.isNotEmpty ? memoryResult.content : null,
+        memoryInjectionTarget: memoryResult.injectionTarget,
+        guidanceText: guidanceText,
       );
 
       debugPrint('CHAT: building prompt for "${character.name}", history=${session.messages.length}, preset=${preset?.name ?? "none"}');
@@ -140,6 +167,12 @@ class ChatGenerationService {
             text, reasoning, session,
             pendingSessionVars: pendingSessionVars,
             genTime: timeStr, tokens: tokenCount,
+            rawResponse: text,
+            previousSwipes: previousSwipes,
+            previousSwipeId: previousSwipeId,
+            previousReasoning: previousReasoning,
+            previousGenTime: previousGenTime,
+            previousTokens: previousTokens,
           );
         },
         onError: (error) {
@@ -165,7 +198,24 @@ class ChatGenerationService {
     Map<String, String>? pendingSessionVars,
     String? genTime,
     int? tokens,
+    String? rawResponse,
+    List<String>? previousSwipes,
+    int previousSwipeId = 0,
+    String? previousReasoning,
+    String? previousGenTime,
+    int? previousTokens,
   }) {
+    List<String> swipes;
+    int swipeId;
+
+    if (previousSwipes != null && previousSwipes.isNotEmpty) {
+      swipes = [...previousSwipes, text];
+      swipeId = swipes.length - 1;
+    } else {
+      swipes = [text];
+      swipeId = 0;
+    }
+
     final assistantMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toRadixString(36),
       role: 'assistant',
@@ -174,6 +224,8 @@ class ChatGenerationService {
       genTime: genTime,
       tokens: tokens,
       timestamp: DateTime.now().millisecondsSinceEpoch,
+      swipes: swipes,
+      swipeId: swipeId,
     );
     final finalMessages = [...currentSession.messages, assistantMsg];
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -184,7 +236,7 @@ class ChatGenerationService {
       sessionVars: sessionVars,
     );
     _ref.read(chatRepoProvider).put(finalSession);
-    return ChatState(session: finalSession);
+    return ChatState(session: finalSession, lastRawResponse: rawResponse);
   }
 
   Future<List<LorebookEntry>> _runVectorSearch(

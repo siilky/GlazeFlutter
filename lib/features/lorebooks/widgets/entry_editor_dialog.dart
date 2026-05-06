@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/db/repositories/embedding_repo.dart';
+import '../../../core/llm/lorebook_embedding_service.dart';
+import '../../../core/llm/lorebook_vector_search.dart';
 import '../../../core/models/lorebook.dart';
+import '../../../core/state/db_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 
-class EntryEditorDialog extends StatefulWidget {
+class EntryEditorDialog extends ConsumerStatefulWidget {
   final LorebookEntry? entry;
+  final String? lorebookId;
 
-  const EntryEditorDialog({super.key, this.entry});
+  const EntryEditorDialog({super.key, this.entry, this.lorebookId});
 
   @override
-  State<EntryEditorDialog> createState() => _EntryEditorDialogState();
+  ConsumerState<EntryEditorDialog> createState() => _EntryEditorDialogState();
 }
 
-class _EntryEditorDialogState extends State<EntryEditorDialog> {
+class _EntryEditorDialogState extends ConsumerState<EntryEditorDialog> {
   late TextEditingController _commentController;
   late TextEditingController _contentController;
   late TextEditingController _keysController;
@@ -32,6 +38,8 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
   bool _useKeywordSearch = true;
   int _selectiveLogic = 5;
   String _position = 'worldInfoBefore';
+  String _embeddingStatus = 'none';
+  bool _isIndexing = false;
 
   @override
   void initState() {
@@ -56,6 +64,62 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
     _useKeywordSearch = e?.useKeywordSearch ?? true;
     _selectiveLogic = e?.selectiveLogic ?? 5;
     _position = e?.position ?? 'worldInfoBefore';
+    _loadEmbeddingStatus();
+  }
+
+  Future<void> _loadEmbeddingStatus() async {
+    if (widget.entry?.id == null || !_vectorSearch) return;
+    final repo = ref.read(embeddingRepoProvider);
+    final record = await repo.getByEntryId(widget.entry!.id);
+    if (!mounted) return;
+    setState(() {
+      if (record == null) {
+        _embeddingStatus = 'none';
+      } else if (record.errorJson != null) {
+        _embeddingStatus = 'error';
+      } else if (record.vectorsBlob != null) {
+        _embeddingStatus = 'indexed';
+      } else {
+        _embeddingStatus = 'none';
+      }
+    });
+  }
+
+  Future<void> _indexEntry() async {
+    if (widget.entry?.id == null || widget.lorebookId == null) return;
+    final config = ref.read(embeddingConfigProvider);
+    if (config.endpoint.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Set up embedding API in Embedding Settings first')),
+      );
+      return;
+    }
+
+    setState(() => _isIndexing = true);
+    try {
+      final service = ref.read(lorebookEmbeddingServiceProvider);
+      final result = await service.indexLorebookEntries(
+        widget.lorebookId!,
+        [widget.entry!],
+        config,
+      );
+      if (mounted) {
+        setState(() {
+          _isIndexing = false;
+          _embeddingStatus = result.indexed > 0 ? 'indexed' : 'error';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.indexed > 0 ? 'Entry indexed' : 'Indexing failed'), duration: const Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isIndexing = false;
+          _embeddingStatus = 'error';
+        });
+      }
+    }
   }
 
   @override
@@ -180,11 +244,46 @@ class _EntryEditorDialogState extends State<EntryEditorDialog> {
                       _chip('Case Sensitive', _caseSensitive, (v) => setState(() => _caseSensitive = v)),
                       _chip('Prevent Recursion', _preventRecursion, (v) => setState(() => _preventRecursion = v)),
                       _chip('Ignore Budget', _ignoreBudget, (v) => setState(() => _ignoreBudget = v)),
-                      _chip('Vector Search', _vectorSearch, (v) => setState(() => _vectorSearch = v)),
+                      _chip('Vector Search', _vectorSearch, (v) {
+                        setState(() => _vectorSearch = v);
+                        if (v) _loadEmbeddingStatus();
+                      }),
                       if (_vectorSearch)
                         _chip('Keyword Search', _useKeywordSearch, (v) => setState(() => _useKeywordSearch = v)),
                     ],
                   ),
+                  if (_vectorSearch && !_constant) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: _isIndexing ? null : _indexEntry,
+                        icon: _isIndexing
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            : const Icon(Icons.cloud_upload, size: 18),
+                        label: Text(_isIndexing ? 'Indexing...' : 'Index Entry'),
+                      ),
+                    ),
+                    if (_embeddingStatus == 'indexed')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('Entry indexed', style: TextStyle(fontSize: 12, color: Colors.green)),
+                      ),
+                    if (_embeddingStatus == 'none')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('Not indexed yet', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      ),
+                    if (_embeddingStatus == 'error')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('Indexing error — retry?', style: TextStyle(fontSize: 12, color: Colors.orange)),
+                      ),
+                  ],
                 ],
               ),
             ),

@@ -16,7 +16,19 @@
 | Phase 4: Lorebooks | Done | Model, keyword scanner, prompt integration, UI — see below |
 | Phase 4b: Vector Search | Done | Embedding service, vector math, DB storage, indexing pipeline, runtime search, UI — see below |
 | Phase 5: Regex Runtime | Done | Applied in chat_provider during generation (placement/ephemerality/depth) |
+| Phase 5b: Vector Search UI | Done | Index Entry button, vec/idx/err badges, reindex banner |
+| Phase 5c: Summary + Macros | Done | SummaryService, ChatSummaries DB table (v6), {{summary}}/{{lorebooks}} macros, Generate Summary menu |
+| Phase 5d: Swipe UI | Done | ←→ swipe arrows on assistant messages with swipe counter |
+| Phase 5e: Session Switcher | Done | Session picker in chat header, session creation/deletion |
 | UI Refactoring (round 2) | Done | God object decomposition: 6 monoliths → 19 single-responsibility files, -1308 net lines (see below) |
+| Phase 6: Memory Books | Done | Memory book model, MemoryBooksSheet UI, injection service, {{memory}} macro |
+| Phase 7: Guided Generation | Done | {{guidance}} macro, guided generation prompt in preset, guidance input in chat |
+| Phase 8: Chat Import/Export | Done | ST JSONL import/export, export/import menu in chat |
+| Phase 9: Character Book Extraction | Done | Extract character_book from PNG card, auto-create lorebook |
+| Phase 10: Magic Drawer Polish | Done | Raw Prompt + Context chips wired, Context info sheet |
+| Phase 11: Persona Avatar Picker | Done | Image picker for persona avatar |
+| Phase 12: Character Export | Done | PNG with tEXt chunk + JSON V2 spec export |
+| Phase 13: Theme + Polish | Done | Theme engine (dark/light/system + custom accent), search, crash recovery, onboarding |
 
 ### UI Refactoring (2025-05-05 → 2025-05-06)
 
@@ -192,22 +204,90 @@ Full vector/semantic search system ported from Glaze JS.
 - `EmbeddingSettingsScreen`: search mode selector (keyword/vector/both), embedding API config (endpoint, key, model, maxChunkTokens), test connection button, vector params (threshold, topK, scan depth)
 - Route `/tools/embeddings`, search icon in LorebookListScreen navigates to embedding settings
 
+### Phase 5b: Vector Search UI (2025-05-06)
+
+Enhanced vector search user experience.
+
+**Entry-level indexing:**
+- `EntryEditorDialog`: "Index Entry" button for single-entry indexing (passes `lorebookId` to dialog)
+- Embedding status display: indexed (green), none (gray), error (orange)
+- Status loaded from `EmbeddingRepo` on dialog open
+
+**List-level indicators:**
+- `vec`/`idx`/`err` badges on entry tiles in `LorebookEditorScreen`
+- `_Badge` widget with color-coded labels (cyan=vec, green=idx, orange=err)
+- Embedding statuses loaded asynchronously from DB on screen open
+
+**Reindex banner:**
+- Orange banner appears when vector entries lack embeddings
+- Shows count of missing entries, "Index All" button
+- Auto-refreshes after batch indexing completes
+
+### Phase 5c: Summary + Macros (2025-05-06)
+
+Chat summary generation and macro integration.
+
+**Summary service (`summary_service.dart`):**
+- `generateSummary(sessionId, history, apiConfig, customPrompt)` — sends history to LLM, stores result
+- `getSummary(sessionId)` — retrieves cached summary from DB
+- `needsRegeneration(currentCount, savedCount)` — 30% threshold check
+- Default prompt: "Summarize the following roleplay conversation concisely..."
+- Supports `{{history}}` in custom prompt templates
+- Uses Dio for API calls (consistent with rest of codebase)
+
+**Database:**
+- `ChatSummaries` Drift table (schema v6): `sessionId` (PK), `content`, `messageCount`, `prompt`, `updatedAt`
+- `SummaryRepo` with `get`, `put`, `deleteBySessionId`
+- `summaryRepoProvider`, `summaryServiceProvider` in `db_provider.dart`
+
+**Macro integration:**
+- `MacroContext` extended with `summaryContent` and `lorebooksContent` fields
+- `{{summary}}` macro in `MacroEngine` — replaced with `ctx.summaryContent ?? ''`
+- `{{lorebooks}}` macro in `MacroEngine` — replaced with `ctx.lorebooksContent ?? ''`
+- `summaryContent` wired through `PromptPayload` → `buildPrompt` → `MacroContext`
+- Existing `summary` block in `prompt_block_resolver.dart` continues to work via `summaryContent`
+
+**Chat integration:**
+- `chat_generation_service.dart`: loads summary from DB, passes to `PromptPayload`
+- `tokenizer_sheet.dart`: loads summary for accurate token breakdown
+- `chat_dialogs.dart` (raw prompt viewer): includes summary in payload
+- "Generate Summary" menu item in chat screen popup menu
+
+### Phase 5d: Swipe UI (2025-05-06)
+
+Swipe navigation on assistant messages.
+
+- Left/right arrow buttons on assistant message bubbles
+- Swipe counter (e.g. "2/3") showing current swipe position
+- Swipe metadata stored per message in `swipesMeta` list
+- `previousSwipes` and `previousSwipeId` passed through generation service
+
+### Phase 5e: Session Switcher (2025-05-06)
+
+Chat session management.
+
+- Session picker in chat header (tap session name to switch)
+- New session creation via "+" button
+- Session deletion with confirmation
+- Session index display and message count
+
 ### Remaining phases (in priority order)
 
 | Phase | Priority | What's Missing |
 |-------|----------|----------------|
-| 6: Chat Import/Export | Medium | ST JSONL import/export, PNG export, backup import |
-| 7: Image Generation | Low | Service, config, gallery, UI |
-| 8: Cloud Sync | Low | Crypto, adapters, manifest, engine, UI |
-| 9: Theme + Polish | Low (@hydall) | Theme engine, swipe, search, onboarding, crash recovery, notifications |
-| 10: CI/CD | Low | GitHub Actions, code signing |
+| Image Generation | Low | Service, config, gallery, UI |
+| Cloud Sync | Low | Crypto, adapters, manifest, engine, UI |
+| Background Gen Notification | Low | Notification on generation complete |
+| iOS Keyboard Handling | Low | Keyboard avoidance, accessory view |
+| Android Back Button | Low | Intent system, back navigation |
+| App Icons + Splash | Low | All platforms |
+| CI/CD | Low | GitHub Actions, code signing |
 
 ### Known stubs in current codebase
 
 - `chat_screen.dart` → `input_bar.dart` — 3 input bar buttons (image gen, fullscreen, auto) are decorative
-- `character_list_screen.dart` — search button no-op, Catalog tab "coming soon"
-- `menu_screen.dart` — Lorebooks "coming soon"
-- `menu_screen.dart` — Theme, Cloud Sync, Backups all "coming soon"
+- `character_list_screen.dart` — Catalog tab "coming soon"
+- `menu_screen.dart` — Cloud Sync, Backups "coming soon"
 - `tokenizer.dart` — heuristic (chars/3.35), no real BPE
 
 ### Architecture note
@@ -2799,12 +2879,12 @@ Port from JS `db.js` crash recovery logic:
 - Splash screen with Glaze branding
 
 ### Deliverables Phase 8
-- [ ] Full theme system with presets
-- [ ] Swipe for alternative responses
-- [ ] Chat branching
-- [ ] Search across characters/chats
-- [ ] Onboarding flow
-- [ ] Crash recovery
+- [x] Full theme system with presets
+- [x] Swipe for alternative responses
+- [x] Chat branching
+- [x] Search across characters/chats
+- [x] Onboarding flow
+- [x] Crash recovery
 - [ ] iOS keyboard handling
 - [ ] Local notifications
 - [ ] App icons + splash screens

@@ -46,7 +46,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     return ChatState(session: newSession);
   }
 
-  Future<void> sendMessage(String text) async {
+  Future<void> sendMessage(String text, {String? guidanceText}) async {
     final current = state.value;
     if (current == null || current.isGenerating) return;
 
@@ -73,19 +73,31 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       charId: arg,
       currentState: current,
       onStateUpdate: (s) => state = AsyncData(s),
+      guidanceText: guidanceText,
     );
     state = AsyncData(result);
   }
 
-  Future<void> regenerateLastAssistant() async {
+  Future<void> regenerateLastAssistant({String? guidanceText}) async {
     final current = state.value;
     if (current == null || current.session == null || current.isGenerating) return;
 
-    final trimmed = List<ChatMessage>.from(current.messages);
-    if (trimmed.last.role == 'assistant') trimmed.removeLast();
+    final lastIdx = current.messages.length - 1;
+    if (lastIdx < 0) return;
+
+    final lastMsg = current.messages[lastIdx];
+    List<ChatMessage> baseMessages;
+    ChatMessage? prevAssistant;
+
+    if (lastMsg.role == 'assistant') {
+      prevAssistant = lastMsg;
+      baseMessages = current.messages.sublist(0, lastIdx);
+    } else {
+      baseMessages = List<ChatMessage>.from(current.messages);
+    }
 
     final trimmedSession = current.session!.copyWith(
-      messages: trimmed,
+      messages: baseMessages,
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
     await ref.read(chatRepoProvider).put(trimmedSession);
@@ -97,6 +109,14 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       charId: arg,
       currentState: current,
       onStateUpdate: (s) => state = AsyncData(s),
+      previousSwipes: prevAssistant != null
+          ? (prevAssistant.swipes.isNotEmpty ? prevAssistant.swipes : [prevAssistant.content])
+          : null,
+      previousSwipeId: prevAssistant?.swipeId ?? 0,
+      previousReasoning: prevAssistant?.reasoning,
+      previousGenTime: prevAssistant?.genTime,
+      previousTokens: prevAssistant?.tokens,
+      guidanceText: guidanceText,
     );
     state = AsyncData(result);
   }
@@ -186,6 +206,69 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     );
     await ref.read(chatRepoProvider).put(newSession);
     state = AsyncData(ChatState(session: newSession));
+  }
+
+  Future<void> hideTopMessages(int count) async {
+    final current = state.value;
+    if (current == null || current.session == null) return;
+
+    final visibleIndices = <int>[];
+    for (int i = 0; i < current.messages.length; i++) {
+      if (!current.messages[i].isHidden) visibleIndices.add(i);
+    }
+
+    final toHide = visibleIndices.take(count).toList();
+    if (toHide.isEmpty) return;
+
+    final newMessages = List<ChatMessage>.from(current.messages);
+    for (final idx in toHide) {
+      newMessages[idx] = newMessages[idx].copyWith(isHidden: true);
+    }
+
+    final newSession = current.session!.copyWith(
+      messages: newMessages,
+      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
+    await ref.read(chatRepoProvider).put(newSession);
+    state = AsyncData(ChatState(session: newSession));
+  }
+
+  void setSwipe(int messageIndex, int swipeId) {
+    final current = state.value;
+    if (current == null || current.session == null) return;
+    if (messageIndex < 0 || messageIndex >= current.messages.length) return;
+
+    final msg = current.messages[messageIndex];
+    if (msg.swipes.isEmpty || swipeId < 0 || swipeId >= msg.swipes.length) return;
+
+    final updated = msg.copyWith(
+      swipeId: swipeId,
+      content: msg.swipes[swipeId],
+    );
+
+    final newMessages = List<ChatMessage>.from(current.messages);
+    newMessages[messageIndex] = updated;
+
+    final newSession = current.session!.copyWith(
+      messages: newMessages,
+      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
+    ref.read(chatRepoProvider).put(newSession);
+    state = AsyncData(ChatState(session: newSession));
+  }
+
+  Future<void> switchSession(int sessionIndex) async {
+    final repo = ref.read(chatRepoProvider);
+    final sessions = await repo.getByCharacterId(arg);
+    final target = sessions.where((s) => s.sessionIndex == sessionIndex).firstOrNull;
+    if (target != null) {
+      state = AsyncData(ChatState(session: target));
+    }
+  }
+
+  Future<List<ChatSession>> getSessions() async {
+    final repo = ref.read(chatRepoProvider);
+    return repo.getByCharacterId(arg);
   }
 
   Future<void> branchSession(int index) async {

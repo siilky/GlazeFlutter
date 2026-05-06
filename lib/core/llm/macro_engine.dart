@@ -14,6 +14,9 @@ class MacroContext {
   final Map<String, String> globalVars;
   final String charId;
   final String sessionId;
+  final String? summaryContent;
+  final String? lorebooksContent;
+  final String? guidanceText;
 
   const MacroContext({
     required this.charName,
@@ -29,11 +32,17 @@ class MacroContext {
     this.globalVars = const {},
     required this.charId,
     required this.sessionId,
+    this.summaryContent,
+    this.lorebooksContent,
+    this.guidanceText,
   });
 
   MacroContext copyWith({
     Map<String, String>? sessionVars,
     Map<String, String>? globalVars,
+    String? summaryContent,
+    String? lorebooksContent,
+    String? guidanceText,
   }) {
     return MacroContext(
       charName: charName,
@@ -49,6 +58,9 @@ class MacroContext {
       globalVars: globalVars ?? this.globalVars,
       charId: charId,
       sessionId: sessionId,
+      summaryContent: summaryContent ?? this.summaryContent,
+      lorebooksContent: lorebooksContent ?? this.lorebooksContent,
+      guidanceText: guidanceText ?? this.guidanceText,
     );
   }
 }
@@ -135,6 +147,21 @@ MacroResult replaceMacros(String text, MacroContext ctx) {
   result = result.replaceAllMapped(
     RegExp(r'\{\{reasoningSuffix\}\}', caseSensitive: false),
     (_) => ctx.reasoningEnd ?? '',
+  );
+
+  result = result.replaceAllMapped(
+    RegExp(r'\{\{summary\}\}', caseSensitive: false),
+    (_) => ctx.summaryContent ?? '',
+  );
+
+  result = result.replaceAllMapped(
+    RegExp(r'\{\{lorebooks\}\}', caseSensitive: false),
+    (_) => ctx.lorebooksContent ?? '',
+  );
+
+  result = result.replaceAllMapped(
+    RegExp(r'\{\{guidance\}\}', caseSensitive: false),
+    (_) => ctx.guidanceText ?? '',
   );
 
   result = _replaceSetVar(result, 'setvar', sessionVars, () => varsChanged = true);

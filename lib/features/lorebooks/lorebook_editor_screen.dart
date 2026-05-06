@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/lorebook.dart';
-import '../../core/llm/embedding_service.dart';
 import '../../core/llm/lorebook_vector_search.dart';
+import '../../core/state/db_provider.dart';
 import '../../core/state/lorebook_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
@@ -20,8 +20,10 @@ class LorebookEditorScreen extends ConsumerStatefulWidget {
 
 class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   late TextEditingController _nameController;
+  late TextEditingController _searchController;
   String _scope = 'global';
   List<LorebookEntry> _entries = [];
+  Map<String, String> _embeddingStatuses = {};
   bool _loaded = false;
   bool _isIndexing = false;
   String _indexStatus = '';
@@ -30,11 +32,13 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController();
+    _searchController = TextEditingController();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -51,6 +55,26 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     _nameController.text = lb.name;
     _scope = lb.activationScope;
     _entries = List.from(lb.entries);
+    _loadEmbeddingStatuses();
+  }
+
+  Future<void> _loadEmbeddingStatuses() async {
+    final repo = ref.read(embeddingRepoProvider);
+    final statuses = <String, String>{};
+    for (final entry in _entries) {
+      if (!entry.vectorSearch || !entry.enabled || entry.constant) continue;
+      final record = await repo.getByEntryId(entry.id);
+      if (record == null) {
+        statuses[entry.id] = 'none';
+      } else if (record.errorJson != null) {
+        statuses[entry.id] = 'error';
+      } else if (record.vectorsBlob != null) {
+        statuses[entry.id] = 'indexed';
+      } else {
+        statuses[entry.id] = 'none';
+      }
+    }
+    if (mounted) setState(() => _embeddingStatuses = statuses);
   }
 
   Future<void> _save() async {
@@ -73,7 +97,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   void _addEntry() async {
     final entry = await showDialog<LorebookEntry>(
       context: context,
-      builder: (_) => const EntryEditorDialog(),
+      builder: (_) => EntryEditorDialog(lorebookId: widget.lorebookId),
     );
     if (entry != null) {
       setState(() => _entries.add(entry));
@@ -84,7 +108,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   void _editEntry(int index) async {
     final entry = await showDialog<LorebookEntry>(
       context: context,
-      builder: (_) => EntryEditorDialog(entry: _entries[index]),
+      builder: (_) => EntryEditorDialog(entry: _entries[index], lorebookId: widget.lorebookId),
     );
     if (entry != null) {
       setState(() => _entries[index] = entry);
@@ -135,6 +159,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           _isIndexing = false;
           _indexStatus = '';
         });
+        _loadEmbeddingStatuses();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Indexed: ${result.indexed}, Skipped: ${result.skipped}, Failed: ${result.failed}')),
         );
@@ -145,6 +170,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           _isIndexing = false;
           _indexStatus = '';
         });
+        _loadEmbeddingStatuses();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Indexing failed: $e'), backgroundColor: Colors.red),
         );
@@ -157,6 +183,41 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
       _entries[index] = _entries[index].copyWith(enabled: !_entries[index].enabled);
     });
     _save();
+  }
+
+  void _resetEntriesToGlobal() {
+    setState(() {
+      for (int i = 0; i < _entries.length; i++) {
+        _entries[i] = _entries[i].copyWith(
+          caseSensitive: null,
+          matchWholeWords: null,
+        );
+      }
+    });
+    _save();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Entry settings reset to global defaults'), duration: Duration(seconds: 1)),
+    );
+  }
+
+  List<LorebookEntry> get _filteredEntries {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _entries;
+    return _entries.where((e) {
+      return e.keys.any((k) => k.toLowerCase().contains(q)) ||
+          e.content.toLowerCase().contains(q) ||
+          e.comment.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  bool get _needsReindex {
+    return _entries.any((e) =>
+        e.vectorSearch && e.enabled && !e.constant && _embeddingStatuses[e.id] != 'indexed');
+  }
+
+  int get _missingVectorCount {
+    return _entries.where((e) =>
+        e.vectorSearch && e.enabled && !e.constant && _embeddingStatuses[e.id] != 'indexed').length;
   }
 
   @override
@@ -192,6 +253,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                     title: 'Edit Lorebook',
                     leading: BackButton(onPressed: () => Navigator.pop(context)),
                     actions: [
+                      IconButton(
+                        icon: const Icon(Icons.restore, size: 20),
+                        tooltip: 'Reset Entry Settings to Global',
+                        onPressed: _resetEntriesToGlobal,
+                      ),
                       if (_isIndexing)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -241,8 +307,59 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Search keys, content...',
+                    hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                    prefixIcon: Icon(Icons.search, size: 18, color: AppColors.textSecondary),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.05),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_needsReindex)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Vector entries need reindexing', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.orange)),
+                              SizedBox(height: 2),
+                              Text('$_missingVectorCount entries without embeddings', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 12)),
+                          onPressed: _isIndexing ? null : _indexEntries,
+                          child: Text(_isIndexing ? '...' : 'Index All', style: const TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Expanded(
-                child: _entries.isEmpty
+                child: _filteredEntries.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -257,13 +374,18 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                        itemCount: _entries.length,
-                        itemBuilder: (_, i) => _EntryTile(
-                          entry: _entries[i],
-                          onToggle: () => _toggleEntry(i),
-                          onEdit: () => _editEntry(i),
-                          onDelete: () => _deleteEntry(i),
-                        ),
+                        itemCount: _filteredEntries.length,
+                        itemBuilder: (_, i) {
+                          final entry = _filteredEntries[i];
+                          final realIndex = _entries.indexOf(entry);
+                          return _EntryTile(
+                            entry: entry,
+                            embeddingStatus: _embeddingStatuses[entry.id],
+                            onToggle: () => _toggleEntry(realIndex),
+                            onEdit: () => _editEntry(realIndex),
+                            onDelete: () => _deleteEntry(realIndex),
+                          );
+                        },
                       ),
               ),
             ],
@@ -304,13 +426,32 @@ class _ScopeChip extends StatelessWidget {
   }
 }
 
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
+}
+
 class _EntryTile extends StatelessWidget {
   final LorebookEntry entry;
+  final String? embeddingStatus; // 'indexed', 'error', 'none', null
   final VoidCallback onToggle;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
-  const _EntryTile({required this.entry, required this.onToggle, required this.onEdit, required this.onDelete});
+  const _EntryTile({required this.entry, this.embeddingStatus, required this.onToggle, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -337,12 +478,22 @@ class _EntryTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          '${entry.keys.length} keys | order ${entry.order}${entry.constant ? ' | constant' : ''}${entry.vectorSearch ? ' | vector' : ''}',
+          '${entry.keys.length} keys | order ${entry.order}${entry.constant ? ' | constant' : ''}',
           style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (entry.vectorSearch) ...[
+              _Badge(
+                label: 'vec',
+                color: Colors.cyan,
+              ),
+              if (embeddingStatus == 'indexed')
+                _Badge(label: 'idx', color: Colors.green),
+              if (embeddingStatus == 'error')
+                _Badge(label: 'err', color: Colors.orange),
+            ],
             IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: onEdit),
             IconButton(icon: const Icon(Icons.delete_outline, size: 18), onPressed: onDelete),
           ],

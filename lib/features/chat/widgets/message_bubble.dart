@@ -4,9 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/llm/regex_service.dart';
+import '../../../core/models/character.dart';
+import '../../../core/models/persona.dart';
+import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/character_provider.dart';
+import '../../../core/state/db_provider.dart';
 import '../../../shared/widgets/pencil_animation.dart';
 import '../../settings/app_settings_provider.dart';
+import '../chat_provider.dart';
 import 'message_actions.dart';
 
 class MessageBubble extends ConsumerWidget {
@@ -21,9 +27,12 @@ class MessageBubble extends ConsumerWidget {
   final bool isHidden;
   final bool isError;
   final int messageIndex;
+  final int totalMessages;
   final bool isLast;
   final bool isGenerating;
   final String charId;
+  final List<String> swipes;
+  final int swipeId;
 
   const MessageBubble({
     super.key,
@@ -38,9 +47,12 @@ class MessageBubble extends ConsumerWidget {
     this.isHidden = false,
     this.isError = false,
     required this.messageIndex,
+    required this.totalMessages,
     required this.isLast,
     required this.isGenerating,
     required this.charId,
+    this.swipes = const [],
+    this.swipeId = 0,
   });
 
   @override
@@ -51,6 +63,19 @@ class MessageBubble extends ConsumerWidget {
 
     final chars = ref.watch(charactersProvider).value ?? [];
     final character = chars.where((c) => c.id == charId).firstOrNull;
+
+    final regexScripts = ref.watch(activeRegexesProvider).value ?? [];
+    final placement = isUser ? 1 : 2;
+    final depth = totalMessages > 0 ? totalMessages - 1 - messageIndex : null;
+    final regexCtx = RegexApplyContext(
+      char: character,
+      persona: null,
+      depth: depth,
+      totalMessages: totalMessages,
+    );
+    final displayContent = regexScripts.isEmpty
+        ? content
+        : applyRegexes(content, placement, 1, regexScripts, regexCtx);
 
     final style = _BubbleStyle.resolve(scheme: scheme, isStandard: isStandard, isUser: isUser, isSystem: isSystem);
 
@@ -95,7 +120,7 @@ class MessageBubble extends ConsumerWidget {
             if (isTyping && content.isEmpty)
               _TypingIndicator(textColor: textColor, scheme: scheme)
             else
-              MarkdownBody(data: content, styleSheet: MarkdownStyleSheet(p: TextStyle(color: textColor))),
+              MarkdownBody(data: displayContent, styleSheet: MarkdownStyleSheet(p: TextStyle(color: textColor))),
             if (isStreaming)
               Text('...', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
             if (!isSystem && !isStreaming) ...[
@@ -112,6 +137,14 @@ class MessageBubble extends ConsumerWidget {
                   messageIndex: messageIndex, isUser: isUser, isTyping: isTyping,
                   isError: isError, isLast: isLast, isGenerating: isGenerating, isHidden: isHidden,
                 ),
+                swipeCount: swipes.length,
+                swipeId: swipeId,
+                onSwipeLeft: swipeId > 0
+                    ? () => ref.read(chatProvider(charId).notifier).setSwipe(messageIndex, swipeId - 1)
+                    : null,
+                onSwipeRight: swipeId < swipes.length - 1
+                    ? () => ref.read(chatProvider(charId).notifier).setSwipe(messageIndex, swipeId + 1)
+                    : null,
               ),
             ],
           ],
@@ -215,6 +248,10 @@ class _MetadataRow extends StatelessWidget {
   final bool isUser;
   final ColorScheme scheme;
   final VoidCallback onMenuTap;
+  final int swipeCount;
+  final int swipeId;
+  final VoidCallback? onSwipeLeft;
+  final VoidCallback? onSwipeRight;
 
   const _MetadataRow({
     required this.genTime,
@@ -224,12 +261,22 @@ class _MetadataRow extends StatelessWidget {
     required this.isUser,
     required this.scheme,
     required this.onMenuTap,
+    this.swipeCount = 1,
+    this.swipeId = 0,
+    this.onSwipeLeft,
+    this.onSwipeRight,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
+        if (swipeCount > 1) ...[
+          _swipeBtn(Icons.chevron_left, onSwipeLeft),
+          Text('${swipeId + 1}/$swipeCount', style: TextStyle(fontSize: 11, color: textColor)),
+          _swipeBtn(Icons.chevron_right, onSwipeRight),
+          const SizedBox(width: 6),
+        ],
         if (genTime != null) ...[
           Icon(Icons.access_time, size: 12, color: textColor),
           const SizedBox(width: 4),
@@ -255,6 +302,17 @@ class _MetadataRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _swipeBtn(IconData icon, VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Icon(icon, size: 18, color: onTap != null ? textColor : textColor.withValues(alpha: 0.3)),
+      ),
     );
   }
 }

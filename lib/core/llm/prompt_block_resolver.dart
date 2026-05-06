@@ -50,6 +50,11 @@ ResolvedContent? resolveBlockContent({
       } else {
         return null;
       }
+    case 'guided_generation':
+      if (macroCtx.guidanceText == null || macroCtx.guidanceText!.trim().isEmpty) {
+        return null;
+      }
+      content = rawContent;
     default:
       content = rawContent;
   }

@@ -11,6 +11,7 @@ import 'lorebook_scanner.dart';
 import 'lorebook_merger.dart';
 import 'prompt_block_resolver.dart';
 import 'fallback_prompt_builder.dart';
+import 'regex_service.dart';
 
 const _stToInternalBlockId = <String, String>{
   'personaDescription': 'user_persona',
@@ -34,6 +35,9 @@ class PromptPayload {
   final Map<String, String> globalVars;
   final String? summaryContent;
   final String? summaryPrefix;
+  final String? memoryContent;
+  final String memoryInjectionTarget;
+  final String? guidanceText;
   final List<Lorebook> lorebooks;
   final LorebookGlobalSettings lorebookSettings;
   final LorebookActivations lorebookActivations;
@@ -49,6 +53,9 @@ class PromptPayload {
     this.globalVars = const {},
     this.summaryContent,
     this.summaryPrefix,
+    this.memoryContent,
+    this.memoryInjectionTarget = 'summary_block',
+    this.guidanceText,
     this.lorebooks = const [],
     this.lorebookSettings = const LorebookGlobalSettings(),
     this.lorebookActivations = const LorebookActivations(),
@@ -104,6 +111,8 @@ PromptResult buildPrompt(PromptPayload payload) {
     globalVars: payload.globalVars,
     charId: char.id,
     sessionId: '',
+    summaryContent: payload.summaryContent,
+    guidanceText: payload.guidanceText,
   );
 
   var currentSessionVars = Map<String, String>.from(payload.sessionVars);
@@ -176,6 +185,8 @@ PromptResult buildPrompt(PromptPayload payload) {
     currentGlobalVars: currentGlobalVars,
     preset: preset,
     payload: payload,
+    char: char,
+    persona: persona,
   );
 }
 
@@ -217,6 +228,8 @@ PromptResult _assembleMessages({
   required Map<String, String> currentGlobalVars,
   required Preset preset,
   required PromptPayload payload,
+  required Character char,
+  Persona? persona,
 }) {
   final messages = <PromptMessage>[];
   String? mergeBuffer;
@@ -248,6 +261,7 @@ PromptResult _assembleMessages({
       var content = block.content.trim();
       if (content.isEmpty) continue;
       content = content.replaceAll('{{lorebooks}}', macroLoreContent);
+      if (content.trim().isEmpty) continue;
 
       if (preset.mergePrompts && block.role != 'assistant') {
         if (mergeBuffer != null) { mergeBuffer = '$mergeBuffer\n\n$content'; } else { mergeBuffer = content; mergeRole = preset.mergeRole; }
@@ -261,6 +275,36 @@ PromptResult _assembleMessages({
   if (!loreBeforeInjected) messages.addAll(loreBefore);
   if (!loreAfterInjected) messages.addAll(loreAfter);
   if (mergeBuffer != null) messages.add(PromptMessage(role: mergeRole ?? 'system', content: mergeBuffer));
+
+  if (payload.memoryContent != null && payload.memoryContent!.isNotEmpty) {
+    if (payload.memoryInjectionTarget == 'summary_macro') {
+      final summaryIdx = messages.indexWhere((m) => m.blockName == 'Summary');
+      if (summaryIdx >= 0) {
+        final existing = messages[summaryIdx];
+        messages[summaryIdx] = PromptMessage(
+          role: existing.role,
+          content: '${existing.content}\n\n${payload.memoryContent}',
+          blockName: existing.blockName,
+          isHistory: existing.isHistory,
+          isDepth: existing.isDepth,
+          depth: existing.depth,
+          isLorebook: existing.isLorebook,
+        );
+      }
+    } else {
+      final memMsg = PromptMessage(
+        role: 'system',
+        content: payload.memoryContent!,
+        blockName: 'Memory Book',
+      );
+      final historyIdx = messages.indexWhere((m) => m.isHistory);
+      if (historyIdx >= 0) {
+        messages.insert(historyIdx, memMsg);
+      } else {
+        messages.add(memMsg);
+      }
+    }
+  }
 
   final calculator = ContextCalculator(contextSize: payload.apiConfig.contextSize, maxTokens: payload.apiConfig.maxTokens);
   final allStatic = messages.where((m) => !m.isHistory).toList();
@@ -276,8 +320,50 @@ PromptResult _assembleMessages({
   for (final msg in messages) {
     if (msg.isHistory) {
       if (!historyInserted) { finalMessages.addAll(breakdown.trimmedHistory); historyInserted = true; }
-    } else {
+    } else if (msg.content.trim().isNotEmpty) {
       finalMessages.add(msg);
+    }
+  }
+
+  final regexCtx = RegexApplyContext(
+    char: char,
+    persona: persona,
+    sessionVars: currentSessionVars,
+    globalVars: currentGlobalVars,
+  );
+
+  final regexScripts = preset.regexes.where((r) => !r.disabled).toList();
+
+  for (int i = 0; i < finalMessages.length; i++) {
+    final msg = finalMessages[i];
+    if (msg.isHistory) {
+      final placement = msg.role == 'user' ? 1 : 2;
+      final depth = finalMessages.where((m) => m.isHistory).length - 1 -
+          finalMessages.sublist(0, i).where((m) => m.isHistory).length;
+      final ctx = RegexApplyContext(
+        char: char, persona: persona,
+        sessionVars: currentSessionVars, globalVars: currentGlobalVars,
+        depth: depth,
+      );
+      finalMessages[i] = PromptMessage(
+        role: msg.role,
+        content: applyRegexes(msg.content, placement, 2, regexScripts, ctx),
+        isLorebook: msg.isLorebook,
+        blockName: msg.blockName,
+        isHistory: msg.isHistory,
+        isDepth: msg.isDepth,
+        depth: msg.depth,
+      );
+    } else {
+      finalMessages[i] = PromptMessage(
+        role: msg.role,
+        content: applyRegexes(msg.content, 4, 2, regexScripts, regexCtx),
+        isLorebook: msg.isLorebook,
+        blockName: msg.blockName,
+        isHistory: msg.isHistory,
+        isDepth: msg.isDepth,
+        depth: msg.depth,
+      );
     }
   }
 

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import 'core/state/active_selection_provider.dart';
 import 'core/services/preset_seeder.dart';
+import 'core/services/crash_recovery_service.dart';
+import 'core/services/onboarding_service.dart';
 import 'features/character_list/character_detail_screen.dart';
 import 'features/character_list/character_editor_screen.dart';
 import 'features/character_list/character_list_screen.dart';
@@ -20,6 +22,7 @@ import 'features/settings/app_settings_screen.dart';
 import 'features/tools/tools_screen.dart';
 import 'shared/shell/shell_screen.dart';
 import 'shared/theme/app_theme.dart';
+import 'shared/theme/theme_provider.dart';
 
 final routerProvider = Provider<GoRouter>(
   (ref) => GoRouter(
@@ -118,14 +121,21 @@ class _GlazeAppState extends ConsumerState<GlazeApp> {
     super.initState();
     loadActiveSelections(ref);
     seedDefaultPresets(ref);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      checkAndOfferCrashRecovery(context, ref);
+      checkAndShowOnboarding(context);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
+    final themeSettings = ref.watch(themeProvider);
     return MaterialApp.router(
       title: 'Glaze',
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(accent: themeSettings.accentColor),
+      darkTheme: AppTheme.dark(accent: themeSettings.accentColor),
+      themeMode: themeSettings.mode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
     );

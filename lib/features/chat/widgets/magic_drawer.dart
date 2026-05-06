@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/llm/lorebook_scanner.dart';
+import '../../../core/llm/memory_injection_service.dart';
+import '../../../core/llm/summary_service.dart';
 import '../../../core/state/active_selection_provider.dart';
+import '../../../core/state/db_provider.dart';
+import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
+import 'chat_dialogs.dart';
+import 'context_info_sheet.dart';
+import 'tokenizer_sheet.dart';
 
-class MagicDrawerPanel extends StatelessWidget {
+class MagicDrawerPanel extends ConsumerWidget {
   final String charId;
   const MagicDrawerPanel({super.key, required this.charId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.background,
@@ -87,6 +96,15 @@ class MagicDrawerPanel extends StatelessWidget {
                   label: 'Raw Prompt',
                   onTap: () {
                     Navigator.pop(context);
+                    showRawPromptDialog(context, ref, charId);
+                  },
+                ),
+                _MagicItem(
+                  icon: Icons.pie_chart_outline,
+                  label: 'Tokenizer',
+                  onTap: () {
+                    Navigator.pop(context);
+                    showTokenizerSheet(context, charId);
                   },
                 ),
                 _MagicItem(
@@ -102,6 +120,7 @@ class MagicDrawerPanel extends StatelessWidget {
                   label: 'Context',
                   onTap: () {
                     Navigator.pop(context);
+                    showContextInfoSheet(context, ref, charId);
                   },
                 ),
               ],

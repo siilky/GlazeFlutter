@@ -69,9 +69,12 @@ class _MessageListState extends State<MessageList> {
             isHidden: msg.isHidden,
             isError: msg.isError,
             messageIndex: index,
+            totalMessages: widget.messages.length,
             isLast: index == widget.messages.length - 1,
             isGenerating: widget.isGenerating,
             charId: widget.charId,
+            swipes: msg.swipes,
+            swipeId: msg.swipeId,
           );
         }
 
@@ -82,6 +85,7 @@ class _MessageListState extends State<MessageList> {
             isStreaming: true,
             reasoning: widget.streamingReasoning,
             messageIndex: -1,
+            totalMessages: widget.messages.length,
             isLast: false,
             isGenerating: true,
             charId: widget.charId,
@@ -93,6 +97,7 @@ class _MessageListState extends State<MessageList> {
           isUser: false,
           isTyping: true,
           messageIndex: -1,
+          totalMessages: widget.messages.length,
           isLast: false,
           isGenerating: true,
           charId: widget.charId,
