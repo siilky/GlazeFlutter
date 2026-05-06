@@ -9,6 +9,7 @@ import 'core/services/onboarding_service.dart';
 import 'features/character_list/character_detail_screen.dart';
 import 'features/character_list/character_editor_screen.dart';
 import 'features/character_list/character_list_screen.dart';
+import 'features/character_gallery/gallery_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/chat_history/chat_history_screen.dart';
 import 'features/lorebooks/lorebook_list_screen.dart';
@@ -100,6 +101,11 @@ final routerProvider = Provider<GoRouter>(
             path: 'edit',
             builder: (_, state) =>
                 CharacterEditorScreen(charId: state.pathParameters['charId']!),
+          ),
+          GoRoute(
+            path: 'gallery',
+            builder: (_, state) =>
+                GalleryScreen(charId: state.pathParameters['charId']!),
           ),
         ],
       ),

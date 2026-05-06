@@ -53,6 +53,12 @@ class CharacterDetailScreen extends ConsumerWidget {
                     icon: const Icon(Icons.edit),
                     label: const Text('Edit'),
                   ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go('/character/$charId/gallery'),
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text('Gallery'),
+                  ),
                 ],
               ),
             ),

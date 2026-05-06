@@ -21,6 +21,7 @@ class Characters extends Table {
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
   TextColumn get tagsJson => text().nullable()();
   TextColumn get alternateGreetingsJson => text().nullable()();
+  TextColumn get galleryJson => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {charId};
