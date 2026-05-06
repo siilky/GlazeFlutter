@@ -57,9 +57,7 @@ class MenuScreen extends ConsumerWidget {
                     MenuItem(
                       icon: Icons.sync_rounded,
                       label: 'Cloud Sync',
-                      onTap: () {
-                        GlazeToast.show(context, 'Cloud sync coming soon');
-                      },
+                      onTap: () => context.go('/sync'),
                     ),
                   ],
                 ),

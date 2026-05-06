@@ -1,0 +1,171 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
+
+import '../oauth_local_server.dart';
+import '../../sync_config.dart';
+
+class GDriveAuth {
+  static const _authBase = 'https://accounts.google.com/o/oauth2/v2/auth';
+  static const _tokenUrl = 'https://oauth2.googleapis.com/token';
+  static const _revokeUrl = 'https://oauth2.googleapis.com/revoke';
+  static const _userInfoUrl = 'https://www.googleapis.com/oauth2/v2/userinfo';
+  static const _scope = 'https://www.googleapis.com/auth/drive.file';
+
+  final Dio _dio = Dio();
+
+  String? _accessToken;
+  String? _refreshToken;
+  int? _expiresAt;
+  String? _folderId;
+  String? _codeVerifier;
+
+  String? get accessToken => _accessToken;
+  String? get folderId => _folderId;
+  set folderId(String? v) => _folderId = v;
+  bool get isConnected => _accessToken != null && _refreshToken != null;
+
+  void loadTokens(Map<String, dynamic>? tokens) {
+    final gd = tokens?['gdrive'] as Map<String, dynamic>?;
+    if (gd == null) return;
+    _accessToken = gd['access_token'] as String?;
+    _refreshToken = gd['refresh_token'] as String?;
+    _expiresAt = gd['expires_at'] as int?;
+    _folderId = gd['folderId'] as String?;
+  }
+
+  Map<String, dynamic>? saveTokens() {
+    if (_accessToken == null) return null;
+    return {
+      'gdrive': {
+        'access_token': _accessToken,
+        'refresh_token': _refreshToken,
+        'expires_at': _expiresAt,
+        'folderId': _folderId,
+      },
+    };
+  }
+
+  Future<void> connect() async {
+    final clientId = SyncConfig.gdriveClientId;
+    if (clientId == null || clientId.isEmpty) {
+      throw StateError('GDrive Client ID not configured');
+    }
+
+    _codeVerifier = _generateRandomString(128);
+    final codeChallenge = _sha256Base64Url(_codeVerifier!);
+    final state = _generateRandomString(32);
+    final redirectUri = Platform.isAndroid || Platform.isIOS
+        ? SyncConfig.gdriveRedirectNative!
+        : 'http://localhost:0';
+
+    final authUrl =
+        '$_authBase?response_type=code&client_id=$clientId&redirect_uri=${Uri.encodeComponent(redirectUri)}'
+        '&scope=${Uri.encodeComponent(_scope)}&code_challenge=$codeChallenge&code_challenge_method=S256&state=$state'
+        '&access_type=offline&prompt=consent';
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      throw UnimplementedError(
+        'Mobile OAuth requires deep-link setup. URL: $authUrl',
+      );
+    }
+
+    final code = await OAuthLocalServer.authenticate(authUrl);
+    await _handleCodeExchange(code, redirectUri);
+  }
+
+  Future<void> _handleCodeExchange(String code, String redirectUri) async {
+    final clientId = SyncConfig.gdriveClientId!;
+    final clientSecret = SyncConfig.gdriveClientSecret;
+    final data = 'code=$code&grant_type=authorization_code&client_id=$clientId'
+        '&redirect_uri=${Uri.encodeComponent(redirectUri)}'
+        '&code_verifier=$_codeVerifier'
+        '${clientSecret != null && clientSecret.isNotEmpty ? '&client_secret=$clientSecret' : ''}';
+    final response = await _dio.post<Map<String, dynamic>>(
+      _tokenUrl,
+      options: Options(
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      ),
+      data: data,
+    );
+
+    final body = response.data!;
+    _accessToken = body['access_token'] as String;
+    _refreshToken = body['refresh_token'] as String?;
+    final expiresIn = body['expires_in'] as int? ?? 3600;
+    _expiresAt = DateTime.now().millisecondsSinceEpoch + expiresIn * 1000;
+  }
+
+  Future<String> getValidToken() async {
+    if (_accessToken == null) throw StateError('Not authenticated');
+    if (_expiresAt != null &&
+        DateTime.now().millisecondsSinceEpoch >= _expiresAt!) {
+      await _refreshAccessToken();
+    }
+    return _accessToken!;
+  }
+
+  Future<void> _refreshAccessToken() async {
+    if (_refreshToken == null) throw StateError('No refresh token');
+    final clientId = SyncConfig.gdriveClientId!;
+    final clientSecret = SyncConfig.gdriveClientSecret;
+    final data = 'grant_type=refresh_token&refresh_token=$_refreshToken&client_id=$clientId'
+        '${clientSecret != null && clientSecret.isNotEmpty ? '&client_secret=$clientSecret' : ''}';
+    final response = await _dio.post<Map<String, dynamic>>(
+      _tokenUrl,
+      options: Options(
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      ),
+      data: data,
+    );
+    final body = response.data!;
+    _accessToken = body['access_token'] as String;
+    final expiresIn = body['expires_in'] as int? ?? 3600;
+    _expiresAt = DateTime.now().millisecondsSinceEpoch + expiresIn * 1000;
+  }
+
+  Future<Map<String, dynamic>?> getAccountInfo() async {
+    try {
+      final token = await getValidToken();
+      final response = await _dio.get<Map<String, dynamic>>(
+        _userInfoUrl,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> disconnect() async {
+    if (_accessToken != null) {
+      try {
+        await _dio.post(
+          _revokeUrl,
+          queryParameters: {'token': _accessToken},
+        );
+      } catch (_) {}
+    }
+    _accessToken = null;
+    _refreshToken = null;
+    _expiresAt = null;
+    _folderId = null;
+  }
+
+  String _generateRandomString(int length) {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    final rng = Random.secure();
+    return List.generate(length, (_) => chars[rng.nextInt(chars.length)])
+        .join();
+  }
+
+  String _sha256Base64Url(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return base64Url.encode(digest.bytes).replaceAll('=', '');
+  }
+}

@@ -5,6 +5,7 @@ import '../../core/models/chat_message.dart';
 import '../../core/models/persona.dart';
 import '../../core/state/active_selection_provider.dart';
 import '../../core/state/db_provider.dart';
+import '../cloud_sync/sync_provider.dart';
 import '../chat_history/chat_history_screen.dart' show chatHistoryProvider;
 import 'chat_generation_service.dart';
 import 'chat_state.dart';
@@ -84,6 +85,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       charId: arg,
       onStateUpdate: (s) => state = AsyncData(s),
     );
+    notifySyncMessageGenerated(ref);
   }
 
   Future<void> regenerateLastAssistant({String? guidanceText}) async {
@@ -134,6 +136,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       charId: arg,
       onStateUpdate: (s) => state = AsyncData(s),
     );
+    notifySyncMessageGenerated(ref);
   }
 
   Future<void> clearChat() async {

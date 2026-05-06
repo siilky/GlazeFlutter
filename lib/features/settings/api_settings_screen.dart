@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/api_config.dart';
 import '../../core/state/db_provider.dart';
+import '../cloud_sync/services/sync_deletion_tracker.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import 'api_editor_screen.dart';
@@ -25,6 +26,7 @@ class ApiListNotifier extends AsyncNotifier<List<ApiConfig>> {
 
   Future<void> remove(String id) async {
     await ref.read(apiConfigRepoProvider).delete(id);
+    await SyncDeletionTracker.record('api_presets', id);
     ref.invalidateSelf();
   }
 }

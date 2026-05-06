@@ -18,6 +18,7 @@ import 'features/personas/persona_list_screen.dart';
 import 'features/presets/preset_list_screen.dart';
 import 'features/regex/regex_list_screen.dart';
 import 'features/settings/api_settings_screen.dart';
+import 'features/cloud_sync/widgets/sync_sheet.dart';
 import 'features/settings/app_settings_screen.dart';
 import 'features/tools/tools_screen.dart';
 import 'shared/shell/shell_screen.dart';
@@ -107,6 +108,7 @@ final routerProvider = Provider<GoRouter>(
       ),
 
       GoRoute(path: '/settings', builder: (_, __) => const AppSettingsScreen()),
+      GoRoute(path: '/sync', builder: (_, __) => const SyncSheet()),
     ],
   ),
 );
