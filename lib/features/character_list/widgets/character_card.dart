@@ -11,6 +11,7 @@ import '../../../core/models/character.dart';
 import '../../../core/state/character_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
+import '../character_detail_screen.dart';
 
 class CharacterCard extends ConsumerWidget {
   final Character character;
@@ -19,7 +20,7 @@ class CharacterCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: () => context.go('/character/${character.id}'),
+      onTap: () => _showDetailSheet(context),
       onLongPress: () => _showActions(context, ref),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
@@ -116,6 +117,18 @@ class CharacterCard extends ConsumerWidget {
     return AppColors.accent;
   }
 
+  void _showDetailSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (_) => CharacterDetailScreen(charId: character.id),
+    );
+  }
+
   void _showActions(BuildContext context, WidgetRef ref) {
     GlazeBottomSheet.show(
       context,
@@ -133,7 +146,7 @@ class CharacterCard extends ConsumerWidget {
           label: 'View Info',
           onTap: () {
             Navigator.pop(context);
-            context.go('/character/${character.id}');
+            _showDetailSheet(context);
           },
         ),
         BottomSheetItem(

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:gradient_blur/gradient_blur.dart';
 
 import '../theme/app_colors.dart';
 
@@ -279,19 +279,22 @@ class _SheetViewHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(top: topPad),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xE619191A), Color(0x0019191A)],
-        ),
+    return GradientBlur(
+      maxBlur: 8,
+      curve: Curves.easeIn,
+      gradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xEB141416),
+          Color(0x88141416),
+          Color(0x00141416),
+        ],
+        stops: [0.0, 0.55, 1.0],
       ),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Column(
+      child: Padding(
+        padding: EdgeInsets.only(top: topPad),
+        child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (showHandle)
@@ -410,7 +413,6 @@ class _SheetViewHeader extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }
