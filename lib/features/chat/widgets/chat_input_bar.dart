@@ -131,6 +131,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    _CircleBtn(icon: Icons.auto_awesome, onTap: widget.onMagicDrawer),
+                    const SizedBox(width: 8),
                     _CircleBtn(
                       icon: _guidanceMode ? Icons.tips_and_updates : Icons.tips_and_updates_outlined,
                       onTap: () => setState(() {
@@ -139,8 +141,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       }),
                       color: _guidanceMode ? Colors.orange : null,
                     ),
-                    const SizedBox(width: 8),
-                    _CircleBtn(icon: Icons.auto_awesome, onTap: widget.onMagicDrawer),
                     const SizedBox(width: 8),
                     _CircleBtn(icon: Icons.image_outlined, onTap: widget.onImageGen),
                   ],

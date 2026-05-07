@@ -135,7 +135,7 @@ class _MagicCardState extends State<MagicCard> {
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(
                     alpha: _pressed || hovered ? 0.08 : 0.04,
@@ -148,23 +148,17 @@ class _MagicCardState extends State<MagicCard> {
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
+                  alignment: Alignment.centerLeft,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: AppColors.accent.withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            item.def.icon,
-                            size: 16,
-                            color: Colors.white.withValues(alpha: 0.8),
-                          ),
+                        Icon(
+                          item.def.icon,
+                          size: 20,
+                          color: Colors.white.withValues(alpha: 0.85),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,28 +248,20 @@ class AddMagicCard extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
               decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.04),
               border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.add,
-                    size: 16,
-                    color: AppColors.textPrimary.withValues(alpha: 0.8),
-                  ),
+                Icon(
+                  Icons.add,
+                  size: 20,
+                  color: AppColors.textPrimary.withValues(alpha: 0.6),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
                     'Add',

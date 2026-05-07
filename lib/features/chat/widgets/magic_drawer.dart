@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gradient_blur/gradient_blur.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -54,51 +55,19 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
 
   static const _allItems = <MagicDrawerItemDef>[
     MagicDrawerItemDef(id: 'context', label: 'Tokenizer', icon: Icons.segment),
-    MagicDrawerItemDef(
-      id: 'summary',
-      label: 'Summary',
-      icon: Icons.summarize_outlined,
-    ),
+    MagicDrawerItemDef(id: 'summary', label: 'Summary', icon: Icons.subject),
     MagicDrawerItemDef(id: 'sessions', label: 'Sessions', icon: Icons.history),
-    MagicDrawerItemDef(
-      id: 'stats',
-      label: 'Stats',
-      icon: Icons.bar_chart_rounded,
-    ),
-    MagicDrawerItemDef(
-      id: 'char-card',
-      label: 'Character',
-      icon: Icons.badge_outlined,
-    ),
-    MagicDrawerItemDef(
-      id: 'lorebooks',
-      label: 'Lorebooks',
-      icon: Icons.menu_book_outlined,
-    ),
-    MagicDrawerItemDef(
-      id: 'memory-books',
-      label: 'Memory Books',
-      icon: Icons.auto_stories_outlined,
-    ),
+    MagicDrawerItemDef(id: 'stats', label: 'Stats', icon: Icons.insert_chart),
+    MagicDrawerItemDef(id: 'char-card', label: 'Character', icon: Icons.account_box),
+    MagicDrawerItemDef(id: 'lorebooks', label: 'Lorebooks', icon: Icons.library_books),
+    MagicDrawerItemDef(id: 'memory-books', label: 'Memory Books', icon: Icons.add_box),
     MagicDrawerItemDef(id: 'regex', label: 'Regex', icon: Icons.code),
-    MagicDrawerItemDef(id: 'api', label: 'API', icon: Icons.api_outlined),
-    MagicDrawerItemDef(id: 'presets', label: 'Presets', icon: Icons.tune),
-    MagicDrawerItemDef(
-      id: 'preview',
-      label: 'Request Preview',
-      icon: Icons.visibility_outlined,
-    ),
+    MagicDrawerItemDef(id: 'api', label: 'API', icon: Icons.cloud),
+    MagicDrawerItemDef(id: 'presets', label: 'Presets', icon: Icons.description),
+    MagicDrawerItemDef(id: 'preview', label: 'Request Preview', icon: Icons.visibility),
     MagicDrawerItemDef(id: 'coverage', label: 'Coverage', icon: Icons.search),
-    MagicDrawerItemDef(
-      id: 'personas',
-      label: 'Personas',
-      icon: Icons.face_retouching_natural_outlined,
-    ),
-    MagicDrawerItemDef(
-      id: 'image-gen',
-      label: 'Image Gen',
-      icon: Icons.image_outlined,
-    ),
+    MagicDrawerItemDef(id: 'personas', label: 'Personas', icon: Icons.manage_accounts),
+    MagicDrawerItemDef(id: 'image-gen', label: 'Image Gen', icon: Icons.image),
   ];
 
   final List<String> _itemIds = [];
@@ -725,82 +694,95 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           child: Stack(
         children: [
           Positioned.fill(
-            child: GridView.builder(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                60,
-                12,
-                16 + MediaQuery.of(context).padding.bottom,
-              ),
-              itemCount: items.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 6,
-                mainAxisSpacing: 8,
-                mainAxisExtent: 60,
-              ),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                if (item.isAddButton) {
-                  return AddMagicCard(onTap: _showAddItemSheet);
-                }
-                return DragTarget<int>(
-                  onWillAcceptWithDetails: (details) {
-                    setState(() => _hoverIndex = index);
-                    return _editing && details.data != index;
-                  },
-                  onLeave: (_) {
-                    if (_hoverIndex == index) {
-                      setState(() => _hoverIndex = null);
-                    }
-                  },
-                  onAcceptWithDetails: (details) {
-                    _moveItem(details.data, index);
-                  },
-                  builder: (context, _, _) {
-                    final card = MagicCard(
-                      item: item,
-                      editing: _editing,
-                      hovered: _hoverIndex == index && _draggingIndex != index,
-                      onTap: () => _handleTap(item.def),
-                      onDelete: () => _removeItem(item.def.id),
-                      onLongPress: () {
-                        if (!_editing) {
-                          HapticFeedback.mediumImpact();
-                          setState(() => _editing = true);
-                        }
-                      },
-                    );
-
-                    if (!_editing) {
-                      return card;
-                    }
-
-                    return LongPressDraggable<int>(
-                      data: index,
-                      onDragStarted: () {
-                        HapticFeedback.mediumImpact();
-                        setState(() => _draggingIndex = index);
-                      },
-                      onDragEnd: (_) {
-                        setState(() {
-                          _draggingIndex = null;
-                          _hoverIndex = null;
-                        });
-                      },
-                      feedback: SizedBox(
-                        width: (MediaQuery.of(context).size.width - 32) / 3,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: Opacity(opacity: 0.92, child: card),
-                        ),
+            child: RawScrollbar(
+              padding: const EdgeInsets.only(top: 60),
+              thickness: 3,
+              radius: const Radius.circular(3),
+              thumbColor: Colors.white24,
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final itemWidth = (constraints.maxWidth - 24 - 12) / 3;
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        60,
+                        12,
+                        16 + MediaQuery.of(context).padding.bottom,
                       ),
-                      childWhenDragging: Opacity(opacity: 0.25, child: card),
-                      child: card,
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 8,
+                        children: List.generate(items.length, (index) {
+                          final item = items[index];
+                          if (item.isAddButton) {
+                            return SizedBox(
+                              width: itemWidth,
+                              child: AddMagicCard(onTap: _showAddItemSheet),
+                            );
+                          }
+                          final card = MagicCard(
+                            item: item,
+                            editing: _editing,
+                            hovered: _hoverIndex == index && _draggingIndex != index,
+                            onTap: () => _handleTap(item.def),
+                            onDelete: () => _removeItem(item.def.id),
+                            onLongPress: () {
+                              if (!_editing) {
+                                HapticFeedback.mediumImpact();
+                                setState(() => _editing = true);
+                              }
+                            },
+                          );
+                          return SizedBox(
+                            width: itemWidth,
+                            child: DragTarget<int>(
+                              onWillAcceptWithDetails: (details) {
+                                setState(() => _hoverIndex = index);
+                                return _editing && details.data != index;
+                              },
+                              onLeave: (_) {
+                                if (_hoverIndex == index) {
+                                  setState(() => _hoverIndex = null);
+                                }
+                              },
+                              onAcceptWithDetails: (details) {
+                                _moveItem(details.data, index);
+                              },
+                              builder: (context, _, _) {
+                                if (!_editing) return card;
+                                return LongPressDraggable<int>(
+                                  data: index,
+                                  onDragStarted: () {
+                                    HapticFeedback.mediumImpact();
+                                    setState(() => _draggingIndex = index);
+                                  },
+                                  onDragEnd: (_) {
+                                    setState(() {
+                                      _draggingIndex = null;
+                                      _hoverIndex = null;
+                                    });
+                                  },
+                                  feedback: SizedBox(
+                                    width: itemWidth,
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: Opacity(opacity: 0.92, child: card),
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(opacity: 0.25, child: card),
+                                  child: card,
+                                );
+                              },
+                            ),
+                          );
+                        }),
+                      ),
                     );
                   },
-                );
-              },
+                ),
+              ),
             ),
           ),
           Positioned(
@@ -808,20 +790,20 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
             left: 0,
             right: 0,
             child: IgnorePointer(
-              child: Container(
-                height: 96,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xEB141416),
-                      Color(0x88141416),
-                      Color(0x00141416),
-                    ],
-                    stops: [0.0, 0.55, 1.0],
-                  ),
+              child: GradientBlur(
+                maxBlur: 8,
+                curve: Curves.easeIn,
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xEB141416),
+                    Color(0x88141416),
+                    Color(0x00141416),
+                  ],
+                  stops: [0.0, 0.55, 1.0],
                 ),
+                child: const SizedBox(height: 68),
               ),
             ),
           ),
