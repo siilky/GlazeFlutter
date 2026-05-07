@@ -245,30 +245,62 @@ class BackupService {
   }
 
   Future<void> _ensureSchema() async {
-    final existing = <String>{};
-    final cols = await _db.customSelect(
-      "PRAGMA table_info('api_configs')",
-    ).get();
-    for (final c in cols) {
-      existing.add(c.read<String>('name'));
+    final tableColumns = <String, Set<String>>{};
+    for (final table in [
+      'api_configs',
+      'chat_sessions',
+      'characters',
+      'lorebooks',
+      'personas',
+    ]) {
+      final cols = await _db
+          .customSelect("PRAGMA table_info('$table')")
+          .get();
+      tableColumns[table] = cols.map((c) => c.read<String>('name')).toSet();
     }
-    const additions = <String, String>{
-      'embedding_use_same': 'BOOLEAN NOT NULL DEFAULT 1',
-      'embedding_enabled': 'BOOLEAN NOT NULL DEFAULT 0',
-      'embedding_endpoint': 'TEXT',
-      'embedding_api_key': 'TEXT',
-      'embedding_model': 'TEXT',
-      'embedding_max_chunk_tokens': 'INTEGER NOT NULL DEFAULT 512',
-      'omit_temperature': 'BOOLEAN NOT NULL DEFAULT 0',
-      'omit_top_p': 'BOOLEAN NOT NULL DEFAULT 0',
-      'omit_reasoning': 'BOOLEAN NOT NULL DEFAULT 0',
-      'omit_reasoning_effort': 'BOOLEAN NOT NULL DEFAULT 0',
+
+    const additions = <String, Map<String, String>>{
+      'api_configs': {
+        'embedding_use_same': 'BOOLEAN NOT NULL DEFAULT 1',
+        'embedding_enabled': 'BOOLEAN NOT NULL DEFAULT 0',
+        'embedding_endpoint': 'TEXT',
+        'embedding_api_key': 'TEXT',
+        'embedding_model': 'TEXT',
+        'embedding_max_chunk_tokens': 'INTEGER NOT NULL DEFAULT 512',
+        'omit_temperature': 'BOOLEAN NOT NULL DEFAULT 0',
+        'omit_top_p': 'BOOLEAN NOT NULL DEFAULT 0',
+        'omit_reasoning': 'BOOLEAN NOT NULL DEFAULT 0',
+        'omit_reasoning_effort': 'BOOLEAN NOT NULL DEFAULT 0',
+      },
+      'chat_sessions': {
+        'authors_note_json': 'TEXT',
+        'draft': 'TEXT',
+        'last_scroll_anchor_json': 'TEXT',
+      },
+      'characters': {
+        'current_session_index': 'INTEGER NOT NULL DEFAULT 0',
+        'fav': 'BOOLEAN NOT NULL DEFAULT 0',
+        'extensions_json': 'TEXT',
+        'gallery_json': 'TEXT',
+        'character_version': 'TEXT',
+      },
+      'lorebooks': {
+        'settings_json': 'TEXT',
+        'description': 'TEXT',
+      },
+      'personas': {
+        'created_at': 'INTEGER',
+      },
     };
-    for (final e in additions.entries) {
-      if (!existing.contains(e.key)) {
-        await _db.customStatement(
-          'ALTER TABLE api_configs ADD COLUMN ${e.key} ${e.value}',
-        );
+
+    for (final entry in additions.entries) {
+      final existing = tableColumns[entry.key] ?? {};
+      for (final col in entry.value.entries) {
+        if (!existing.contains(col.key)) {
+          await _db.customStatement(
+            'ALTER TABLE ${entry.key} ADD COLUMN ${col.key} ${col.value}',
+          );
+        }
       }
     }
   }
