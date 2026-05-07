@@ -518,41 +518,60 @@ class BackupService {
       [Map<String, dynamic>? topLevel]) async {
     final profilesRaw = ls['gz_provider_profiles'];
     Map<String, dynamic>? serviceProfileMap;
-    final spmRaw = ls['gz_service_profile_map'];
-    if (spmRaw is String) {
-      try { serviceProfileMap = jsonDecode(spmRaw); } catch (_) {}
-    } else if (spmRaw is Map<String, dynamic>) {
-      serviceProfileMap = spmRaw;
+    for (final src in [ls, kv]) {
+      final spmRaw = src['gz_service_profile_map'];
+      if (spmRaw is String) {
+        try { serviceProfileMap = jsonDecode(spmRaw); break; } catch (_) {}
+      } else if (spmRaw is Map<String, dynamic>) {
+        serviceProfileMap = spmRaw; break;
+      }
+    }
+
+    Map<String, dynamic>? connPreset;
+    final connPresetsRaw = kv['gz_api_connection_presets'];
+    if (connPresetsRaw != null) {
+      final presets = <Map<String, dynamic>>[];
+      _extractPresetsFromRaw(connPresetsRaw, presets);
+      if (presets.isNotEmpty) connPreset = presets.first;
     }
 
     if (profilesRaw != null) {
       final allProfiles = <Map<String, dynamic>>[];
       _extractPresetsFromRaw(profilesRaw, allProfiles);
 
-      Map<String, dynamic>? embProfile;
-      bool embUseSame = true;
       String? llmProfileId;
       final skipIds = <String>{};
+      Map<String, dynamic>? embProfile;
+      bool embUseSame = true;
+
+      llmProfileId = ls['gz_active_llm_profile_id'] as String?
+          ?? kv['gz_active_llm_profile_id'] as String?;
 
       if (serviceProfileMap != null) {
-        llmProfileId = (serviceProfileMap['llm'] as Map<String, dynamic>?)?['profileId'] as String?;
+        final spmLlm = (serviceProfileMap['llm'] as Map<String, dynamic>?)?['profileId'] as String?;
+        if (spmLlm != null) llmProfileId = spmLlm;
 
-        final embConfig = serviceProfileMap['embedding'] as Map<String, dynamic>?;
-        embUseSame = embConfig?['useSameAsLLM'] as bool? ?? true;
-        final embProfileId = embConfig?['profileId'] as String?;
-        if (embProfileId != null && embProfileId != llmProfileId) {
-          skipIds.add(embProfileId);
-          embProfile = allProfiles.cast<Map<String, dynamic>?>().firstWhere(
-            (p) => p?['id'] == embProfileId, orElse: () => null);
-        }
-
-        for (final svc in ['image_gen', 'memory_books']) {
+        for (final svc in ['embedding', 'image_gen', 'memory_books']) {
           final svcConfig = serviceProfileMap[svc] as Map<String, dynamic>?;
           final svcProfileId = svcConfig?['profileId'] as String?;
           if (svcProfileId != null && svcProfileId != llmProfileId) {
             skipIds.add(svcProfileId);
           }
         }
+
+        final embConfig = serviceProfileMap['embedding'] as Map<String, dynamic>?;
+        embUseSame = embConfig?['useSameAsLLM'] as bool? ?? true;
+        final embProfileId = embConfig?['profileId'] as String?;
+        if (embProfileId != null && embProfileId != llmProfileId) {
+          embProfile = allProfiles.cast<Map<String, dynamic>?>().firstWhere(
+            (p) => p?['id'] == embProfileId, orElse: () => null);
+        }
+      }
+
+      final imggenApiKeys = <String>{};
+      for (final k in ['gz_imggen_api_key', 'gz_imggen_routmy_api_key', 'gz_imggen_naistera_api_key']) {
+        final v = ls[k] as String?;
+        if (v != null && v.isNotEmpty) imggenApiKeys.add(v);
       }
 
       final seenIds = <String>{};
@@ -562,11 +581,16 @@ class BackupService {
         seenIds.add(pid);
 
         if (skipIds.contains(pid)) continue;
+        if (pid != llmProfileId) {
+          final ep = (p['endpoint'] as String?) ?? '';
+          final ak = (p['apiKey'] as String?) ?? (p['key'] as String?) ?? '';
+          if (ep.isEmpty && imggenApiKeys.contains(ak)) continue;
+        }
 
         String embEndpoint = '';
         String embApiKey = '';
         String embModel = '';
-        bool embSame = true;
+        bool embSame = embUseSame;
         bool embEnabled = false;
         int embMaxChunk = 512;
 
@@ -581,7 +605,22 @@ class BackupService {
           embEnabled = true;
         }
 
-        await _insertApiConfig(p, 'chat',
+        final merged = <String, dynamic>{};
+        if (pid == llmProfileId && connPreset != null) {
+          merged.addAll(connPreset);
+        } else {
+          merged['max_tokens'] = ls['api-max-tokens'] ?? kv['api-max-tokens'];
+          merged['context'] = ls['api-context'] ?? kv['api-context'];
+          merged['temp'] = ls['gz_api_temp'] ?? kv['gz_api_temp'];
+          merged['topp'] = ls['gz_api_topp'] ?? kv['gz_api_topp'];
+        }
+        for (final e in p.entries) {
+          if (e.value != null && e.value != '') {
+            merged[e.key] = e.value;
+          }
+        }
+
+        await _insertApiConfig(merged, 'chat',
           embeddingUseSame: embSame,
           embeddingEnabled: embEnabled,
           embeddingEndpoint: embEndpoint,
@@ -982,7 +1021,7 @@ class BackupService {
       final charId = char['id'] as String?;
       if (charId == null) continue;
 
-      final galleryRaw = char['gallery'] ?? char['data']?['extensions']?['gallery'];
+      final galleryRaw = char['images'] ?? char['gallery'] ?? char['data']?['extensions']?['gallery'];
       if (galleryRaw is! List || galleryRaw.isEmpty) continue;
 
       final galleryEntries = <Map<String, dynamic>>[];
@@ -990,19 +1029,22 @@ class BackupService {
         final g = galleryRaw[i];
         if (g is! Map<String, dynamic>) continue;
 
-        final imageUrl = g['url'] as String? ?? g['image'] as String?;
+        final imageUrl = g['src'] as String? ?? g['url'] as String? ?? g['image'] as String?;
         if (imageUrl == null) continue;
 
         String? imagePath;
         if (imageUrl.startsWith('data:')) {
-          final galId = 'gal_${charId}_$i';
+          final galId = g['id'] as String? ?? 'gal_${charId}_$i';
           final bytes = _dataUrlToBytes(imageUrl);
           if (bytes == null) continue;
+          final mime = _dataUrlMime(imageUrl);
+          final ext = mime == 'image/png' ? 'png'
+              : mime == 'image/webp' ? 'webp' : 'jpg';
           imagePath = await _imageStorage.saveBytes(
             bytes,
             'gallery/$charId',
             galId,
-            'png',
+            ext,
           );
         } else {
           continue;
@@ -1184,5 +1226,11 @@ class BackupService {
     } catch (_) {
       return null;
     }
+  }
+
+  String _dataUrlMime(String dataUrl) {
+    final end = dataUrl.indexOf(';');
+    if (end == -1) return '';
+    return dataUrl.substring(5, end);
   }
 }
