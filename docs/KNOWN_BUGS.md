@@ -1,23 +1,25 @@
 # Known Bugs
 
-## Memory Books — major feature gap vs Glaze JS
+## Vector / Embedding
 
-Flutter's MemoryBooksSheet is a minimal stub. Glaze JS has a full draft-based workflow with 7 sheets and 8 composables. Missing features:
+- **~~Memory book embeddings entirely missing.~~** Fixed — `MemoryEmbeddingService` + vector search in `MemoryInjectionService` + reindex/clear UI in MemoryBooksSheet.
+- **~~No rate limit cooldown UI.~~** Fixed — lorebook editor shows countdown after 429.
+- **~~No error classification for embeddings.~~** Fixed — `EmbeddingErrorLabel.classify()` with 8 types, shown as tooltip on error badge in entry list.
+- **~~No freshness check during vector search.~~** Fixed — `LorebookVectorSearch` now verifies `textHash` against current entry content and skips stale vectors.
+- **~~`embeddingTarget` setting is a no-op.~~** Fixed — `LorebookEmbeddingService` now respects per-lorebook `embeddingTarget` (content/keys).
+- **~~No "Delete All Indexes" button.~~** Fixed — added to lorebook editor toolbar.
+- **~~No "Retry Failed" button.~~** Fixed — added to lorebook editor toolbar.
+- **~~`characterFilter` not applied during vector search.~~** Fixed — entries with character filters are now excluded.
+- **~~`keywordVectorSplit` unused.~~** Already implemented in `lorebook_merger.dart`.
 
-- **Draft system entirely missing.** JS has `pendingDrafts[]` with statuses `pending_generation` → `needs_regeneration` → approved. Flutter has no draft concept at all.
-- **Scan Chat (auto-split into drafts).** JS splits uncovered messages into segments of N, creates draft placeholders per segment. Flutter has no scan/split UI.
-- **Batch generation.** JS generates multiple drafts in parallel (configurable batch size). Flutter has no generation UI — only manual entry creation.
-- **Single draft generation / regeneration.** Each draft can be generated individually or regenerated if `needs_regeneration`. Flutter has nothing.
-- **Approve / delete draft.** JS lets you review draft content before approving into an active entry. Flutter only has raw add/edit/delete.
-- **Model selection for memory generation.** JS has quick model selector (fetches models from API), plus "Use LLM API" toggle with separate endpoint/model/key fields. Flutter has these fields in settings but no model selector and no provider integration.
-- **Generation prompt presets.** JS has `MemoryPromptManagerSheet` with custom prompt templates (detailed_beats, etc.) + preview. Flutter has no prompt management.
-- **Search type selector.** JS has vector / keys / combined selector with cycle. Flutter only has settings toggle.
-- **Maintenance / reindex.** JS has dedicated maintenance sheet + reindex-all. Flutter has neither.
-- **Coverage / stale tracking.** JS tracks `staleCoverageCount`, `needs_rebuild` status, uncovered segments. Flutter has no coverage tracking.
-- **Draft progress.** JS shows generating state with elapsed time, cancel button. Flutter has no progress UI.
+## Memory Books
+
+- **No custom prompt manager.** JS has `MemoryPromptManagerSheet` to add/edit/delete custom prompt templates. Flutter only has built-in presets.
+- **No quick model selector.** JS fetches models from the API and shows a picker. Flutter only has a text field for model name.
 
 ## Backup Import
 
+- **~~iOS backup import crashes with FileType.custom error.~~** Fixed — `backup_screen.dart` was using `FileType.any` with `allowedExtensions`, which iOS rejects. Changed to `FileType.custom`.
 - **Duplicate template API config created on recover.** Importing a backup creates an extra API config entry (embedding template) that shouldn't exist.
 - **IMG-GEN API key not restored from backup.** Image generation API keys (RoutMy, Naistera, etc.) are not properly recovered from JS backups.
 
