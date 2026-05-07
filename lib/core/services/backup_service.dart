@@ -880,7 +880,9 @@ class BackupService {
     final sessions = chatData['sessions'] as Map<String, dynamic>?;
     if (sessions == null) return;
 
-    final authorsNotesRaw = chatData['authorsNotes'] as Map<String, dynamic>?;
+    final authorsNotesRaw = chatData['authorsNotes'] is Map<String, dynamic>
+        ? chatData['authorsNotes'] as Map<String, dynamic>
+        : null;
 
     for (final sessionEntry in sessions.entries) {
       final sessionIdx = int.tryParse(sessionEntry.key) ?? 0;
@@ -892,7 +894,10 @@ class BackupService {
           if (role == 'char') role = 'assistant';
 
           final content =
-              msg['text'] as String? ?? msg['content'] as String? ?? msg['mes'] as String? ?? '';
+              (msg['text'] is String ? msg['text'] as String : null) ??
+              (msg['content'] is String ? msg['content'] as String : null) ??
+              (msg['mes'] is String ? msg['mes'] as String : null) ??
+              '';
 
           final swipes = <String>[];
           final rawSwipes = msg['swipes'];
@@ -935,9 +940,9 @@ class BackupService {
             'genTime': msg['genTime']?.toString(),
             'tokens': _toInt(msg['tokens']),
             'greetingIndex': _toInt(msg['greetingIndex'] ?? msg['greeting_index']),
-            'contextRefs': msg['contextRefs'] is List ? List<String>.from(msg['contextRefs']) : <String>[],
-            'swipeDirection': msg['swipeDirection'] as String? ?? msg['swipe_direction'] as String? ?? 'none',
-            'isEditing': msg['isEditing'] ?? msg['is_editing'] ?? false,
+            'contextRefs': msg['contextRefs'] is List ? List<String>.from(msg['contextRefs'].whereType<String>()) : <String>[],
+            'swipeDirection': msg['swipeDirection'] is String ? msg['swipeDirection'] : (msg['swipe_direction'] is String ? msg['swipe_direction'] as String : 'none'),
+            'isEditing': msg['isEditing'] == true || msg['is_editing'] == true,
           };
         }).toList();
 
@@ -945,7 +950,7 @@ class BackupService {
         final chatUpdatedAt = _toInt(chatData['updatedAt']);
         final anRaw = authorsNotesRaw?[sessionEntry.key];
         final authorsNoteJson = _encodeAuthorsNote(anRaw);
-        final draft = chatData['draft'] as String?;
+        final draft = chatData['draft'] is String ? chatData['draft'] as String : null;
         await _db.into(_db.chatSessions).insertOnConflictUpdate(
               ChatSessionsCompanion.insert(
                 sessionId: sessionId,
@@ -1329,15 +1334,15 @@ class BackupService {
       if (raw.isEmpty) return null;
       return jsonEncode({'content': raw, 'role': 'system', 'insertionMode': 'relative', 'depth': 0, 'enabled': true});
     }
-    if (raw is Map<String, dynamic>) {
-      final content = raw['content'] as String? ?? '';
+    if (raw is Map) {
+      final content = raw['content'] is String ? raw['content'] as String : '';
       if (content.isEmpty) return null;
       return jsonEncode({
         'content': content,
-        'role': raw['role'] as String? ?? 'system',
-        'insertionMode': (raw['insertion_mode'] as String?) ?? (raw['insertionMode'] as String?) ?? 'relative',
+        'role': raw['role'] is String ? raw['role'] as String : 'system',
+        'insertionMode': (raw['insertion_mode'] is String ? raw['insertion_mode'] as String : null) ?? (raw['insertionMode'] is String ? raw['insertionMode'] as String : null) ?? 'relative',
         'depth': _toInt(raw['depth']) ?? 0,
-        'enabled': raw['enabled'] as bool? ?? true,
+        'enabled': raw['enabled'] is bool ? raw['enabled'] as bool : true,
       });
     }
     return null;
