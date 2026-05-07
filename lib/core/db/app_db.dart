@@ -69,6 +69,8 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(apiConfigs, apiConfigs.embeddingEndpoint);
             await m.addColumn(apiConfigs, apiConfigs.embeddingApiKey);
             await m.addColumn(apiConfigs, apiConfigs.embeddingModel);
+            await m.addColumn(apiConfigs, apiConfigs.embeddingEnabled);
+            await m.addColumn(apiConfigs, apiConfigs.embeddingMaxChunkTokens);
           }
         },
       );

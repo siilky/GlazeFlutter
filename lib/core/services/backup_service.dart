@@ -520,21 +520,27 @@ class BackupService {
         String embApiKey = '';
         String embModel = '';
         bool embSame = true;
+        bool embEnabled = false;
+        int embMaxChunk = 512;
 
         if (embProfile != null && pid == embProfile['id'] && !embUseSame) {
           embEndpoint = embProfile['endpoint'] as String? ?? '';
           embApiKey = embProfile['apiKey'] as String? ?? embProfile['key'] as String? ?? '';
           embModel = embProfile['model'] as String? ?? '';
           embSame = false;
+          embEnabled = true;
         } else if (embUseSame && pid == (serviceProfileMap?['llm'] as Map<String, dynamic>?)?['profileId']) {
           embSame = true;
+          embEnabled = true;
         }
 
         await _insertApiConfig(p, 'chat',
           embeddingUseSame: embSame,
+          embeddingEnabled: embEnabled,
           embeddingEndpoint: embEndpoint,
           embeddingApiKey: embApiKey,
           embeddingModel: embModel,
+          embeddingMaxChunkTokens: embMaxChunk,
         );
       }
       return;
@@ -585,9 +591,11 @@ class BackupService {
 
   Future<void> _insertApiConfig(Map<String, dynamic> preset, String mode, {
     bool embeddingUseSame = true,
+    bool embeddingEnabled = false,
     String embeddingEndpoint = '',
     String embeddingApiKey = '',
     String embeddingModel = '',
+    int embeddingMaxChunkTokens = 512,
   }) async {
     await _db.into(_db.apiConfigs).insertOnConflictUpdate(
           ApiConfigsCompanion.insert(
@@ -633,9 +641,11 @@ class BackupService {
             omitReasoningEffort: Value(
                 preset['omit_reasoning_effort'] as bool? ?? false),
             embeddingUseSame: Value(embeddingUseSame),
+            embeddingEnabled: Value(embeddingEnabled),
             embeddingEndpoint: Value(embeddingEndpoint),
             embeddingApiKey: Value(embeddingApiKey),
             embeddingModel: Value(embeddingModel),
+            embeddingMaxChunkTokens: Value(embeddingMaxChunkTokens),
           ),
         );
   }

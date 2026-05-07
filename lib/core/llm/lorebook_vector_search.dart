@@ -218,9 +218,6 @@ final embeddingConfigProvider = StateProvider<EmbeddingConfig>((ref) {
 
 Future<void> initEmbeddingConfigFromDb(WidgetRef ref) async {
   final apiConfigs = await ref.read(apiConfigRepoProvider).getAll();
-  final prefs = await SharedPreferences.getInstance();
-  final maxChunkTokens = prefs.getInt('gz_embedding_max_chunk_tokens') ?? 8192;
-
   final chatConfig = apiConfigs.where((c) => c.mode != 'embedding').firstOrNull;
   if (chatConfig != null) {
     if (chatConfig.embeddingUseSame || chatConfig.embeddingEndpoint.isEmpty) {
@@ -230,14 +227,14 @@ Future<void> initEmbeddingConfigFromDb(WidgetRef ref) async {
         model: chatConfig.embeddingModel.isNotEmpty
             ? chatConfig.embeddingModel
             : chatConfig.model,
-        maxChunkTokens: maxChunkTokens,
+        maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
       );
     } else {
       ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
         endpoint: chatConfig.embeddingEndpoint,
         apiKey: chatConfig.embeddingApiKey,
         model: chatConfig.embeddingModel,
-        maxChunkTokens: maxChunkTokens,
+        maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
       );
     }
   }

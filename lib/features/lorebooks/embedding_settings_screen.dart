@@ -71,11 +71,13 @@ class _EmbeddingSettingsScreenState
         endpoint: ep,
         apiKey: ak,
         model: md,
+        maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
       );
       setState(() {
         _endpointCtrl.text = ep;
         _apiKeyCtrl.text = ak;
         _modelCtrl.text = md;
+        _maxChunkTokensCtrl.text = chatConfig.embeddingMaxChunkTokens.toString();
       });
     }
   }
