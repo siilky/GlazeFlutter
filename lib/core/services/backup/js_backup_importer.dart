@@ -178,6 +178,35 @@ class JsBackupImporter with BackupHelpers {
         await prefs.setString(entry.key, entry.value as String);
       }
     }
+    await prefs.remove('gz_imggen_settings');
+
+    final regexScriptsRaw = ls['regex_scripts'] ?? kv['regex_scripts'];
+    if (regexScriptsRaw is String) {
+      try {
+        final decoded = jsonDecode(regexScriptsRaw);
+        if (decoded is List) {
+          final existing = prefs.getString('gz_global_regex_scripts');
+          List<dynamic> merged = existing != null ? jsonDecode(existing) as List : [];
+          final existingIds = merged.map((e) => (e as Map<String, dynamic>)['id']?.toString()).toSet();
+          for (final item in decoded) {
+            if (item is Map<String, dynamic> && !existingIds.contains(item['id']?.toString())) {
+              merged.add(item);
+            }
+          }
+          await prefs.setString('gz_global_regex_scripts', jsonEncode(merged));
+        }
+      } catch (_) {}
+    } else if (regexScriptsRaw is List) {
+      final existing = prefs.getString('gz_global_regex_scripts');
+      List<dynamic> merged = existing != null ? jsonDecode(existing) as List : [];
+      final existingIds = merged.map((e) => (e as Map<String, dynamic>)['id']?.toString()).toSet();
+      for (final item in regexScriptsRaw) {
+        if (item is Map<String, dynamic> && !existingIds.contains(item['id']?.toString())) {
+          merged.add(item);
+        }
+      }
+      await prefs.setString('gz_global_regex_scripts', jsonEncode(merged));
+    }
 
     final memSettingsRaw =
         ls['gz_memory_settings'] ?? kv['gz_memory_settings'];

@@ -613,6 +613,14 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(chatProvider(widget.charId), (prev, next) {
+      final prevSession = prev?.value?.session;
+      final nextSession = next.value?.session;
+      if (prevSession != nextSession) {
+        _loadStats();
+      }
+    });
+
     final panelHeight = math.min(
       MediaQuery.of(context).size.height * 0.54,
       430.0,
