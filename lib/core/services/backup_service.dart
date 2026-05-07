@@ -210,7 +210,6 @@ class BackupService {
     await _importJsCharacters(data['characters']);
     await _importJsPersonas(data['personas']);
     await _importJsLorebooks(kv);
-    await _importJsLorebookActivations(kv);
     await _importJsCharacterBooks(data['characters']);
     await _importJsApiConfigs(kv, ls, data);
     await _importJsLorebookSettings(kv, ls);
@@ -308,7 +307,7 @@ class BackupService {
                       ? jsonEncode(char['alternate_greetings'])
                       : null),
               updatedAt: Value(_toInt(char['updatedAt'] ?? char['updated_at']) ??
-                  DateTime.now().millisecondsSinceEpoch ~/ 1000),
+                  DateTime.now().millisecondsSinceEpoch),
             ),
           );
     }
@@ -343,53 +342,71 @@ class BackupService {
 
   Future<void> _importJsLorebooks(Map<String, dynamic> kv) async {
     final lorebooksRaw = kv['gz_lorebooks'];
-    if (lorebooksRaw != null) {
-      final lb = lorebooksRaw as Map<String, dynamic>;
-      final lorebooks = lb['lorebooks'] as List<dynamic>?;
-      if (lorebooks != null) {
-        for (final l in lorebooks) {
-          final lbJson = l as Map<String, dynamic>;
-          final rawEntries = lbJson['entries'];
-          final mappedEntries = <Map<String, dynamic>>[];
+    if (lorebooksRaw == null) return;
 
-          if (rawEntries is List) {
-            for (final e in rawEntries) {
-              if (e is Map<String, dynamic>) mappedEntries.add(_mapJsLorebookEntry(e));
-            }
-          } else if (rawEntries is Map) {
-            for (final e in rawEntries.values) {
-              if (e is Map<String, dynamic>) mappedEntries.add(_mapJsLorebookEntry(e));
-            }
-          }
+    List<dynamic>? lorebooks;
+    Map<String, dynamic>? globalSettings;
+    Map<String, dynamic>? activations;
 
-          await _db.into(_db.lorebooks).insertOnConflictUpdate(
-                LorebooksCompanion.insert(
-                  lorebookId: lbJson['id'] as String? ?? '',
-                  name: lbJson['name'] as String? ?? '',
-                  enabled: Value(lbJson['enabled'] as bool? ?? true),
-                  activationScope: Value(
-                      lbJson['activationScope'] as String? ??
-                          lbJson['scope'] as String? ??
-                          'global'),
-                  activationTargetId: Value(
-                      lbJson['activationTargetId'] as String? ??
-                          lbJson['targetId'] as String?),
-                  entriesJson: jsonEncode(mappedEntries),
-                ),
-              );
+    if (lorebooksRaw is List) {
+      lorebooks = lorebooksRaw;
+    } else if (lorebooksRaw is Map<String, dynamic>) {
+      final lb = lorebooksRaw;
+      final inner = lb['lorebooks'];
+      if (inner is List) {
+        lorebooks = inner;
+      } else {
+        lorebooks = lb.values.whereType<Map<String, dynamic>>().where((m) => m.containsKey('entries') || m.containsKey('name')).toList();
+      }
+      if (lb['settings'] is Map<String, dynamic>) globalSettings = lb['settings'];
+      if (lb['activations'] is Map<String, dynamic>) activations = lb['activations'];
+    }
+
+    if (lorebooks == null) return;
+
+    for (final l in lorebooks) {
+      final lbJson = l as Map<String, dynamic>;
+      final rawEntries = lbJson['entries'];
+      final mappedEntries = <Map<String, dynamic>>[];
+
+      if (rawEntries is List) {
+        for (final e in rawEntries) {
+          if (e is Map<String, dynamic>) mappedEntries.add(_mapJsLorebookEntry(e));
+        }
+      } else if (rawEntries is Map) {
+        for (final e in rawEntries.values) {
+          if (e is Map<String, dynamic>) mappedEntries.add(_mapJsLorebookEntry(e));
         }
       }
+
+
+      await _db.into(_db.lorebooks).insertOnConflictUpdate(
+            LorebooksCompanion.insert(
+              lorebookId: lbJson['id'] as String? ?? '',
+              name: lbJson['name'] as String? ?? '',
+              enabled: Value(lbJson['enabled'] as bool? ?? true),
+              activationScope: Value(
+                  lbJson['activationScope'] as String? ??
+                      lbJson['scope'] as String? ??
+                      'global'),
+              activationTargetId: Value(
+                  lbJson['activationTargetId'] as String? ??
+                      lbJson['targetId'] as String?),
+              entriesJson: jsonEncode(mappedEntries),
+              updatedAt: Value(_toInt(lbJson['updatedAt']) ?? DateTime.now().millisecondsSinceEpoch ~/ 1000),
+            ),
+          );
     }
-  }
 
-  Future<void> _importJsLorebookActivations(Map<String, dynamic> kv) async {
-    final lorebooksRaw = kv['gz_lorebooks'];
-    if (lorebooksRaw is! Map<String, dynamic>) return;
-    final activationsRaw = lorebooksRaw['activations'];
-    if (activationsRaw is! Map<String, dynamic>) return;
+    if (activations != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('lorebookActivations', jsonEncode(activations));
+    }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lorebookActivations', jsonEncode(activationsRaw));
+    if (globalSettings != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('lorebookSettings', jsonEncode(globalSettings));
+    }
   }
 
   Future<void> _importJsCharacterBooks(dynamic charData) async {
@@ -476,7 +493,7 @@ class BackupService {
       'scanDepth': _toInt(e['scanDepth'] ?? e['scan_depth']),
       'caseSensitive': e['caseSensitive'] ?? e['case_sensitive'] ?? false,
       'matchWholeWords': e['matchWholeWords'] ?? e['match_whole_words'] ?? false,
-      'probability': _toInt(e['probability']) ?? 100,
+      'probability': _toDouble(e['probability']) ?? 100.0,
       'preventRecursion': e['preventRecursion'] ?? e['prevent_recursion'] ?? false,
       'sticky': _toInt(e['sticky']) ?? 0,
       'cooldown': _toInt(e['cooldown']) ?? 0,
@@ -487,6 +504,8 @@ class BackupService {
       'ignoreBudget': e['ignoreBudget'] ?? false,
       'vectorSearch': e['vectorSearch'] ?? e['vector_search'] ?? false,
       'useKeywordSearch': e['useKeywordSearch'] ?? e['use_keyword_search'] ?? true,
+      'delayUntilRecursion': e['delayUntilRecursion'] ?? e['delay_until_recursion'] ?? false,
+      'useGroupScoring': e['useGroupScoring'] ?? e['use_group_scoring'] ?? false,
     };
   }
 
@@ -661,6 +680,17 @@ class BackupService {
           'key': apiKey ?? '',
           'apiKey': apiKey ?? '',
           'model': model ?? '',
+          'max_tokens': ls['api-max-tokens'] ?? kv['api-max-tokens'],
+          'context': ls['api-context'] ?? kv['api-context'],
+          'temp': ls['gz_api_temp'] ?? kv['gz_api_temp'],
+          'topp': ls['gz_api_topp'] ?? kv['gz_api_topp'],
+          'stream': ls['gz_api_stream'] ?? kv['gz_api_stream'],
+          'reasoning_effort': ls['gz_api_reasoning_effort'] ?? kv['gz_api_reasoning_effort'],
+          'reasoning_enabled': ls['gz_api_request_reasoning'] ?? kv['gz_api_request_reasoning'],
+          'reasoning_start': ls['gz_api_reasoning_start'] ?? kv['gz_api_reasoning_start'],
+          'reasoning_end': ls['gz_api_reasoning_end'] ?? kv['gz_api_reasoning_end'],
+          'omit_reasoning': ls['gz_api_omit_reasoning'] ?? kv['gz_api_omit_reasoning'],
+          'omit_reasoning_effort': ls['gz_api_omit_reasoning_effort'] ?? kv['gz_api_omit_reasoning_effort'],
         });
       }
     }
@@ -671,7 +701,24 @@ class BackupService {
     }
 
     for (final preset in presets) {
-      await _insertApiConfig(preset, preset['mode'] as String? ?? 'chat');
+      final embEnabled = preset['embedding_enabled'] ??
+          ls['gz_embedding_enabled'] ?? kv['gz_embedding_enabled'];
+      final embUseSame = preset['embedding_use_same'] ??
+          ls['gz_embedding_use_same'] ?? kv['gz_embedding_use_same'];
+      final embEndpoint = preset['embedding_endpoint'] ??
+          ls['gz_embedding_endpoint'] ?? kv['gz_embedding_endpoint'] as String?;
+      final embApiKey = preset['embedding_key'] ??
+          ls['gz_embedding_key'] ?? kv['gz_embedding_key'] as String?;
+      final embModel = preset['embedding_model'] ??
+          ls['gz_embedding_model'] ?? kv['gz_embedding_model'] as String?;
+
+      await _insertApiConfig(preset, preset['mode'] as String? ?? 'chat',
+        embeddingUseSame: embUseSame == 'true' || embUseSame == true,
+        embeddingEnabled: embEnabled == 'true' || embEnabled == true,
+        embeddingEndpoint: (embEndpoint ?? '') as String,
+        embeddingApiKey: (embApiKey ?? '') as String,
+        embeddingModel: (embModel ?? '') as String,
+      );
     }
   }
 
@@ -760,6 +807,16 @@ class BackupService {
   Future<void> _importJsLorebookSettings(
       Map<String, dynamic> kv, Map<String, dynamic> ls) async {
     final prefs = await SharedPreferences.getInstance();
+
+    final lorebooksRaw = kv['gz_lorebooks'];
+    if (lorebooksRaw is Map<String, dynamic>) {
+      final s = lorebooksRaw['settings'];
+      if (s is Map<String, dynamic>) {
+        await prefs.setString('lorebookSettings', jsonEncode(s));
+        return;
+      }
+    }
+
     for (final source in [kv, ls]) {
       final raw = source['gz_lorebook_settings'] ?? source['lorebook_settings'];
       if (raw == null) continue;
@@ -815,7 +872,7 @@ class BackupService {
           if (role == 'char') role = 'assistant';
 
           final content =
-              msg['content'] as String? ?? msg['text'] as String? ?? msg['mes'] as String? ?? '';
+              msg['text'] as String? ?? msg['content'] as String? ?? msg['mes'] as String? ?? '';
 
           final swipes = <String>[];
           final rawSwipes = msg['swipes'];
@@ -855,18 +912,20 @@ class BackupService {
             'reasoning': reasoning,
             'isHidden': msg['isHidden'] ?? msg['is_hidden'] ?? false,
             'isError': msg['isError'] ?? false,
-            'genTime': msg['genTime'] as String?,
+            'genTime': msg['genTime']?.toString(),
             'tokens': _toInt(msg['tokens']),
           };
         }).toList();
 
         final sessionId = '${charId}_$sessionIdx';
+        final chatUpdatedAt = _toInt(chatData['updatedAt']);
         await _db.into(_db.chatSessions).insertOnConflictUpdate(
               ChatSessionsCompanion.insert(
                 sessionId: sessionId,
                 characterId: charId,
                 sessionIndex: sessionIdx,
                 messagesJson: jsonEncode(messages),
+                updatedAt: Value(chatUpdatedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000),
               ),
             );
       }
@@ -1011,6 +1070,38 @@ class BackupService {
     } else if (activePersonaRaw is Map) {
       final id = activePersonaRaw['id'] as String?;
       if (id != null) await prefs.setString('activePersonaId', id);
+    }
+
+    final presetConnections = ls['gz_preset_connections'] ?? kv['gz_preset_connections'];
+    if (presetConnections is String) {
+      try { await prefs.setString('presetConnections', presetConnections); } catch (_) {}
+    } else if (presetConnections is Map) {
+      await prefs.setString('presetConnections', jsonEncode(presetConnections));
+    }
+
+    final personaConnections = ls['gz_persona_connections'] ?? kv['gz_persona_connections'];
+    if (personaConnections is String) {
+      try { await prefs.setString('personaConnections', personaConnections); } catch (_) {}
+    } else if (personaConnections is Map) {
+      await prefs.setString('personaConnections', jsonEncode(personaConnections));
+    }
+
+    for (final entry in ls.entries) {
+      if (entry.key.startsWith('gz_imggen_') && entry.value is String) {
+        await prefs.setString(entry.key, entry.value as String);
+      }
+    }
+
+    final memSettingsRaw = ls['gz_memory_settings'] ?? kv['gz_memory_settings'];
+    if (memSettingsRaw is String) {
+      try { await prefs.setString('memorySettings', memSettingsRaw); } catch (_) {}
+    } else if (memSettingsRaw is Map<String, dynamic>) {
+      await prefs.setString('memorySettings', jsonEncode(memSettingsRaw));
+    }
+
+    final activeLlmId = ls['gz_active_llm_profile_id'] ?? kv['gz_active_llm_profile_id'];
+    if (activeLlmId is String && activeLlmId.isNotEmpty) {
+      await prefs.setString('activeApiConfigId', activeLlmId);
     }
   }
 
