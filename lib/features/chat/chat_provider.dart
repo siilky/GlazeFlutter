@@ -78,6 +78,19 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     _invalidateHistory();
     state = AsyncData(ChatState(session: updatedSession, isGenerating: true));
 
+    final charRepo = ref.read(characterRepoProvider);
+    final character = await charRepo.getById(arg);
+    if (character != null) {
+      final talkativeness = character.extensions['talkativeness'];
+      if (talkativeness is num && talkativeness < 1.0) {
+        final roll = DateTime.now().microsecond % 100 / 100.0;
+        if (roll > talkativeness) {
+          state = AsyncData(ChatState(session: updatedSession));
+          return;
+        }
+      }
+    }
+
     final notifService = GenerationNotificationService.instance;
     await notifService.onGenerationStarted();
 
@@ -98,8 +111,6 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     );
     notifySyncMessageGenerated(ref);
 
-    final charRepo = ref.read(characterRepoProvider);
-    final character = await charRepo.getById(arg);
     await notifService.onGenerationCompleted(character?.name ?? 'Unknown', arg);
   }
 
@@ -145,6 +156,9 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       previousReasoning: prevAssistant?.reasoning,
       previousGenTime: prevAssistant?.genTime,
       previousTokens: prevAssistant?.tokens,
+      previousSwipesMeta: prevAssistant?.swipesMeta.isNotEmpty == true
+          ? prevAssistant!.swipesMeta
+          : null,
       guidanceText: guidanceText,
     );
     state = AsyncData(result);
@@ -155,6 +169,49 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       onStateUpdate: (s) => state = AsyncData(s),
     );
     notifySyncMessageGenerated(ref);
+
+    final charRepo = ref.read(characterRepoProvider);
+    final character = await charRepo.getById(arg);
+    await notifService.onGenerationCompleted(character?.name ?? 'Unknown', arg);
+  }
+
+  Future<void> continueMessage() async {
+    final current = state.value;
+    if (current == null || current.session == null || current.isGenerating) return;
+
+    final lastIdx = current.messages.length - 1;
+    if (lastIdx < 0) return;
+    final lastMsg = current.messages[lastIdx];
+    if (lastMsg.role != 'assistant') return;
+
+    state = AsyncData(ChatState(session: current.session, isGenerating: true));
+
+    final notifService = GenerationNotificationService.instance;
+    await notifService.onGenerationStarted();
+
+    final service = ChatGenerationService(ref);
+    final result = await service.generate(
+      session: current.session!,
+      charId: arg,
+      currentState: current,
+      onStateUpdate: (s) => state = AsyncData(s),
+    );
+
+    final generatedMsg = result.messages.isNotEmpty ? result.messages.last : null;
+    if (generatedMsg != null && generatedMsg.role == 'assistant') {
+      final appendedContent = '${lastMsg.content}${generatedMsg.content}';
+      final appendedMsg = generatedMsg.copyWith(content: appendedContent);
+      final updatedMessages = [...result.messages.sublist(0, result.messages.length - 1), appendedMsg];
+      final finalSession = result.session!.copyWith(
+        messages: updatedMessages,
+        updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+      await ref.read(chatRepoProvider).put(finalSession);
+      _invalidateHistory();
+      state = AsyncData(ChatState(session: finalSession));
+    } else {
+      state = AsyncData(result);
+    }
 
     final charRepo = ref.read(characterRepoProvider);
     final character = await charRepo.getById(arg);
@@ -190,6 +247,27 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     newMessages[index] = current.messages[index].content != newContent
         ? current.messages[index].copyWith(content: newContent)
         : current.messages[index];
+
+    final newSession = current.session!.copyWith(
+      messages: newMessages,
+      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
+    await ref.read(chatRepoProvider).put(newSession);
+    _invalidateHistory();
+    state = AsyncData(ChatState(session: newSession));
+  }
+
+  Future<void> moveMessage(int fromIndex, int toIndex) async {
+    final current = state.value;
+    if (current == null || current.session == null) return;
+    final msgs = current.messages;
+    if (fromIndex < 0 || fromIndex >= msgs.length) return;
+    if (toIndex < 0 || toIndex >= msgs.length) return;
+    if (fromIndex == toIndex) return;
+
+    final newMessages = List<ChatMessage>.from(msgs);
+    final moved = newMessages.removeAt(fromIndex);
+    newMessages.insert(toIndex, moved);
 
     final newSession = current.session!.copyWith(
       messages: newMessages,
@@ -287,9 +365,14 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final msg = current.messages[messageIndex];
     if (msg.swipes.isEmpty || swipeId < 0 || swipeId >= msg.swipes.length) return;
 
+    final meta = swipeId < msg.swipesMeta.length ? msg.swipesMeta[swipeId] : null;
+
     final updated = msg.copyWith(
       swipeId: swipeId,
       content: msg.swipes[swipeId],
+      reasoning: meta?['reasoning'] as String?,
+      genTime: meta?['genTime'] as String?,
+      tokens: meta?['tokens'] as int?,
     );
 
     final newMessages = List<ChatMessage>.from(current.messages);

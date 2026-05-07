@@ -43,6 +43,10 @@ class PromptPayload {
   final LorebookActivations lorebookActivations;
   final List<LorebookEntry> vectorEntries;
   final AuthorsNote? authorsNote;
+  final String characterDepthPrompt;
+  final int characterDepthPromptDepth;
+  final String characterDepthPromptRole;
+  final Map<String, dynamic> memoryCoverage;
 
   const PromptPayload({
     required this.character,
@@ -62,6 +66,10 @@ class PromptPayload {
     this.lorebookActivations = const LorebookActivations(),
     this.vectorEntries = const [],
     this.authorsNote,
+    this.characterDepthPrompt = '',
+    this.characterDepthPromptDepth = 4,
+    this.characterDepthPromptRole = 'system',
+    this.memoryCoverage = const {},
   });
 }
 
@@ -185,6 +193,17 @@ PromptResult buildPrompt(PromptPayload payload) {
       depthBlocks.add(_ResolvedDepthBlock(role: resolved.role, content: resolved.content, depth: rawBlock.depth ?? 0));
     } else {
       relativeBlocks.add(_ResolvedRelativeBlock(id: id, role: resolved.role, content: resolved.content));
+    }
+  }
+
+  if (payload.characterDepthPrompt.isNotEmpty) {
+    final dpContent = replaceMacros(payload.characterDepthPrompt, macroCtx).text;
+    if (dpContent.trim().isNotEmpty) {
+      depthBlocks.add(_ResolvedDepthBlock(
+        role: payload.characterDepthPromptRole.isNotEmpty ? payload.characterDepthPromptRole : 'system',
+        content: dpContent,
+        depth: payload.characterDepthPromptDepth,
+      ));
     }
   }
 

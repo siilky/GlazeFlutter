@@ -217,6 +217,8 @@ class BackupService {
     await _importJsPresets(kv, ls);
     await _importJsActiveSelections(kv, ls);
     await _importJsGalleryFromCharacters(data['characters']);
+    await _importJsDeletedEntries(ls, kv);
+    await _importJsTheme(ls);
   }
 
   Future<void> _clearAllTables() async {
@@ -740,6 +742,27 @@ class BackupService {
         embeddingModel: (embModel ?? '') as String,
       );
     }
+
+    final presetOrderRaw = ls['gz_preset_order'] ?? kv['gz_preset_order'];
+    if (presetOrderRaw != null) {
+      List<String> order;
+      if (presetOrderRaw is List) {
+        order = presetOrderRaw.map((e) => e.toString()).toList();
+      } else if (presetOrderRaw is String) {
+        try {
+          final decoded = jsonDecode(presetOrderRaw);
+          order = decoded is List
+              ? decoded.map((e) => e.toString()).toList()
+              : <String>[];
+        } catch (_) { order = <String>[]; }
+      } else {
+        order = <String>[];
+      }
+      if (order.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('presetOrder', jsonEncode(order));
+      }
+    }
   }
 
   Future<void> _insertApiConfig(Map<String, dynamic> preset, String mode, {
@@ -827,29 +850,47 @@ class BackupService {
   Future<void> _importJsLorebookSettings(
       Map<String, dynamic> kv, Map<String, dynamic> ls) async {
     final prefs = await SharedPreferences.getInstance();
+    Map<String, dynamic> settings = {};
 
     final lorebooksRaw = kv['gz_lorebooks'];
     if (lorebooksRaw is Map<String, dynamic>) {
       final s = lorebooksRaw['settings'];
       if (s is Map<String, dynamic>) {
-        await prefs.setString('lorebookSettings', jsonEncode(s));
-        return;
+        settings = Map<String, dynamic>.from(s);
       }
     }
 
-    for (final source in [kv, ls]) {
-      final raw = source['gz_lorebook_settings'] ?? source['lorebook_settings'];
-      if (raw == null) continue;
-      Map<String, dynamic> settings;
-      if (raw is String) {
-        try {
-          settings = jsonDecode(raw) as Map<String, dynamic>;
-        } catch (_) { continue; }
-      } else if (raw is Map<String, dynamic>) {
-        settings = raw;
-      } else { continue; }
+    if (settings.isEmpty) {
+      for (final source in [kv, ls]) {
+        final raw = source['gz_lorebook_settings'] ?? source['lorebook_settings'];
+        if (raw == null) continue;
+        if (raw is String) {
+          try {
+            settings = jsonDecode(raw) as Map<String, dynamic>;
+          } catch (_) { continue; }
+        } else if (raw is Map<String, dynamic>) {
+          settings = raw;
+        } else { continue; }
+        break;
+      }
+    }
+
+    final embThreshold = ls['gz_embedding_threshold'] ?? kv['gz_embedding_threshold'];
+    final embTopK = ls['gz_embedding_top_k'] ?? kv['gz_embedding_top_k'];
+    final embScanDepth = ls['gz_embedding_scan_depth'] ?? kv['gz_embedding_scan_depth'];
+
+    if (embThreshold != null && settings['vectorThreshold'] == null) {
+      settings['vectorThreshold'] = _toDouble(embThreshold) ?? 0.45;
+    }
+    if (embTopK != null && settings['vectorTopK'] == null) {
+      settings['vectorTopK'] = _toInt(embTopK) ?? 10;
+    }
+    if (embScanDepth != null && settings['scanDepth'] == null) {
+      settings['scanDepth'] = _toInt(embScanDepth) ?? 10;
+    }
+
+    if (settings.isNotEmpty) {
       await prefs.setString('lorebookSettings', jsonEncode(settings));
-      break;
     }
   }
 
@@ -1194,6 +1235,36 @@ class BackupService {
     }
   }
 
+  Future<void> _importJsDeletedEntries(
+      Map<String, dynamic> ls, Map<String, dynamic> kv) async {
+    final merged = <String, dynamic>{...kv, ...ls};
+    final deletedEntries = <Map<String, dynamic>>[];
+
+    for (final entry in merged.entries) {
+      if (!entry.key.startsWith('gz_deleted_')) continue;
+      final type = entry.key.substring('gz_deleted_'.length);
+      if (entry.value is List) {
+        for (final id in entry.value as List) {
+          deletedEntries.add({'type': type, 'id': id.toString()});
+        }
+      } else if (entry.value is String) {
+        try {
+          final decoded = jsonDecode(entry.value as String);
+          if (decoded is List) {
+            for (final id in decoded) {
+              deletedEntries.add({'type': type, 'id': id.toString()});
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (deletedEntries.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('gz_sync_deleted_entries', jsonEncode(deletedEntries));
+    }
+  }
+
   Future<void> _importJsGalleryFromCharacters(dynamic data) async {
     if (data is! List) return;
     for (final c in data) {
@@ -1441,5 +1512,23 @@ class BackupService {
     final end = dataUrl.indexOf(';');
     if (end == -1) return '';
     return dataUrl.substring(5, end);
+  }
+
+  Future<void> _importJsTheme(Map<String, dynamic> ls) async {
+    final themeState = ls['gz_theme_state'];
+    if (themeState is! String) return;
+    try {
+      final theme = jsonDecode(themeState) as Map<String, dynamic>;
+      final prefs = await SharedPreferences.getInstance();
+      final accent = theme['accent'] as String?;
+      if (accent != null && accent.isNotEmpty) {
+        final clean = accent.replaceFirst('#', '');
+        await prefs.setString('theme_accent', clean);
+      }
+      final isDark = theme['dark'] as bool?;
+      if (isDark != null) {
+        await prefs.setInt('theme_mode', isDark ? 2 : 0);
+      }
+    } catch (_) {}
   }
 }

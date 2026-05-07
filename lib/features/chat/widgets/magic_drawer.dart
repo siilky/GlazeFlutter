@@ -607,37 +607,61 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         .where((m) => m.role == 'assistant')
         .length;
 
+    String timeSpent = '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final seconds = prefs.getInt('chat_time_${widget.charId}') ?? 0;
+      if (seconds >= 3600) {
+        timeSpent = '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
+      } else if (seconds >= 60) {
+        timeSpent = '${seconds ~/ 60}m ${seconds % 60}s';
+      } else if (seconds > 0) {
+        timeSpent = '$seconds s';
+      }
+    } catch (_) {}
+
+    final items = <BottomSheetItem>[
+      BottomSheetItem(
+        icon: Icons.chat_bubble_outline,
+        label: 'Messages',
+        hint: '${session.messages.length} total',
+        onTap: () {},
+      ),
+      BottomSheetItem(
+        icon: Icons.visibility_outlined,
+        label: 'Visible / Hidden',
+        hint: '$visibleMessages visible • $hiddenMessages hidden',
+        onTap: () {},
+      ),
+      BottomSheetItem(
+        icon: Icons.swap_vert,
+        label: 'User / Assistant',
+        hint: '$userMessages user • $assistantMessages assistant',
+        onTap: () {},
+      ),
+      BottomSheetItem(
+        icon: Icons.token,
+        label: 'Prompt Estimate',
+        hint: _stats.promptTokens > 0
+            ? '${_stats.promptTokens} tokens'
+            : 'Not calculated yet',
+        onTap: () {},
+      ),
+    ];
+
+    if (timeSpent.isNotEmpty) {
+      items.add(BottomSheetItem(
+        icon: Icons.timer_outlined,
+        label: 'Time Spent',
+        hint: timeSpent,
+        onTap: () {},
+      ));
+    }
+
     await GlazeBottomSheet.show(
       context,
       title: 'Chat Stats',
-      items: [
-        BottomSheetItem(
-          icon: Icons.chat_bubble_outline,
-          label: 'Messages',
-          hint: '${session.messages.length} total',
-          onTap: () {},
-        ),
-        BottomSheetItem(
-          icon: Icons.visibility_outlined,
-          label: 'Visible / Hidden',
-          hint: '$visibleMessages visible • $hiddenMessages hidden',
-          onTap: () {},
-        ),
-        BottomSheetItem(
-          icon: Icons.swap_vert,
-          label: 'User / Assistant',
-          hint: '$userMessages user • $assistantMessages assistant',
-          onTap: () {},
-        ),
-        BottomSheetItem(
-          icon: Icons.token,
-          label: 'Prompt Estimate',
-          hint: _stats.promptTokens > 0
-              ? '${_stats.promptTokens} tokens'
-              : 'Not calculated yet',
-          onTap: () {},
-        ),
-      ],
+      items: items,
     );
   }
 

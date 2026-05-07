@@ -19,12 +19,36 @@ class ImageGenSettingsNotifier extends AsyncNotifier<ImageGenSettings> {
   Future<ImageGenSettings> build() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_key);
-    if (raw == null) return const ImageGenSettings();
-    try {
-      return _fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
-      return const ImageGenSettings();
+    if (raw != null) {
+      try {
+        return _fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      } catch (_) {}
     }
+    final migrated = await _migrateFromJsKeys(prefs);
+    if (migrated != null) return migrated;
+    return const ImageGenSettings();
+  }
+
+  Future<ImageGenSettings?> _migrateFromJsKeys(SharedPreferences prefs) async {
+    final apiType = prefs.getString('gz_imggen_api_type');
+    if (apiType == null) return null;
+    final settings = ImageGenSettings(
+      enabled: prefs.getBool('gz_imggen_enabled') ?? false,
+      apiType: _parseApiType(apiType),
+      useSameEndpoint: prefs.getBool('gz_imggen_use_same') ?? true,
+      customEndpoint: prefs.getString('gz_imggen_endpoint') ?? '',
+      customApiKey: prefs.getString('gz_imggen_api_key') ?? '',
+      customModel: prefs.getString('gz_imggen_model') ?? '',
+      openaiSize: prefs.getString('gz_imggen_image_size') ?? '1024x1024',
+      openaiQuality: prefs.getString('gz_imggen_quality') ?? 'standard',
+      geminiAspectRatio: prefs.getString('gz_imggen_aspect_ratio') ?? '1:1',
+      routmyApiKey: prefs.getString('gz_imggen_routmy_api_key') ?? '',
+      naisteraApiKey: prefs.getString('gz_imggen_naistera_api_key') ?? '',
+      imageContextEnabled: prefs.getBool('gz_imggen_image_context_enabled') ?? false,
+      imageContextCount: prefs.getInt('gz_imggen_image_context_count') ?? 1,
+    );
+    await prefs.setString(_key, jsonEncode(_toJson(settings)));
+    return settings;
   }
 
   Future<void> save(ImageGenSettings settings) async {

@@ -45,6 +45,10 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sessionApplied = false;
+  bool _showSearch = false;
+  String _searchQuery = '';
+  int _searchCurrentIndex = 0;
+  List<int> _searchMatches = [];
 
   @override
   void initState() {
@@ -145,6 +149,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     showPromptPreviewScreen(context, charId);
                   case 'clear':
                     confirmClearChatDialog(context, ref, charId);
+                  case 'search':
+                    setState(() {
+                      _showSearch = !_showSearch;
+                      _searchQuery = '';
+                      _searchMatches = [];
+                      _searchCurrentIndex = 0;
+                    });
                 }
               },
               itemBuilder: (_) => [
@@ -261,6 +272,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 const PopupMenuDivider(),
                 const PopupMenuItem(
+                  value: 'search',
+                  child: Row(
+                    children: [
+                      Icon(Icons.search, size: 18),
+                      SizedBox(width: 8),
+                      Text('Find in Chat'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
                   value: 'clear',
                   child: Row(
                     children: [
@@ -288,6 +310,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 isGenerating: state.isGenerating,
                 charId: charId,
               ),
+              if (_showSearch)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: _ChatSearchBar(
+                    query: _searchQuery,
+                    matchCount: _searchMatches.length,
+                    currentIndex: _searchCurrentIndex,
+                    onChanged: (q) {
+                      final matches = <int>[];
+                      if (q.isNotEmpty) {
+                        final lower = q.toLowerCase();
+                        for (int i = 0; i < state.messages.length; i++) {
+                          if (state.messages[i].content.toLowerCase().contains(lower)) {
+                            matches.add(i);
+                          }
+                        }
+                      }
+                      setState(() {
+                        _searchQuery = q;
+                        _searchMatches = matches;
+                        _searchCurrentIndex = matches.isNotEmpty ? 0 : 0;
+                      });
+                    },
+                    onPrevious: _searchCurrentIndex > 0
+                        ? () => setState(() => _searchCurrentIndex--)
+                        : null,
+                    onNext: _searchCurrentIndex < _searchMatches.length - 1
+                        ? () => setState(() => _searchCurrentIndex++)
+                        : null,
+                    onClose: () => setState(() {
+                      _showSearch = false;
+                      _searchQuery = '';
+                      _searchMatches = [];
+                    }),
+                  ),
+                ),
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -476,5 +536,69 @@ Future<void> _importChat(
     if (context.mounted) {
         GlazeToast.error(context, 'Import failed: ', e);
     }
+  }
+}
+
+class _ChatSearchBar extends StatelessWidget {
+  final String query;
+  final int matchCount;
+  final int currentIndex;
+  final ValueChanged<String> onChanged;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback onClose;
+
+  const _ChatSearchBar({
+    required this.query,
+    required this.matchCount,
+    required this.currentIndex,
+    required this.onChanged,
+    this.onPrevious,
+    this.onNext,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search, size: 18, color: AppColors.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                autofocus: true,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Find in chat...',
+                  hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onChanged: onChanged,
+              ),
+            ),
+            if (query.isNotEmpty) ...[
+              Text(
+                matchCount > 0 ? '${currentIndex + 1}/$matchCount' : '0/0',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              IconButton(icon: const Icon(Icons.keyboard_arrow_up, size: 20), onPressed: onPrevious, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 28, minHeight: 28)),
+              IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 20), onPressed: onNext, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 28, minHeight: 28)),
+            ],
+            IconButton(icon: const Icon(Icons.close, size: 18), onPressed: onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 28, minHeight: 28)),
+          ],
+        ),
+      ),
+    );
   }
 }

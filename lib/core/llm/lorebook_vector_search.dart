@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/lorebook.dart';
 import '../state/db_provider.dart';
@@ -32,16 +31,21 @@ class LorebookVectorSearch {
     String currentText,
     List<Lorebook> lorebooks,
     LorebookGlobalSettings settings,
-    EmbeddingConfig config,
-  ) async {
+    EmbeddingConfig config, {
+    String? charWorld,
+  }) async {
     if (settings.searchType == 'keys') return [];
 
     final activeLorebooks = lorebooks.where((lb) {
-      if (!lb.enabled) return false;
-      final lbSettings = lb.settings;
-      if (lbSettings != null && !lbSettings.vectorSearchEnabled) return false;
-      return true;
+      if (lb.enabled) return true;
+      if (charWorld != null && charWorld.isNotEmpty && lb.name == charWorld) return true;
+      return false;
     }).toList();
+
+    activeLorebooks.removeWhere((lb) {
+      final lbSettings = lb.settings;
+      return lbSettings != null && !lbSettings.vectorSearchEnabled;
+    });
 
     var effectiveThreshold = settings.vectorThreshold;
     var effectiveTopK = settings.vectorTopK;

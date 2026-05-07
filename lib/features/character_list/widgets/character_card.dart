@@ -53,6 +53,15 @@ class CharacterCard extends ConsumerWidget {
                 onTap: () => _showActions(context, ref),
               ),
             ),
+            if (character.fav)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 22),
+                  child: Icon(Icons.star, size: 14, color: Colors.amber.withValues(alpha: 0.9)),
+                ),
+              ),
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -111,6 +120,14 @@ class CharacterCard extends ConsumerWidget {
     GlazeBottomSheet.show(
       context,
       items: [
+        BottomSheetItem(
+          icon: character.fav ? Icons.star : Icons.star_border,
+          label: character.fav ? 'Unfavorite' : 'Favorite',
+          onTap: () {
+            Navigator.pop(context);
+            ref.read(charactersProvider.notifier).add(character.copyWith(fav: !character.fav));
+          },
+        ),
         BottomSheetItem(
           icon: Icons.info_outline_rounded,
           label: 'View Info',

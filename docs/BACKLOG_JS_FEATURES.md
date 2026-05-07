@@ -109,57 +109,102 @@ Features present in Glaze JS backups but not yet implemented in Flutter.
 
 - [ ] **Character thumbnail / mini_thumbnail** — `characters[].thumbnail`
   - Optimized thumbnails for character list
-  - Need: image storage, lazy generation
+  - Need: DB migration (thumbnailPath column), image storage, lazy generation
+  - Deferred: Flutter Image widget resizes efficiently from avatarPath
 
-- [ ] **Character extensions talkativeness** — `extensions.talkativeness`
+- [x] **Character extensions talkativeness** — `extensions.talkativeness`
   - Random reply probability (0-1)
-  - Need: provider read from extensions, random skip logic in generation
+  - Implemented: `sendMessage` checks `character.extensions['talkativeness']`, skips generation with probability `1 - talkativeness`
+  - UI: slider in character editor, persisted via extensions map
 
-- [ ] **Depth prompt injection** — `extensions.depth_prompt`
-  - Model fields exist but prompt builder doesn't inject it yet
-  - Need: PromptPayloadBuilder reads depthPrompt/depth/role from character, injects at depth
+- [x] **Depth prompt injection** — `extensions.depth_prompt`
+  - PromptPayload includes `characterDepthPrompt/Depth/Role`, injected as depth block in `buildPrompt()`
+  - Separate from authors_note — character depth_prompt always injected if non-empty
+  - UI: text field + role/depth dropdowns in character editor
 
-- [ ] **World lorebook linking** — `extensions.world`
-  - Model field exists but no UI/logic to link character to lorebook by name
-  - Need: auto-activate lorebook where name matches character.world
+- [x] **World lorebook linking** — `extensions.world`
+  - `scanLorebooks()` and `LorebookVectorSearch.search()` auto-activate lorebook where `lb.name == char.world`
+  - Works even if lorebook is disabled
+  - UI: dropdown picker in character editor
 
-- [ ] **Message memoryCoverage persistence** — `msg.memoryCoverage`
-  - Model field exists but no engine writes it yet
-  - Need: memory engine updates coverage after each generation
+- [x] **Message memoryCoverage persistence** — `msg.memoryCoverage`
+  - `PromptPayloadBuilder` extracts matched memory entry IDs into `memoryCoverage`
+  - `ChatGenerationService` writes `memoryCoverage` on generated assistant message
+  - UI: "N mem" indicator in message metadata row
 
-- [ ] **Message swipesMeta persistence** — `msg.swipesMeta`
-  - Model field exists but generation service doesn't populate it yet
-  - Need: each swipe stores genTime/reasoning/tokens/guidanceText/guidanceType
+- [x] **Message swipesMeta persistence** — `msg.swipesMeta`
+  - Each swipe stores `{genTime, reasoning, tokens, guidanceText?, guidanceType?}`
+  - `previousSwipesMeta` carried forward on regeneration
+  - `setSwipe()` restores reasoning/genTime/tokens from swipesMeta
 
-- [ ] **Backup import: deleted entries** — `gz_deleted_*`
-  - Currently ignored; needed for sync conflict resolution
-  - Need: deleted entries tracking table
+- [x] **Backup import: deleted entries** — `gz_deleted_*`
+  - `_importJsDeletedEntries()` reads `gz_deleted_{type}` from localStorage
+  - Writes to `gz_sync_deleted_entries` SharedPreferences key (used by SyncDeletionTracker)
 
-- [ ] **Backup import: preset order** — `gz_preset_order`
-  - Custom preset ordering not imported
+- [x] **Backup import: preset order** — `gz_preset_order`
+  - `_importJsApiConfigs()` reads `gz_preset_order` and stores in SharedPreferences key `presetOrder`
+  - `PresetListNotifier._applyOrder()` reads key to sort presets by imported order
 
-- [ ] **Backup import: embedding settings** — `gz_embedding_*`
-  - Embedding settings in localStorage (endpoint, key, model, threshold, top_k, scan_depth, enabled, use_same)
-  - Need: import to ApiConfig embedding fields
+- [x] **Backup import: embedding settings** — `gz_embedding_*`
+  - API fields (endpoint, key, model, enabled, use_same) already imported into ApiConfig
+  - Vector search fields (threshold, top_k, scan_depth) now merged into LorebookGlobalSettings via `_importJsLorebookSettings()`
+
+- [x] **Character editor data loss fix** — `_save()` was constructing new Character without preserving extensions, fav, depthPrompt, world, characterVersion
+  - Now preserves all original fields that aren't edited in the UI
+  - Talkativeness slider writes to extensions map
 
 ## Low Priority (nice to have)
 
-- [ ] **Chat stats** — `gz_stat_*`
-  - Per-chat/char/global: message count, token count, regenerations, first_msg stats
-  - Need: stats table, UI dashboard
+- [ ] **Group chats** — multi-character conversations
+  - Need: GroupChat model, group chat creation UI, turn-order logic, per-character prompt assembly
+  - Complex feature, deferred
 
-- [ ] **Time tracking** — `gz_time_*`
-  - Time spent per chat/character/app
-  - Need: timer service, UI
+- [x] **Chat stats** — persistent tracking + dashboard
+  - Stats shown in magic drawer: messages, visible/hidden, user/assistant, prompt estimate
+  - Time tracking per character: SessionLifecycleTracker records elapsed time, shown as "Time Spent" in stats sheet
 
-- [ ] **Image generation config** — `gz_imggen_*`
-  - Imported to SharedPreferences but no imggen service yet
-  - Fields: api_type, api_key, endpoint, model, quality, aspect_ratio, image_size, image_context_enabled, image_context_count, additional_refs, routmy_*, naistera_*
+- [x] **Time tracking** — timer service per chat
+  - SessionLifecycleTracker records wall-clock time spent in each chat (persisted to SharedPreferences)
+  - Displayed in Chat Stats sheet (magic drawer) as "Time Spent"
 
-- [ ] **Sync** — `gz_sync_*`
-  - Cloud sync (Google Drive)
-  - Device ID, tokens, manifest, deleted entries
+- [x] **Image generation config** — `gz_imggen_*`
+  - ImageGenSettingsNotifier migrates from individual `gz_imggen_*` keys to consolidated `gz_imggen_settings` JSON blob
+  - Migration runs automatically on first load if blob doesn't exist but JS keys do
 
-- [ ] **Theme** — `gz_theme_*`
-  - Custom themes: accent, bg, blur, opacity, font, presets
-  - Partially implemented in Flutter
+- [x] **Sync** — `gz_sync_*`
+  - Cloud sync fully implemented: Google Drive + Dropbox adapters
+  - SyncEngine, SyncService, SyncManifest, SyncQueue, SyncConflict, SyncDeletionTracker
+  - UI: sync_sheet.dart with provider selection, auto-sync toggle, conflict resolution
+
+- [x] **Theme** — `gz_theme_*`
+  - Flutter theme: mode (light/dark/system) + accent color
+  - Backup import: `_importJsTheme()` reads `gz_theme_state` from JS backup, maps accent/dark to `theme_accent`/`theme_mode` SharedPreferences keys
+  - Full custom bg/blur/opacity/fonts not implemented (would require extending AppTheme significantly)
+
+- [x] **Character fav UI** — star on card, filter, toggle
+  - Star icon on CharacterCard when fav=true
+  - Favorite toggle in card long-press menu
+  - Star filter button in character list header
+  - SortType.fav filter option
+
+- [x] **Chat search** — find text within chat messages
+  - "Find in Chat" menu item in chat screen
+  - Search bar with match counter (X/Y) and previous/next navigation
+  - Filters messages by content, highlights match count
+
+- [x] **Move/reorder messages** — move up/down
+  - `moveMessage(fromIndex, toIndex)` in ChatNotifier
+  - "Move Up" / "Move Down" actions in message context menu
+
+- [x] **Continue message** — append to last assistant message
+  - `continueMessage()` in ChatNotifier: generates continuation and appends to last assistant message
+  - "Continue" action in message context menu (last assistant message only)
+
+- [x] **Swipe dot indicators** — visual swipe position
+  - Dot indicators (≤10 swipes) or text counter (>10) replace old "X/Y" text
+  - Active swipe dot is full color, others are dimmed
+
+- [x] **Lorebook free-form test** — test key matching
+  - "Test Keys" button in lorebook editor
+  - Dialog with text input showing matched entries in real-time
+  - Matches keys and secondary keys with proper case sensitivity

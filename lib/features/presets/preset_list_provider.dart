@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/preset.dart';
 import '../../core/state/db_provider.dart';
@@ -12,7 +15,8 @@ final presetListProvider =
 class PresetListNotifier extends AsyncNotifier<List<Preset>> {
   @override
   Future<List<Preset>> build() async {
-    return ref.watch(presetRepoProvider).getAll();
+    final presets = await ref.watch(presetRepoProvider).getAll();
+    return _applyOrder(presets);
   }
 
   Future<void> add(Preset preset) async {
@@ -24,5 +28,27 @@ class PresetListNotifier extends AsyncNotifier<List<Preset>> {
     await ref.read(presetRepoProvider).delete(id);
     await SyncDeletionTracker.record('theme_presets', id);
     ref.invalidateSelf();
+  }
+
+  Future<List<Preset>> _applyOrder(List<Preset> presets) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('presetOrder');
+      if (raw == null) return presets;
+      final order = (jsonDecode(raw) as List).cast<String>();
+      if (order.isEmpty) return presets;
+      final orderMap = <String, int>{};
+      for (int i = 0; i < order.length; i++) {
+        orderMap[order[i]] = i;
+      }
+      final sorted = List<Preset>.from(presets)..sort((a, b) {
+        final ai = orderMap[a.id] ?? 999999;
+        final bi = orderMap[b.id] ?? 999999;
+        return ai.compareTo(bi);
+      });
+      return sorted;
+    } catch (_) {
+      return presets;
+    }
   }
 }

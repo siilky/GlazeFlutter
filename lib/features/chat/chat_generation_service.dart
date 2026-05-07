@@ -29,6 +29,7 @@ class ChatGenerationService {
     String? previousReasoning,
     String? previousGenTime,
     int? previousTokens,
+    List<Map<String, dynamic>>? previousSwipesMeta,
     String? guidanceText,
   }) async {
     try {
@@ -77,6 +78,7 @@ class ChatGenerationService {
       final startGenTime = DateTime.now();
       final sseClient = SseClient();
       ChatState? finalState;
+      final coverage = payload.memoryCoverage;
 
       await sseClient.streamChatCompletion(
         endpoint: apiConfig.endpoint,
@@ -117,6 +119,9 @@ class ChatGenerationService {
             previousReasoning: previousReasoning,
             previousGenTime: previousGenTime,
             previousTokens: previousTokens,
+            previousSwipesMeta: previousSwipesMeta,
+            guidanceText: guidanceText,
+            memoryCoverage: coverage,
           );
         },
         onError: (error) {
@@ -224,6 +229,9 @@ class ChatGenerationService {
     String? previousReasoning,
     String? previousGenTime,
     int? previousTokens,
+    List<Map<String, dynamic>>? previousSwipesMeta,
+    String? guidanceText,
+    Map<String, dynamic> memoryCoverage = const {},
   }) {
     List<String> swipes;
     int swipeId;
@@ -236,6 +244,30 @@ class ChatGenerationService {
       swipeId = 0;
     }
 
+    final currentSwipeMeta = <String, dynamic>{
+      'genTime': genTime,
+      'reasoning': reasoning,
+      'tokens': tokens,
+    };
+    if (guidanceText != null && guidanceText.isNotEmpty) {
+      currentSwipeMeta['guidanceText'] = guidanceText;
+      currentSwipeMeta['guidanceType'] = 'GENERATION';
+    }
+
+    List<Map<String, dynamic>> swipesMeta;
+    if (previousSwipesMeta != null && previousSwipesMeta.isNotEmpty) {
+      swipesMeta = [...previousSwipesMeta, currentSwipeMeta];
+    } else if (previousSwipes != null && previousSwipes.isNotEmpty) {
+      final prevMeta = <String, dynamic>{
+        'genTime': previousGenTime,
+        'reasoning': previousReasoning,
+        'tokens': previousTokens,
+      };
+      swipesMeta = [prevMeta, currentSwipeMeta];
+    } else {
+      swipesMeta = [currentSwipeMeta];
+    }
+
     final assistantMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toRadixString(36),
       role: 'assistant',
@@ -246,6 +278,8 @@ class ChatGenerationService {
       timestamp: DateTime.now().millisecondsSinceEpoch,
       swipes: swipes,
       swipeId: swipeId,
+      swipesMeta: swipesMeta,
+      memoryCoverage: memoryCoverage,
     );
     final finalMessages = [...currentSession.messages, assistantMsg];
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;

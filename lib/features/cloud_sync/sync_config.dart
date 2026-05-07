@@ -8,7 +8,9 @@ class SyncConfig {
   static String? _gdriveRedirectNative;
 
   static Future<void> load() async {
-    await dotenv.load(fileName: '.env');
+    if (!dotenv.isInitialized) {
+      await dotenv.load(fileName: '.env');
+    }
     _dropboxAppKey = dotenv.env['DROPBOX_APP_KEY'];
     _dropboxRedirectNative = dotenv.env['DROPBOX_REDIRECT_NATIVE'];
     _gdriveClientId = dotenv.env['GDRIVE_CLIENT_ID'];

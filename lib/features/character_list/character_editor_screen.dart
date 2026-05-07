@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import '../../core/models/character.dart';
 import '../../core/services/character_exporter.dart';
 import '../../core/state/db_provider.dart';
+import '../../core/state/lorebook_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/glaze_toast.dart';
@@ -38,11 +39,17 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
   late final _creatorCtrl = TextEditingController();
   late final _creatorNotesCtrl = TextEditingController();
   late final _tagsCtrl = TextEditingController();
+  late final _depthPromptCtrl = TextEditingController();
 
   String? _avatarPath;
   bool _loading = true;
   bool _saving = false;
   Character? _original;
+  int _depthPromptDepth = 4;
+  String _depthPromptRole = 'system';
+  String? _selectedWorld;
+  double _talkativeness = 1.0;
+  List<String> _lorebookNames = [];
 
   @override
   void initState() {
@@ -63,7 +70,17 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
     _creatorCtrl.dispose();
     _creatorNotesCtrl.dispose();
     _tagsCtrl.dispose();
+    _depthPromptCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadLorebookNames() async {
+    final lorebooks = await ref.read(lorebooksProvider.future);
+    if (mounted) {
+      setState(() {
+        _lorebookNames = lorebooks.map((lb) => lb.name).toList()..sort();
+      });
+    }
   }
 
   Future<void> _loadCharacter() async {
@@ -82,7 +99,14 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
       _creatorNotesCtrl.text = char.creatorNotes ?? '';
       _tagsCtrl.text = char.tags.join(', ');
       _avatarPath = char.avatarPath;
+      _depthPromptCtrl.text = char.depthPrompt;
+      _depthPromptDepth = char.depthPromptDepth;
+      _depthPromptRole = char.depthPromptRole;
+      _selectedWorld = char.world;
+      final talkVal = char.extensions['talkativeness'];
+      _talkativeness = talkVal is num ? talkVal.toDouble().clamp(0.0, 1.0) : 1.0;
       setState(() => _loading = false);
+      _loadLorebookNames();
     } else if (mounted) {
       setState(() => _loading = false);
     }
@@ -218,6 +242,79 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
               maxLines: 3,
               minLines: 1,
             ),
+            const SizedBox(height: 20),
+            _SectionHeader('Advanced'),
+            TextFormField(
+              controller: _depthPromptCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Depth Prompt',
+                hintText: 'Injected at a specific depth in the prompt',
+              ),
+              maxLines: 4,
+              minLines: 2,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _depthPromptRole,
+                    decoration: const InputDecoration(labelText: 'Depth Role'),
+                    items: const [
+                      DropdownMenuItem(value: 'system', child: Text('System')),
+                      DropdownMenuItem(value: 'user', child: Text('User')),
+                      DropdownMenuItem(value: 'assistant', child: Text('Assistant')),
+                    ],
+                    onChanged: (v) => setState(() => _depthPromptRole = v ?? 'system'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 100,
+                  child: DropdownButtonFormField<int>(
+                    value: _depthPromptDepth,
+                    decoration: const InputDecoration(labelText: 'Depth'),
+                    items: List.generate(20, (i) => i + 1)
+                        .map((d) => DropdownMenuItem(value: d, child: Text('$d')))
+                        .toList(),
+                    onChanged: (v) => setState(() => _depthPromptDepth = v ?? 4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String?>(
+              value: _selectedWorld,
+              decoration: const InputDecoration(
+                labelText: 'World Lorebook',
+                hintText: 'Auto-activate lorebook by name',
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('None')),
+                ..._lorebookNames.map((name) => DropdownMenuItem<String?>(value: name, child: Text(name))),
+              ],
+              onChanged: (v) => setState(() => _selectedWorld = v),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('Talkativeness'),
+                Expanded(
+                  child: Slider(
+                    value: _talkativeness,
+                    min: 0,
+                    max: 1,
+                    divisions: 20,
+                    label: (_talkativeness * 100).round().toString(),
+                    onChanged: (v) => setState(() => _talkativeness = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 48,
+                  child: Text('${(_talkativeness * 100).round()}%'),
+                ),
+              ],
+            ),
             const SizedBox(height: 40),
           ],
         ),
@@ -326,6 +423,16 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
         alternateGreetings: _original?.alternateGreetings ?? [],
         color: _original?.color,
         updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        extensions: {
+          ...?_original?.extensions,
+          'talkativeness': _talkativeness,
+        },
+        fav: _original?.fav ?? false,
+        depthPrompt: _depthPromptCtrl.text.trim(),
+        depthPromptDepth: _depthPromptDepth,
+        depthPromptRole: _depthPromptRole,
+        world: _selectedWorld,
+        characterVersion: _original?.characterVersion ?? '1',
       );
 
       await ref.read(characterRepoProvider).put(updated);
