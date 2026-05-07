@@ -181,6 +181,8 @@ class CharacterImporter {
       tags: _toStringList(data['tags']),
       alternateGreetings: _toStringList(data['alternate_greetings']),
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      fav: data['fav'] as bool? ?? false,
+      extensions: _extractExtensions(data),
     );
   }
 
@@ -193,6 +195,14 @@ class CharacterImporter {
       return value.map((e) => e.toString()).toList();
     }
     return [];
+  }
+
+  Map<String, dynamic> _extractExtensions(Map<String, dynamic> data) {
+    final ext = data['extensions'] as Map<String, dynamic>?;
+    if (ext == null || ext.isEmpty) return {};
+    final copy = Map<String, dynamic>.from(ext);
+    copy.remove('gallery');
+    return copy;
   }
 
   Uint8List? _dataUrlToBytes(String dataUrl) {

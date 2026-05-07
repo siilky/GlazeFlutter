@@ -25,6 +25,9 @@ class Character with _$Character {
     String? color,
     @Default(0) int updatedAt,
     @Default([]) List<GalleryEntry> gallery,
+    @Default(0) int currentSessionIndex,
+    @Default(false) bool fav,
+    @Default({}) Map<String, dynamic> extensions,
   }) = _Character;
 
   factory Character.fromJson(Map<String, dynamic> json) =>

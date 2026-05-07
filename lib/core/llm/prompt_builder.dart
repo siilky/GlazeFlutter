@@ -42,6 +42,7 @@ class PromptPayload {
   final LorebookGlobalSettings lorebookSettings;
   final LorebookActivations lorebookActivations;
   final List<LorebookEntry> vectorEntries;
+  final AuthorsNote? authorsNote;
 
   const PromptPayload({
     required this.character,
@@ -60,6 +61,7 @@ class PromptPayload {
     this.lorebookSettings = const LorebookGlobalSettings(),
     this.lorebookActivations = const LorebookActivations(),
     this.vectorEntries = const [],
+    this.authorsNote,
   });
 }
 
@@ -157,6 +159,7 @@ PromptResult buildPrompt(PromptPayload payload) {
       notifyObj: notifyObj,
       summaryContent: payload.summaryContent,
       summaryPrefix: payload.summaryPrefix,
+      authorsNote: payload.authorsNote,
     );
 
     if (notifyObj.varsChanged) {
@@ -166,7 +169,19 @@ PromptResult buildPrompt(PromptPayload payload) {
 
     if (resolved == null) continue;
 
-    if (rawBlock.insertionMode == 'depth' && id != 'chat_history') {
+    if (id == 'authors_note' && payload.authorsNote != null) {
+      final anMode = payload.authorsNote!.insertionMode.isNotEmpty
+          ? payload.authorsNote!.insertionMode
+          : rawBlock.insertionMode;
+      final anDepth = payload.authorsNote!.depth > 0
+          ? payload.authorsNote!.depth
+          : rawBlock.depth ?? 0;
+      if (anMode == 'depth') {
+        depthBlocks.add(_ResolvedDepthBlock(role: resolved.role, content: resolved.content, depth: anDepth));
+      } else {
+        relativeBlocks.add(_ResolvedRelativeBlock(id: id, role: resolved.role, content: resolved.content));
+      }
+    } else if (rawBlock.insertionMode == 'depth' && id != 'chat_history') {
       depthBlocks.add(_ResolvedDepthBlock(role: resolved.role, content: resolved.content, depth: rawBlock.depth ?? 0));
     } else {
       relativeBlocks.add(_ResolvedRelativeBlock(id: id, role: resolved.role, content: resolved.content));

@@ -18,33 +18,38 @@ Features present in Glaze JS backups but not yet implemented in Flutter.
   - Fallback API config includes temp/topp/stream/reasoning
   - loadLorebookSettings() fixed (was broken)
 
+- [x] **Authors Notes** — `gz_chat_{id}.authorsNotes`
+  - `authorsNoteJson` column in `chat_sessions` (migration v13)
+  - `AuthorsNote` freezed model (content, role, insertionMode, depth, enabled)
+  - `ChatRepo._toModel`/`_toCompanion` round-trip authorsNoteJson
+  - `PromptPayload.authorsNote` passed from session
+  - `resolveBlockContent` handles `authors_note` case with role override
+  - Per-session depth/insertionMode override from AuthorsNote data
+  - Backup import: `_encodeAuthorsNote()` normalizes JS string/object formats
+
+- [x] **Chat currentId** — `gz_chat_{id}.currentId`
+  - `currentSessionIndex` column in `characters` (migration v13)
+  - `ChatNotifier.build` resolves session by currentSessionIndex
+  - `_saveCurrentSessionIndex()` persists on session switch/create/branch
+  - Backup import updates character after chat data import
+
+- [x] **Character extensions** — `characters[].extensions` + `fav`
+  - `extensionsJson` and `fav` columns in `characters` (migration v13)
+  - `Character.extensions` and `Character.fav` fields
+  - `CharacterImporter._extractExtensions()` strips gallery from extensions
+  - `CharacterExporter` includes fav and extensions in V2 data
+  - Backup import: `_extractExtensionsJson()` handles both top-level and data.extensions
+
+- [x] **Message metadata** — in chat messages
+  - `greetingIndex`, `contextRefs`, `swipeDirection`, `isEditing` fields in ChatMessage
+  - Backup import reads these from JS message objects
+
+- [x] **Chat drafts** — `gz_chat_{id}.draft`
+  - `draft` column in `chat_sessions` (migration v13)
+  - `ChatSession.draft` field
+  - Backup import reads draft from chatData
+
 ## High Priority (core functionality)
-
-- [ ] **Authors Notes** — `gz_chat_{id}.authorsNotes`
-  - Per-chat author notes injected into prompt
-  - Need: column in `chat_sessions` or separate table, UI, prompt injection
-
-- [ ] **Chat currentId** — `gz_chat_{id}.currentId`
-  - Tracks which session tab is active for a character
-  - Need: state management, UI tab switching
-
-- [ ] **Character extensions** — `characters[].extensions`
-  - Contains: talkativeness, fav, world, depth_prompt, gallery (legacy)
-  - Need: `extensionsJson` column in `characters`, UI for each extension
-
-- [ ] **Message metadata** — in chat messages
-  - `greetingIndex` — which alternate greeting was used
-  - `contextRefs` — lorebook entries that were active for this message
-  - `memoryCoverage` — memory book coverage info
-  - `swipeDirection` — last swipe direction
-  - `isEditing` — message is being edited
-  - Need: fields in message model
-
-## Medium Priority
-
-- [ ] **Chat drafts** — `gz_chat_{id}.draft`
-  - Unsent message text preserved across sessions
-  - Need: column in `chat_sessions`, auto-save on input
 
 - [ ] **Scroll position** — `gz_chat_{id}.lastScrollAnchor`
   - Remember scroll position per chat

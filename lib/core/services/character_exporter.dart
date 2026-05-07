@@ -96,6 +96,14 @@ Map<String, dynamic> _buildV2Data(Character character, {Map<String, dynamic>? ch
     data['character_book'] = characterBookData;
   }
 
+  if (character.fav) {
+    data['fav'] = true;
+  }
+
+  if (character.extensions.isNotEmpty) {
+    data['extensions'] = character.extensions;
+  }
+
   return {
     'spec': 'chara_card_v2',
     'spec_version': '2.0',

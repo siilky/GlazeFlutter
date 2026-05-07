@@ -26,7 +26,14 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   Future<ChatState> build(String arg) async {
     final repo = ref.read(chatRepoProvider);
     final sessions = await repo.getByCharacterId(arg);
-    if (sessions.isNotEmpty) return ChatState(session: sessions.first);
+
+    if (sessions.isNotEmpty) {
+      final charRepo = ref.read(characterRepoProvider);
+      final character = await charRepo.getById(arg);
+      final currentIdx = character?.currentSessionIndex ?? 0;
+      final target = sessions.where((s) => s.sessionIndex == currentIdx).firstOrNull ?? sessions.first;
+      return ChatState(session: target);
+    }
 
     final charRepo = ref.read(characterRepoProvider);
     final character = await charRepo.getById(arg);
@@ -302,6 +309,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final sessions = await repo.getByCharacterId(arg);
     final target = sessions.where((s) => s.sessionIndex == sessionIndex).firstOrNull;
     if (target != null) {
+      await _saveCurrentSessionIndex(sessionIndex);
       state = AsyncData(ChatState(session: target));
     }
   }
@@ -327,6 +335,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     );
     await repo.put(newSession);
     _invalidateHistory();
+    await _saveCurrentSessionIndex(nextIndex);
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -359,6 +368,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
 
     await repo.put(newSession);
     _invalidateHistory();
+    await _saveCurrentSessionIndex(maxIdx + 1);
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -393,6 +403,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
 
     await repo.put(newSession);
     _invalidateHistory();
+    await _saveCurrentSessionIndex(newIdx);
     state = AsyncData(ChatState(session: newSession));
   }
 
@@ -404,6 +415,14 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     return getEffectivePersona(
       personas, arg, null, activePersonaId, connections,
     );
+  }
+
+  Future<void> _saveCurrentSessionIndex(int index) async {
+    final charRepo = ref.read(characterRepoProvider);
+    final character = await charRepo.getById(arg);
+    if (character != null) {
+      await charRepo.put(character.copyWith(currentSessionIndex: index));
+    }
   }
 
   String _generateId() => DateTime.now().millisecondsSinceEpoch.toRadixString(36);

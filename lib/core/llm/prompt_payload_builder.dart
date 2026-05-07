@@ -94,6 +94,7 @@ class PromptPayloadBuilder {
       memoryContent: memoryContent,
       memoryInjectionTarget: memoryInjectionTarget,
       guidanceText: guidanceText,
+      authorsNote: session?.authorsNote,
     );
   }
 

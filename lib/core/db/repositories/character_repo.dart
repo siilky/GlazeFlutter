@@ -112,6 +112,11 @@ class CharacterRepo {
                 .map((e) => GalleryEntry.fromJson(e as Map<String, dynamic>))
                 .toList()
             : [],
+        currentSessionIndex: c.currentSessionIndex,
+        fav: c.fav,
+        extensions: c.extensionsJson != null
+            ? Map<String, dynamic>.from(jsonDecode(c.extensionsJson!) as Map)
+            : {},
       );
 
   CharactersCompanion _toCompanion(Character m) => CharactersCompanion(
@@ -132,5 +137,8 @@ class CharacterRepo {
         tagsJson: Value(jsonEncode(m.tags)),
         alternateGreetingsJson: Value(jsonEncode(m.alternateGreetings)),
         galleryJson: Value(jsonEncode(m.gallery.map((e) => e.toJson()).toList())),
+        currentSessionIndex: Value(m.currentSessionIndex),
+        fav: Value(m.fav),
+        extensionsJson: Value(m.extensions.isNotEmpty ? jsonEncode(m.extensions) : null),
       );
 }

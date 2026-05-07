@@ -308,6 +308,8 @@ class BackupService {
                       : null),
               updatedAt: Value(_toInt(char['updatedAt'] ?? char['updated_at']) ??
                   DateTime.now().millisecondsSinceEpoch),
+              fav: Value(char['fav'] as bool? ?? false),
+              extensionsJson: Value(_extractExtensionsJson(char)),
             ),
           );
     }
@@ -878,6 +880,8 @@ class BackupService {
     final sessions = chatData['sessions'] as Map<String, dynamic>?;
     if (sessions == null) return;
 
+    final authorsNotesRaw = chatData['authorsNotes'] as Map<String, dynamic>?;
+
     for (final sessionEntry in sessions.entries) {
       final sessionIdx = int.tryParse(sessionEntry.key) ?? 0;
       final rawMessages = sessionEntry.value as List<dynamic>;
@@ -930,11 +934,18 @@ class BackupService {
             'isError': msg['isError'] ?? false,
             'genTime': msg['genTime']?.toString(),
             'tokens': _toInt(msg['tokens']),
+            'greetingIndex': _toInt(msg['greetingIndex'] ?? msg['greeting_index']),
+            'contextRefs': msg['contextRefs'] is List ? List<String>.from(msg['contextRefs']) : <String>[],
+            'swipeDirection': msg['swipeDirection'] as String? ?? msg['swipe_direction'] as String? ?? 'none',
+            'isEditing': msg['isEditing'] ?? msg['is_editing'] ?? false,
           };
         }).toList();
 
         final sessionId = '${charId}_$sessionIdx';
         final chatUpdatedAt = _toInt(chatData['updatedAt']);
+        final anRaw = authorsNotesRaw?[sessionEntry.key];
+        final authorsNoteJson = _encodeAuthorsNote(anRaw);
+        final draft = chatData['draft'] as String?;
         await _db.into(_db.chatSessions).insertOnConflictUpdate(
               ChatSessionsCompanion.insert(
                 sessionId: sessionId,
@@ -942,8 +953,19 @@ class BackupService {
                 sessionIndex: sessionIdx,
                 messagesJson: jsonEncode(messages),
                 updatedAt: Value(chatUpdatedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000),
+                authorsNoteJson: Value(authorsNoteJson),
+                draft: Value(draft),
               ),
             );
+      }
+
+      final currentId = _toInt(chatData['currentId']);
+      if (currentId != null) {
+        await (_db.update(_db.characters)
+              ..where((t) => t.charId.equals(charId)))
+            .write(CharactersCompanion(
+          currentSessionIndex: Value(currentId),
+        ));
       }
 
       final memoryBooksRaw = chatData['memoryBooks'] as Map<String, dynamic>?;
@@ -1298,6 +1320,35 @@ class BackupService {
     if (value is int) return value;
     if (value is String) return int.tryParse(value);
     if (value is double) return value.toInt();
+    return null;
+  }
+
+  String? _encodeAuthorsNote(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      if (raw.isEmpty) return null;
+      return jsonEncode({'content': raw, 'role': 'system', 'insertionMode': 'relative', 'depth': 0, 'enabled': true});
+    }
+    if (raw is Map<String, dynamic>) {
+      final content = raw['content'] as String? ?? '';
+      if (content.isEmpty) return null;
+      return jsonEncode({
+        'content': content,
+        'role': raw['role'] as String? ?? 'system',
+        'insertionMode': (raw['insertion_mode'] as String?) ?? (raw['insertionMode'] as String?) ?? 'relative',
+        'depth': _toInt(raw['depth']) ?? 0,
+        'enabled': raw['enabled'] as bool? ?? true,
+      });
+    }
+    return null;
+  }
+
+  String? _extractExtensionsJson(Map<String, dynamic> char) {
+    final extensions = char['extensions'] ?? char['data']?['extensions'];
+    if (extensions is Map<String, dynamic> && extensions.isNotEmpty) {
+      extensions.remove('gallery');
+      if (extensions.isNotEmpty) return jsonEncode(extensions);
+    }
     return null;
   }
 

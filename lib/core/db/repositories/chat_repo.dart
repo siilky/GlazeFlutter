@@ -99,6 +99,8 @@ class ChatRepo {
             ? Map<String, String>.from(
                 jsonDecode(c.sessionVarsJson!) as Map)
             : {},
+        authorsNote: _parseAuthorsNote(c.authorsNoteJson),
+        draft: c.draft,
       );
 
   ChatSessionsCompanion _toCompanion(ChatSession m) => ChatSessionsCompanion(
@@ -110,5 +112,23 @@ class ChatRepo {
         sessionVarsJson: Value(m.sessionVars.isNotEmpty
             ? jsonEncode(m.sessionVars)
             : null),
+        authorsNoteJson: Value(m.authorsNote != null
+            ? jsonEncode(m.authorsNote!.toJson())
+            : null),
+        draft: Value(m.draft),
       );
+
+  AuthorsNote? _parseAuthorsNote(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is String) {
+        return AuthorsNote(content: decoded);
+      }
+      if (decoded is Map<String, dynamic>) {
+        return AuthorsNote.fromJson(decoded);
+      }
+    } catch (_) {}
+    return null;
+  }
 }
