@@ -38,11 +38,13 @@ List<ScannedEntry> scanLorebooks({
   if (globalSettings.searchType == 'vector') return [];
 
   final charId = char?.id;
+  final charWorld = char?.world;
 
   final activeLorebooks = lorebooks.where((lb) {
     if (lb.enabled) return true;
     if (charId != null && activations.character[charId]?.contains(lb.id) == true) return true;
     if (chatId != null && activations.chat[chatId]?.contains(lb.id) == true) return true;
+    if (charWorld != null && charWorld.isNotEmpty && lb.name == charWorld) return true;
     return false;
   }).toList();
 

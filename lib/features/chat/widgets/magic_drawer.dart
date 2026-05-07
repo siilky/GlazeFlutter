@@ -8,9 +8,6 @@ import 'package:gradient_blur/gradient_blur.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../core/llm/lorebook_scanner.dart';
-import '../../../core/llm/prompt_isolate.dart';
-import '../../../core/llm/prompt_payload_builder.dart';
 import '../../../core/llm/summary_service.dart';
 import '../../../core/models/lorebook.dart';
 import '../../../core/state/active_selection_provider.dart';
@@ -24,6 +21,7 @@ import '../chat_provider.dart';
 import '../../presets/preset_list_screen.dart';
 import 'lorebook_coverage_sheet.dart';
 import 'magic_drawer_models.dart';
+import 'magic_drawer_stats_service.dart';
 import 'magic_drawer_widgets.dart';
 import 'memory_books_sheet.dart';
 import 'prompt_preview_screen.dart';
@@ -126,126 +124,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
   }
 
   Future<void> _loadStats() async {
-    if (!mounted) return;
-    final chatState = ref.read(chatProvider(widget.charId)).value;
-    final session = chatState?.session;
-    final charRepo = ref.read(characterRepoProvider);
-    final presetRepo = ref.read(presetRepoProvider);
-    final personaRepo = ref.read(personaRepoProvider);
-    final apiRepo = ref.read(apiConfigRepoProvider);
-    final lorebookRepo = ref.read(lorebookRepoProvider);
-    final memoryRepo = ref.read(memoryBookRepoProvider);
-
-    final character = await charRepo.getById(widget.charId);
-    if (!mounted) return;
-    final presets = await presetRepo.getAll();
-    if (!mounted) return;
-    final personas = await personaRepo.getAll();
-    if (!mounted) return;
-    final apiConfigs = await apiRepo.getAll();
-    if (!mounted) return;
-    final lorebooks = await lorebookRepo.getAll();
-    if (!mounted) return;
-    final activePresetId = ref.read(activePresetIdProvider);
-    final activePersonaId = ref.read(activePersonaIdProvider);
-    final activePreset = activePresetId != null
-        ? presets.where((p) => p.id == activePresetId).firstOrNull
-        : presets.firstOrNull;
-    final activePersona = activePersonaId != null
-        ? personas.where((p) => p.id == activePersonaId).firstOrNull
-        : personas.firstOrNull;
-    final chatApi = apiConfigs
-        .where((cfg) => cfg.mode != 'embedding')
-        .firstOrNull;
-    final regexes = await ref.read(activeRegexesProvider.future);
-    if (!mounted) return;
-
-    var summaryChars = 0;
-    var memoryEntries = 0;
-    var sessionCount = 0;
-    var messageCount = 0;
-    var promptTokens = 0;
-    var contextSize = 0;
-    var characterTokens = 0;
-    var presetTokens = 0;
-    var personaTokens = 0;
-    var summaryTokens = 0;
-
-    if (session != null) {
-      final summary = await ref
-          .read(summaryServiceProvider)
-          .getSummary(session.id);
-      if (!mounted) return;
-      summaryChars = summary?.length ?? 0;
-      final memoryBook = await memoryRepo.getBySessionId(session.id);
-      memoryEntries = memoryBook?.entries.length ?? 0;
-      sessionCount =
-          (await ref.read(chatRepoProvider).getByCharacterId(widget.charId))
-              .length;
-      if (!mounted) return;
-      messageCount = session.messages.length;
-
-      if (character != null && chatApi != null) {
-        try {
-          final builder = ref.read(promptPayloadBuilderProvider);
-          final payload = await builder.buildFromSession(charId: widget.charId, session: session);
-          if (!mounted) return;
-          final promptResult = await buildPromptInIsolate(payload);
-          if (!mounted) return;
-          final sourceTokens = promptResult.breakdown.sourceTokens;
-          promptTokens = promptResult.breakdown.totalTokens;
-          contextSize = chatApi.contextSize;
-          characterTokens = sourceTokens['character'] ?? 0;
-          presetTokens = sourceTokens['preset'] ?? 0;
-          personaTokens = sourceTokens['persona'] ?? 0;
-          summaryTokens = sourceTokens['summary'] ?? 0;
-        } catch (_) {}
-      }
-    }
-
-    final lorebookActivations = ref.read(lorebookActivationsProvider);
-    final lorebookSettings = ref.read(lorebookSettingsProvider);
-    final triggeredEntries = session != null
-        ? scanLorebooks(
-            history: session.messages,
-            char: character,
-            textToScan: session.messages.isNotEmpty
-                ? session.messages.last.content
-                : '',
-            chatId: session.id,
-            lorebooks: lorebooks,
-            globalSettings: lorebookSettings,
-            activations: lorebookActivations,
-          )
-        : <ScannedEntry>[];
-
-    final lorebookEntryCount = triggeredEntries.length;
-
-    bool imageGenEnabled = false;
-    try {
-      imageGenEnabled = ref.read(imageGenSettingsProvider).value?.enabled == true;
-    } catch (_) {}
-
-    _stats = MagicDrawerStats(
-      character: character,
-      activePreset: activePreset,
-      activePersona: activePersona,
-      apiConfig: chatApi,
-      session: session,
-      sessionCount: sessionCount,
-      messageCount: messageCount,
-      lorebookEntryCount: lorebookEntryCount,
-      memoryEntryCount: memoryEntries,
-      regexCount: regexes.length,
-      summaryChars: summaryChars,
-      promptTokens: promptTokens,
-      contextSize: contextSize,
-      characterTokens: characterTokens,
-      presetTokens: presetTokens,
-      personaTokens: personaTokens,
-      summaryTokens: summaryTokens,
-      imageGenEnabled: imageGenEnabled,
-    );
+    _stats = await MagicDrawerStatsService(ref).computeStats(widget.charId);
   }
 
   bool _isKnownItem(String id) => _allItems.any((item) => item.id == id);
@@ -576,37 +455,61 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         .where((m) => m.role == 'assistant')
         .length;
 
+    String timeSpent = '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final seconds = prefs.getInt('chat_time_${widget.charId}') ?? 0;
+      if (seconds >= 3600) {
+        timeSpent = '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
+      } else if (seconds >= 60) {
+        timeSpent = '${seconds ~/ 60}m ${seconds % 60}s';
+      } else if (seconds > 0) {
+        timeSpent = '$seconds s';
+      }
+    } catch (_) {}
+
+    final items = <BottomSheetItem>[
+      BottomSheetItem(
+        icon: Icons.chat_bubble_outline,
+        label: 'Messages',
+        hint: '${session.messages.length} total',
+        onTap: () {},
+      ),
+      BottomSheetItem(
+        icon: Icons.visibility_outlined,
+        label: 'Visible / Hidden',
+        hint: '$visibleMessages visible • $hiddenMessages hidden',
+        onTap: () {},
+      ),
+      BottomSheetItem(
+        icon: Icons.swap_vert,
+        label: 'User / Assistant',
+        hint: '$userMessages user • $assistantMessages assistant',
+        onTap: () {},
+      ),
+      BottomSheetItem(
+        icon: Icons.token,
+        label: 'Prompt Estimate',
+        hint: _stats.promptTokens > 0
+            ? '${_stats.promptTokens} tokens'
+            : 'Not calculated yet',
+        onTap: () {},
+      ),
+    ];
+
+    if (timeSpent.isNotEmpty) {
+      items.add(BottomSheetItem(
+        icon: Icons.timer_outlined,
+        label: 'Time Spent',
+        hint: timeSpent,
+        onTap: () {},
+      ));
+    }
+
     await GlazeBottomSheet.show(
       context,
       title: 'Chat Stats',
-      items: [
-        BottomSheetItem(
-          icon: Icons.chat_bubble_outline,
-          label: 'Messages',
-          hint: '${session.messages.length} total',
-          onTap: () {},
-        ),
-        BottomSheetItem(
-          icon: Icons.visibility_outlined,
-          label: 'Visible / Hidden',
-          hint: '$visibleMessages visible • $hiddenMessages hidden',
-          onTap: () {},
-        ),
-        BottomSheetItem(
-          icon: Icons.swap_vert,
-          label: 'User / Assistant',
-          hint: '$userMessages user • $assistantMessages assistant',
-          onTap: () {},
-        ),
-        BottomSheetItem(
-          icon: Icons.token,
-          label: 'Prompt Estimate',
-          hint: _stats.promptTokens > 0
-              ? '${_stats.promptTokens} tokens'
-              : 'Not calculated yet',
-          onTap: () {},
-        ),
-      ],
+      items: items,
     );
   }
 

@@ -1,4 +1,5 @@
 import '../models/character.dart';
+import '../models/chat_message.dart';
 import '../models/persona.dart';
 import 'macro_engine.dart';
 
@@ -26,6 +27,7 @@ ResolvedContent? resolveBlockContent({
   required NotifyObj notifyObj,
   required String? summaryContent,
   required String? summaryPrefix,
+  AuthorsNote? authorsNote,
 }) {
   String content;
   String resolvedRole = role;
@@ -55,6 +57,12 @@ ResolvedContent? resolveBlockContent({
         return null;
       }
       content = rawContent;
+    case 'authors_note':
+      if (authorsNote == null || !authorsNote.enabled || authorsNote.content.isEmpty) {
+        return null;
+      }
+      content = authorsNote.content;
+      resolvedRole = authorsNote.role.isNotEmpty ? authorsNote.role : role;
     default:
       content = rawContent;
   }

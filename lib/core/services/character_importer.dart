@@ -6,6 +6,8 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/character.dart';
+import '../utils/id_generator.dart';
+import '../utils/time_helpers.dart';
 import 'image_storage_service.dart';
 import 'png_text_extractor.dart';
 
@@ -151,7 +153,7 @@ class CharacterImporter {
 
   Future<Character> _saveCharacterWithAvatar(
       Map<String, dynamic> data, Uint8List? avatarBytes) async {
-    final id = _generateId();
+    final id = generateId();
     String? avatarPath;
 
     if (avatarBytes != null) {
@@ -180,12 +182,15 @@ class CharacterImporter {
       color: data['color'] as String?,
       tags: _toStringList(data['tags']),
       alternateGreetings: _toStringList(data['alternate_greetings']),
-      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      updatedAt: currentTimestampSeconds(),
+      fav: data['fav'] as bool? ?? false,
+      extensions: _extractExtensions(data),
+      characterVersion: data['character_version'] is String ? data['character_version'] as String : '1',
+      depthPrompt: _extractDepthPrompt(data),
+      depthPromptDepth: _extractDepthPromptDepth(data),
+      depthPromptRole: _extractDepthPromptRole(data),
+      world: _extractWorld(data),
     );
-  }
-
-  String _generateId() {
-    return DateTime.now().millisecondsSinceEpoch.toRadixString(36);
   }
 
   List<String> _toStringList(dynamic value) {
@@ -193,6 +198,44 @@ class CharacterImporter {
       return value.map((e) => e.toString()).toList();
     }
     return [];
+  }
+
+  Map<String, dynamic> _extractExtensions(Map<String, dynamic> data) {
+    final ext = data['extensions'] is Map ? data['extensions'] as Map : null;
+    if (ext == null || ext.isEmpty) return {};
+    final copy = Map<String, dynamic>.from(ext);
+    copy.remove('gallery');
+    return copy;
+  }
+
+  String _extractDepthPrompt(Map<String, dynamic> data) {
+    final ext = data['extensions'] is Map ? data['extensions'] as Map : null;
+    final dp = ext?['depth_prompt'] is Map ? ext!['depth_prompt'] as Map : null;
+    if (dp == null) return '';
+    return dp['prompt'] is String ? dp['prompt'] as String : '';
+  }
+
+  int _extractDepthPromptDepth(Map<String, dynamic> data) {
+    final ext = data['extensions'] is Map ? data['extensions'] as Map : null;
+    final dp = ext?['depth_prompt'] is Map ? ext!['depth_prompt'] as Map : null;
+    if (dp == null) return 4;
+    final d = dp['depth'];
+    if (d is int) return d;
+    if (d is num) return d.toInt();
+    return 4;
+  }
+
+  String _extractDepthPromptRole(Map<String, dynamic> data) {
+    final ext = data['extensions'] is Map ? data['extensions'] as Map : null;
+    final dp = ext?['depth_prompt'] is Map ? ext!['depth_prompt'] as Map : null;
+    if (dp == null) return 'system';
+    return dp['role'] is String ? dp['role'] as String : 'system';
+  }
+
+  String? _extractWorld(Map<String, dynamic> data) {
+    final ext = data['extensions'] is Map ? data['extensions'] as Map : null;
+    final world = ext?['world'];
+    return world is String && world.isNotEmpty ? world : null;
   }
 
   Uint8List? _dataUrlToBytes(String dataUrl) {

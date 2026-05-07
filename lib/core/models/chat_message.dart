@@ -20,10 +20,36 @@ class ChatMessage with _$ChatMessage {
     @Default(false) bool isError,
     String? genTime,
     int? tokens,
+    int? greetingIndex,
+    @Default([]) List<String> contextRefs,
+    @Default('none') String swipeDirection,
+    @Default(false) bool isEditing,
+    @Default(false) bool isTyping,
+    String? guidanceText,
+    @Default('GENERATION') String guidanceType,
+    @Default([]) List<String> triggeredLorebooks,
+    @Default([]) List<String> triggeredMemories,
+    @Default([]) List<Map<String, dynamic>> swipesMeta,
+    @Default({}) Map<String, dynamic> memoryCoverage,
+    String? time,
   }) = _ChatMessage;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) =>
       _$ChatMessageFromJson(json);
+}
+
+@freezed
+class AuthorsNote with _$AuthorsNote {
+  const factory AuthorsNote({
+    @Default('') String content,
+    @Default('system') String role,
+    @Default('relative') String insertionMode,
+    @Default(0) int depth,
+    @Default(true) bool enabled,
+  }) = _AuthorsNote;
+
+  factory AuthorsNote.fromJson(Map<String, dynamic> json) =>
+      _$AuthorsNoteFromJson(json);
 }
 
 @freezed
@@ -35,6 +61,9 @@ class ChatSession with _$ChatSession {
     @Default([]) List<ChatMessage> messages,
     @Default(0) int updatedAt,
     @Default({}) Map<String, String> sessionVars,
+    AuthorsNote? authorsNote,
+    String? draft,
+    @Default({}) Map<String, dynamic> lastScrollAnchor,
   }) = _ChatSession;
 
   factory ChatSession.fromJson(Map<String, dynamic> json) =>

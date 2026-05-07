@@ -81,6 +81,7 @@ class _MessageListState extends State<MessageList> {
             charId: widget.charId,
             swipes: msg.swipes,
             swipeId: msg.swipeId,
+            memoryCoverage: msg.memoryCoverage,
           );
         }
 

@@ -56,6 +56,7 @@ class PromptPayloadBuilder {
     String? summaryContent;
     String? memoryContent;
     String memoryInjectionTarget = 'summary_block';
+    Map<String, dynamic> memoryCoverage = {};
     List<ChatMessage> history = session?.messages ?? [];
     Map<String, String> sessionVars = session?.sessionVars ?? {};
     List<LorebookEntry> vectorEntries = [];
@@ -74,8 +75,13 @@ class PromptPayloadBuilder {
       );
       memoryContent = memoryResult.content.isNotEmpty ? memoryResult.content : null;
       memoryInjectionTarget = memoryResult.injectionTarget;
+      if (memoryResult.entries.isNotEmpty) {
+        memoryCoverage = {
+          for (final e in memoryResult.entries) e.id: {'title': e.title, 'keys': e.keys},
+        };
+      }
 
-      vectorEntries = await _runVectorSearch(session.messages, session.messages.lastOrNull?.content ?? '');
+      vectorEntries = await _runVectorSearch(session.messages, session.messages.lastOrNull?.content ?? '', character.world);
     }
 
     return PromptPayload(
@@ -93,13 +99,19 @@ class PromptPayloadBuilder {
       summaryContent: summaryContent,
       memoryContent: memoryContent,
       memoryInjectionTarget: memoryInjectionTarget,
+      memoryCoverage: memoryCoverage,
       guidanceText: guidanceText,
+      authorsNote: session?.authorsNote,
+      characterDepthPrompt: character.depthPrompt,
+      characterDepthPromptDepth: character.depthPromptDepth,
+      characterDepthPromptRole: character.depthPromptRole,
     );
   }
 
   Future<List<LorebookEntry>> _runVectorSearch(
     List<ChatMessage> history,
     String currentText,
+    String? charWorld,
   ) async {
     final settings = _ref.read(lorebookSettingsProvider);
     if (settings.searchType == 'keys') return [];
@@ -115,7 +127,7 @@ class PromptPayloadBuilder {
       final searchHistory = history
           .map((m) => ChatMessageForSearch(role: m.role, content: m.content))
           .toList();
-      final results = await searchService.search(searchHistory, currentText, lorebooks, settings, config);
+      final results = await searchService.search(searchHistory, currentText, lorebooks, settings, config, charWorld: charWorld);
 
       final entryMap = <String, LorebookEntry>{};
       for (final lb in lorebooks) {

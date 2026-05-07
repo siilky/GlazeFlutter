@@ -17,6 +17,7 @@ void showMessageContextMenu({
   required bool isLast,
   required bool isGenerating,
   required bool isHidden,
+  required int totalMessages,
 }) {
   final notifier = ref.read(chatProvider(charId).notifier);
 
@@ -47,6 +48,12 @@ void showMessageContextMenu({
           label: 'Regenerate',
           onTap: () { Navigator.pop(context); notifier.regenerateLastAssistant(); },
         ),
+      if (!isUser && isLast && !isGenerating)
+        BottomSheetItem(
+          icon: Icons.keyboard_double_arrow_right,
+          label: 'Continue',
+          onTap: () { Navigator.pop(context); notifier.continueMessage(); },
+        ),
       if (isGenerating && isLast)
         BottomSheetItem(
           icon: Icons.stop_circle,
@@ -59,6 +66,18 @@ void showMessageContextMenu({
           icon: Icons.call_split,
           label: 'Branch',
           onTap: () { Navigator.pop(context); notifier.branchSession(messageIndex); },
+        ),
+      if (messageIndex > 0 && !(isGenerating && isLast))
+        BottomSheetItem(
+          icon: Icons.arrow_upward,
+          label: 'Move Up',
+          onTap: () { Navigator.pop(context); notifier.moveMessage(messageIndex, messageIndex - 1); },
+        ),
+      if (!isLast && !(isGenerating && isLast) && messageIndex < totalMessages - 1)
+        BottomSheetItem(
+          icon: Icons.arrow_downward,
+          label: 'Move Down',
+          onTap: () { Navigator.pop(context); notifier.moveMessage(messageIndex, messageIndex + 1); },
         ),
       BottomSheetItem(
         icon: isHidden ? Icons.visibility : Icons.visibility_off,

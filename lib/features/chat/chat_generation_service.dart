@@ -8,6 +8,8 @@ import '../../core/llm/sse_client.dart';
 import '../../core/llm/stream_accumulator.dart';
 import '../../core/models/chat_message.dart';
 import '../../core/state/active_selection_provider.dart';
+import '../../core/utils/id_generator.dart';
+import '../../core/utils/time_helpers.dart';
 import '../../core/state/db_provider.dart';
 import '../image_gen/image_gen_provider.dart';
 import '../image_gen/services/image_gen_service.dart';
@@ -29,6 +31,7 @@ class ChatGenerationService {
     String? previousReasoning,
     String? previousGenTime,
     int? previousTokens,
+    List<Map<String, dynamic>>? previousSwipesMeta,
     String? guidanceText,
   }) async {
     try {
@@ -77,6 +80,7 @@ class ChatGenerationService {
       final startGenTime = DateTime.now();
       final sseClient = SseClient();
       ChatState? finalState;
+      final coverage = payload.memoryCoverage;
 
       await sseClient.streamChatCompletion(
         endpoint: apiConfig.endpoint,
@@ -117,6 +121,9 @@ class ChatGenerationService {
             previousReasoning: previousReasoning,
             previousGenTime: previousGenTime,
             previousTokens: previousTokens,
+            previousSwipesMeta: previousSwipesMeta,
+            guidanceText: guidanceText,
+            memoryCoverage: coverage,
           );
         },
         onError: (error) {
@@ -186,7 +193,7 @@ class ChatGenerationService {
         newMessages[lastIdx] = lastMsg.copyWith(content: updatedText);
         final updatedSession = session.copyWith(
           messages: newMessages,
-          updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          updatedAt: currentTimestampSeconds(),
         );
         onStateUpdate(ChatState(session: updatedSession));
       },
@@ -196,7 +203,7 @@ class ChatGenerationService {
     newMessages[lastIdx] = lastMsg.copyWith(content: updatedContent);
     final finalSession = session.copyWith(
       messages: newMessages,
-      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      updatedAt: currentTimestampSeconds(),
     );
     _ref.read(chatRepoProvider).put(finalSession);
     onStateUpdate(ChatState(session: finalSession));
@@ -224,6 +231,9 @@ class ChatGenerationService {
     String? previousReasoning,
     String? previousGenTime,
     int? previousTokens,
+    List<Map<String, dynamic>>? previousSwipesMeta,
+    String? guidanceText,
+    Map<String, dynamic> memoryCoverage = const {},
   }) {
     List<String> swipes;
     int swipeId;
@@ -236,8 +246,32 @@ class ChatGenerationService {
       swipeId = 0;
     }
 
+    final currentSwipeMeta = <String, dynamic>{
+      'genTime': genTime,
+      'reasoning': reasoning,
+      'tokens': tokens,
+    };
+    if (guidanceText != null && guidanceText.isNotEmpty) {
+      currentSwipeMeta['guidanceText'] = guidanceText;
+      currentSwipeMeta['guidanceType'] = 'GENERATION';
+    }
+
+    List<Map<String, dynamic>> swipesMeta;
+    if (previousSwipesMeta != null && previousSwipesMeta.isNotEmpty) {
+      swipesMeta = [...previousSwipesMeta, currentSwipeMeta];
+    } else if (previousSwipes != null && previousSwipes.isNotEmpty) {
+      final prevMeta = <String, dynamic>{
+        'genTime': previousGenTime,
+        'reasoning': previousReasoning,
+        'tokens': previousTokens,
+      };
+      swipesMeta = [prevMeta, currentSwipeMeta];
+    } else {
+      swipesMeta = [currentSwipeMeta];
+    }
+
     final assistantMsg = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toRadixString(36),
+      id: generateId(),
       role: 'assistant',
       content: text,
       reasoning: reasoning,
@@ -246,9 +280,11 @@ class ChatGenerationService {
       timestamp: DateTime.now().millisecondsSinceEpoch,
       swipes: swipes,
       swipeId: swipeId,
+      swipesMeta: swipesMeta,
+      memoryCoverage: memoryCoverage,
     );
     final finalMessages = [...currentSession.messages, assistantMsg];
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final now = currentTimestampSeconds();
     final sessionVars = pendingSessionVars ?? currentSession.sessionVars;
     final finalSession = currentSession.copyWith(
       messages: finalMessages,

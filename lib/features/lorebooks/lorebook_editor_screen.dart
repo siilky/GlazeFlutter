@@ -5,6 +5,7 @@ import '../../core/models/lorebook.dart';
 import '../../core/llm/lorebook_vector_search.dart';
 import '../../core/state/db_provider.dart';
 import '../../core/state/lorebook_provider.dart';
+import '../../core/utils/time_helpers.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
@@ -95,7 +96,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
       activationTargetId: existing?.activationTargetId,
       entries: _entries,
       settings: _settings,
-      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      updatedAt: currentTimestampSeconds(),
     );
     await ref.read(lorebooksProvider.notifier).updateLorebook(lb);
     if (mounted) {
@@ -210,6 +211,100 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     });
     _save();
     GlazeToast.show(context, 'Entry settings reset to global defaults');
+  }
+
+  void _showTestDialog() {
+    final testCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surfaceHigh,
+              title: const Text('Test Key Matching', style: TextStyle(color: AppColors.textPrimary)),
+              content: SizedBox(
+                width: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: testCtrl,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Type test text...',
+                        hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.05),
+                      ),
+                      maxLines: 3,
+                      minLines: 1,
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('Matched entries:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    ..._matchEntries(testCtrl.text).map((e) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, size: 14, color: Colors.green),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              e.comment.isNotEmpty ? e.comment : e.keys.join(', '),
+                              style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
+                    if (testCtrl.text.isNotEmpty && _matchEntries(testCtrl.text).isEmpty)
+                      Text('No matches', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close', style: TextStyle(color: AppColors.textSecondary)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<LorebookEntry> _matchEntries(String text) {
+    if (text.trim().isEmpty) return [];
+    final lower = text.toLowerCase();
+    return _entries.where((e) {
+      if (!e.enabled) return false;
+      for (final key in e.keys) {
+        if (key.isEmpty) continue;
+        final caseSensitive = e.caseSensitive ?? _settings?.caseSensitive ?? false;
+        if (caseSensitive) {
+          if (text.contains(key)) return true;
+        } else {
+          if (lower.contains(key.toLowerCase())) return true;
+        }
+      }
+      for (final secKey in e.secondaryKeys) {
+        if (secKey.isEmpty) continue;
+        final caseSensitive = e.caseSensitive ?? _settings?.caseSensitive ?? false;
+        if (caseSensitive) {
+          if (text.contains(secKey)) return true;
+        } else {
+          if (lower.contains(secKey.toLowerCase())) return true;
+        }
+      }
+      return false;
+    }).toList();
   }
 
   List<LorebookEntry> get _filteredEntries {
@@ -366,6 +461,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                               child: LorebookConnectionsSheet(lorebookId: widget.lorebookId),
                             );
                           },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.science_outlined, size: 18),
+                          tooltip: 'Test Keys',
+                          onPressed: _showTestDialog,
                         ),
                       ],
                     ),

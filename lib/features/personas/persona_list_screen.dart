@@ -7,34 +7,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/persona.dart';
 import '../../core/state/db_provider.dart';
-import '../cloud_sync/services/sync_deletion_tracker.dart';
+import '../../core/utils/id_generator.dart';
+import '../../core/utils/time_helpers.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/sheet_view.dart';
 import 'persona_connections_sheet.dart';
-
-final personaListProvider =
-    AsyncNotifierProvider<PersonaListNotifier, List<Persona>>(
-      PersonaListNotifier.new,
-    );
-
-class PersonaListNotifier extends AsyncNotifier<List<Persona>> {
-  @override
-  Future<List<Persona>> build() async {
-    return ref.watch(personaRepoProvider).getAll();
-  }
-
-  Future<void> add(Persona persona) async {
-    await ref.read(personaRepoProvider).put(persona);
-    ref.invalidateSelf();
-  }
-
-  Future<void> remove(String id) async {
-    await ref.read(personaRepoProvider).delete(id);
-    await SyncDeletionTracker.record('persona', id);
-    ref.invalidateSelf();
-  }
-}
+import 'persona_list_provider.dart';
 
 class PersonaListScreen extends ConsumerWidget {
   const PersonaListScreen({super.key});
@@ -201,7 +180,7 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
     final filePath = result.files.first.path;
     if (filePath == null) return;
 
-    final id = widget.existing?.id ?? DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    final id = widget.existing?.id ?? generateId();
     final imageStorage = await ref.read(imageStorageProvider.future);
     final bytes = await File(filePath).readAsBytes();
     final savedPath = await imageStorage.saveAvatar('persona_$id', bytes);
@@ -285,12 +264,12 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
     final persona = Persona(
       id:
           widget.existing?.id ??
-          DateTime.now().millisecondsSinceEpoch.toRadixString(36),
+          generateId(),
       name: name,
       prompt: _promptCtrl.text.trim().isEmpty ? null : _promptCtrl.text.trim(),
       avatarPath: _avatarPath,
       createdAt: widget.existing?.createdAt ??
-          DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          currentTimestampSeconds(),
     );
 
     await ref.read(personaRepoProvider).put(persona);

@@ -22,6 +22,10 @@ class Characters extends Table {
   TextColumn get tagsJson => text().nullable()();
   TextColumn get alternateGreetingsJson => text().nullable()();
   TextColumn get galleryJson => text().nullable()();
+  IntColumn get currentSessionIndex => integer().withDefault(const Constant(0))();
+  BoolColumn get fav => boolean().withDefault(const Constant(false))();
+  TextColumn get extensionsJson => text().nullable()();
+  TextColumn get characterVersion => text().withDefault(const Constant('1'))();
 
   @override
   Set<Column> get primaryKey => {charId};
@@ -38,6 +42,9 @@ class ChatSessions extends Table {
   TextColumn get messagesJson => text()();
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
   TextColumn get sessionVarsJson => text().nullable()();
+  TextColumn get authorsNoteJson => text().nullable()();
+  TextColumn get draft => text().nullable()();
+  TextColumn get lastScrollAnchorJson => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {sessionId};
@@ -133,6 +140,7 @@ class Lorebooks extends Table {
   TextColumn get activationTargetId => text().nullable()();
   TextColumn get entriesJson => text()();
   TextColumn get settingsJson => text().withDefault(const Constant(''))();
+  TextColumn get description => text().withDefault(const Constant(''))();
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
 
   @override

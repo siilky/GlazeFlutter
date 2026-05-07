@@ -32,6 +32,7 @@ class Message extends ConsumerWidget {
   final String charId;
   final List<String> swipes;
   final int swipeId;
+  final Map<String, dynamic> memoryCoverage;
 
   const Message({
     super.key,
@@ -52,6 +53,7 @@ class Message extends ConsumerWidget {
     required this.charId,
     this.swipes = const [],
     this.swipeId = 0,
+    this.memoryCoverage = const {},
   });
 
   @override
@@ -145,6 +147,7 @@ class Message extends ConsumerWidget {
                   context: context, ref: ref, charId: charId, content: content,
                   messageIndex: messageIndex, isUser: isUser, isTyping: isTyping,
                   isError: isError, isLast: isLast, isGenerating: isGenerating, isHidden: isHidden,
+                  totalMessages: totalMessages,
                 ),
                 swipeCount: swipes.length,
                 swipeId: swipeId,
@@ -154,6 +157,7 @@ class Message extends ConsumerWidget {
                 onSwipeRight: swipeId < swipes.length - 1
                     ? () => ref.read(chatProvider(charId).notifier).setSwipe(messageIndex, swipeId + 1)
                     : null,
+                memoryEntryCount: memoryCoverage.length,
               ),
             ],
           ],
@@ -169,6 +173,7 @@ class Message extends ConsumerWidget {
         context: context, ref: ref, charId: charId, content: content,
         messageIndex: messageIndex, isUser: isUser, isTyping: isTyping,
         isError: isError, isLast: isLast, isGenerating: isGenerating, isHidden: isHidden,
+        totalMessages: totalMessages,
       ),
       child: bubbleWidget,
     );
@@ -294,6 +299,7 @@ class _MetadataRow extends StatelessWidget {
   final int swipeId;
   final VoidCallback? onSwipeLeft;
   final VoidCallback? onSwipeRight;
+  final int memoryEntryCount;
 
   const _MetadataRow({
     required this.genTime,
@@ -308,6 +314,7 @@ class _MetadataRow extends StatelessWidget {
     this.swipeId = 0,
     this.onSwipeLeft,
     this.onSwipeRight,
+    this.memoryEntryCount = 0,
   });
 
   @override
@@ -316,7 +323,21 @@ class _MetadataRow extends StatelessWidget {
       children: [
         if (swipeCount > 1) ...[
           _swipeBtn(Icons.chevron_left, onSwipeLeft),
-          Text('${swipeId + 1}/$swipeCount', style: TextStyle(fontSize: 11, color: textColor)),
+          if (swipeCount <= 10)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(swipeCount, (i) => Container(
+                width: 6,
+                height: 6,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i == swipeId ? textColor : textColor.withValues(alpha: 0.3),
+                ),
+              )),
+            )
+          else
+            Text('${swipeId + 1}/$swipeCount', style: TextStyle(fontSize: 11, color: textColor)),
           _swipeBtn(Icons.chevron_right, onSwipeRight),
           const SizedBox(width: 6),
         ],
@@ -334,6 +355,12 @@ class _MetadataRow extends StatelessWidget {
           Icon(Icons.description_outlined, size: 12, color: textColor),
           const SizedBox(width: 4),
           Text('${tokens}t', style: TextStyle(fontSize: 12, color: textColor)),
+        ],
+        if (memoryEntryCount > 0) ...[
+          const SizedBox(width: 8),
+          Icon(Icons.auto_stories, size: 12, color: textColor.withValues(alpha: 0.7)),
+          const SizedBox(width: 4),
+          Text('$memoryEntryCount mem', style: TextStyle(fontSize: 11, color: textColor.withValues(alpha: 0.7))),
         ],
         const Spacer(),
         InkWell(

@@ -1,21 +1,18 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/llm/summary_service.dart';
 import '../../core/models/chat_message.dart';
-import '../../core/services/chat_import_export.dart';
 import '../../core/state/character_provider.dart';
 import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/glaze_toast.dart';
-import '../chat_history/chat_history_screen.dart' show chatHistoryProvider;
+import '../chat_history/chat_history_provider.dart';
 import '../image_gen/widgets/image_gen_sheet.dart';
+import 'chat_actions_service.dart';
 import 'chat_provider.dart';
 import 'widgets/chat_header.dart';
 import 'widgets/chat_input_bar.dart';
@@ -45,6 +42,10 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sessionApplied = false;
+  bool _showSearch = false;
+  String _searchQuery = '';
+  int _searchCurrentIndex = 0;
+  List<int> _searchMatches = [];
 
   @override
   void initState() {
@@ -145,6 +146,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     showPromptPreviewScreen(context, charId);
                   case 'clear':
                     confirmClearChatDialog(context, ref, charId);
+                  case 'search':
+                    setState(() {
+                      _showSearch = !_showSearch;
+                      _searchQuery = '';
+                      _searchMatches = [];
+                      _searchCurrentIndex = 0;
+                    });
                 }
               },
               itemBuilder: (_) => [
@@ -261,6 +269,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 const PopupMenuDivider(),
                 const PopupMenuItem(
+                  value: 'search',
+                  child: Row(
+                    children: [
+                      Icon(Icons.search, size: 18),
+                      SizedBox(width: 8),
+                      Text('Find in Chat'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
                   value: 'clear',
                   child: Row(
                     children: [
@@ -288,6 +307,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 isGenerating: state.isGenerating,
                 charId: charId,
               ),
+              if (_showSearch)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: _ChatSearchBar(
+                    query: _searchQuery,
+                    matchCount: _searchMatches.length,
+                    currentIndex: _searchCurrentIndex,
+                    onChanged: (q) {
+                      final matches = <int>[];
+                      if (q.isNotEmpty) {
+                        final lower = q.toLowerCase();
+                        for (int i = 0; i < state.messages.length; i++) {
+                          if (state.messages[i].content.toLowerCase().contains(lower)) {
+                            matches.add(i);
+                          }
+                        }
+                      }
+                      setState(() {
+                        _searchQuery = q;
+                        _searchMatches = matches;
+                        _searchCurrentIndex = matches.isNotEmpty ? 0 : 0;
+                      });
+                    },
+                    onPrevious: _searchCurrentIndex > 0
+                        ? () => setState(() => _searchCurrentIndex--)
+                        : null,
+                    onNext: _searchCurrentIndex < _searchMatches.length - 1
+                        ? () => setState(() => _searchCurrentIndex++)
+                        : null,
+                    onClose: () => setState(() {
+                      _showSearch = false;
+                      _searchQuery = '';
+                      _searchMatches = [];
+                    }),
+                  ),
+                ),
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -350,31 +407,15 @@ Future<void> _generateSummary(
   WidgetRef ref,
   String charId,
 ) async {
-  final chatState = ref.read(chatProvider(charId)).value;
-  if (chatState == null || chatState.session == null) return;
-
-  final apiConfigs = await ref.read(apiConfigRepoProvider).getAll();
-  if (apiConfigs.isEmpty) {
-    GlazeToast.show(context, 'No API config — set one up first');
-    return;
-  }
-
-  GlazeToast.show(context, 'Generating summary...');
-
   try {
-    final summaryService = ref.read(summaryServiceProvider);
-    final summary = await summaryService.generateSummary(
-      sessionId: chatState.session!.id,
-      history: chatState.session!.messages,
-      apiConfig: apiConfigs.first,
-    );
+    final summary = await ChatActionsService(ref).generateSummary(charId);
     if (context.mounted) {
       GlazeToast.show(context, 'Summary generated (${summary.length} chars)');
     }
+  } on StateError catch (e) {
+    if (context.mounted) GlazeToast.show(context, e.message);
   } catch (e) {
-    if (context.mounted) {
-      GlazeToast.error(context, 'Summary failed: ', e);
-    }
+    if (context.mounted) GlazeToast.error(context, 'Summary failed: ', e);
   }
 }
 
@@ -393,32 +434,15 @@ Future<void> _exportChat(
   WidgetRef ref,
   String charId,
 ) async {
-  final chatState = ref.read(chatProvider(charId)).value;
-  if (chatState == null || chatState.session == null) return;
-
-  final charRepo = ref.read(characterRepoProvider);
-  final character = await charRepo.getById(charId);
-  if (character == null) return;
-
   try {
-    final desktop =
-        Platform.environment['USERPROFILE'] ??
-        Platform.environment['HOME'] ??
-        '.';
-    final outputDir = '${desktop}\\Desktop';
-
-    final result = await exportChatAsJsonl(
-      session: chatState.session!,
-      character: character,
-      outputDir: outputDir,
-    );
+    final filePath = await ChatActionsService(ref).exportChat(charId);
     if (context.mounted) {
-      GlazeToast.show(context, 'Chat exported to ${result.filePath}');
+      GlazeToast.show(context, 'Chat exported to $filePath');
     }
+  } on StateError catch (e) {
+    if (context.mounted) GlazeToast.show(context, e.message);
   } catch (e) {
-    if (context.mounted) {
-      GlazeToast.error(context, 'Export failed: ', e);
-    }
+    if (context.mounted) GlazeToast.error(context, 'Export failed: ', e);
   }
 }
 
@@ -438,43 +462,81 @@ Future<void> _importChat(
   if (filePath == null) return;
 
   try {
-    final importResult = await importChatFromJsonl(filePath);
-    if (importResult.messages.isEmpty) {
-      if (context.mounted) {
-        GlazeToast.show(context, 'No messages found in file');
-      }
-      return;
-    }
-
-    final repo = ref.read(chatRepoProvider);
-    final existingSessions = await repo.getByCharacterId(charId);
-
-    int maxIdx = 0;
-    for (final s in existingSessions) {
-      if (s.sessionIndex > maxIdx) maxIdx = s.sessionIndex;
-    }
-
-    final newSession = ChatSession(
-      id: '${charId}_${maxIdx + 1}',
-      characterId: charId,
-      sessionIndex: maxIdx + 1,
-      messages: importResult.messages,
-      updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    );
-
-    await repo.put(newSession);
-    ref.invalidate(chatProvider(charId));
-    ref.invalidate(chatHistoryProvider);
-
+    final count = await ChatActionsService(ref).importChat(charId, filePath);
     if (context.mounted) {
-      GlazeToast.show(
-        context,
-        'Imported ${importResult.messages.length} messages',
-      );
+      if (count == 0) {
+        GlazeToast.show(context, 'No messages found in file');
+      } else {
+        GlazeToast.show(context, 'Imported $count messages');
+      }
     }
   } catch (e) {
     if (context.mounted) {
         GlazeToast.error(context, 'Import failed: ', e);
     }
+  }
+}
+
+class _ChatSearchBar extends StatelessWidget {
+  final String query;
+  final int matchCount;
+  final int currentIndex;
+  final ValueChanged<String> onChanged;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback onClose;
+
+  const _ChatSearchBar({
+    required this.query,
+    required this.matchCount,
+    required this.currentIndex,
+    required this.onChanged,
+    this.onPrevious,
+    this.onNext,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search, size: 18, color: AppColors.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                autofocus: true,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Find in chat...',
+                  hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onChanged: onChanged,
+              ),
+            ),
+            if (query.isNotEmpty) ...[
+              Text(
+                matchCount > 0 ? '${currentIndex + 1}/$matchCount' : '0/0',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              IconButton(icon: const Icon(Icons.keyboard_arrow_up, size: 20), onPressed: onPrevious, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 28, minHeight: 28)),
+              IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 20), onPressed: onNext, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 28, minHeight: 28)),
+            ],
+            IconButton(icon: const Icon(Icons.close, size: 18), onPressed: onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 28, minHeight: 28)),
+          ],
+        ),
+      ),
+    );
   }
 }

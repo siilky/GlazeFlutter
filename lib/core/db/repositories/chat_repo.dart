@@ -99,6 +99,11 @@ class ChatRepo {
             ? Map<String, String>.from(
                 jsonDecode(c.sessionVarsJson!) as Map)
             : {},
+        authorsNote: _parseAuthorsNote(c.authorsNoteJson),
+        draft: c.draft,
+        lastScrollAnchor: c.lastScrollAnchorJson != null && c.lastScrollAnchorJson!.isNotEmpty
+            ? Map<String, dynamic>.from(jsonDecode(c.lastScrollAnchorJson!) as Map)
+            : {},
       );
 
   ChatSessionsCompanion _toCompanion(ChatSession m) => ChatSessionsCompanion(
@@ -110,5 +115,24 @@ class ChatRepo {
         sessionVarsJson: Value(m.sessionVars.isNotEmpty
             ? jsonEncode(m.sessionVars)
             : null),
+        authorsNoteJson: Value(m.authorsNote != null
+            ? jsonEncode(m.authorsNote!.toJson())
+            : null),
+        draft: Value(m.draft),
+        lastScrollAnchorJson: Value(m.lastScrollAnchor.isNotEmpty ? jsonEncode(m.lastScrollAnchor) : null),
       );
+
+  AuthorsNote? _parseAuthorsNote(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is String) {
+        return AuthorsNote(content: decoded);
+      }
+      if (decoded is Map<String, dynamic>) {
+        return AuthorsNote.fromJson(decoded);
+      }
+    } catch (_) {}
+    return null;
+  }
 }

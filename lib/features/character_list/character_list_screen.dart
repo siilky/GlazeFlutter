@@ -30,6 +30,7 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
   SortDir _sortDir = SortDir.desc;
   bool _showCatalog = false;
   String _searchQuery = '';
+  bool _favOnly = false;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +51,18 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
                   child: GlazeAppBar(
                     title: 'Characters',
                     actions: [
+                      SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: IconButton(
+                          icon: Icon(
+                            _favOnly ? Icons.star : Icons.star_border,
+                            size: 22,
+                            color: _favOnly ? Colors.amber : AppColors.accent,
+                          ),
+                          onPressed: () => setState(() => _favOnly = !_favOnly),
+                        ),
+                      ),
                       SizedBox(
                         width: 44,
                         height: 44,
@@ -105,6 +118,9 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
                             );
                           }
                           var filtered = chars;
+                          if (_favOnly) {
+                            filtered = filtered.where((c) => c.fav).toList();
+                          }
                           if (_searchQuery.isNotEmpty) {
                             final q = _searchQuery.toLowerCase();
                             filtered = chars

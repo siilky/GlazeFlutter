@@ -6,6 +6,7 @@ import 'package:drift/drift.dart';
 import '../app_db.dart';
 import '../../models/character.dart';
 import '../../models/gallery_entry.dart';
+import '../../utils/time_helpers.dart';
 
 class CharacterRepo {
   final AppDatabase _db;
@@ -79,7 +80,7 @@ class CharacterRepo {
             postHistoryInstructions: Value(postHistoryInstructions),
             creator: Value(creator),
             creatorNotes: Value(creatorNotes),
-            updatedAt: Value(DateTime.now().millisecondsSinceEpoch ~/ 1000),
+            updatedAt: Value(currentTimestampSeconds()),
             tagsJson: Value(jsonEncode(tags)),
             alternateGreetingsJson: Value(jsonEncode(alternateGreetings)),
           ),
@@ -112,6 +113,12 @@ class CharacterRepo {
                 .map((e) => GalleryEntry.fromJson(e as Map<String, dynamic>))
                 .toList()
             : [],
+        currentSessionIndex: c.currentSessionIndex,
+        fav: c.fav,
+        extensions: c.extensionsJson != null
+            ? Map<String, dynamic>.from(jsonDecode(c.extensionsJson!) as Map)
+            : {},
+        characterVersion: c.characterVersion,
       );
 
   CharactersCompanion _toCompanion(Character m) => CharactersCompanion(
@@ -132,5 +139,9 @@ class CharacterRepo {
         tagsJson: Value(jsonEncode(m.tags)),
         alternateGreetingsJson: Value(jsonEncode(m.alternateGreetings)),
         galleryJson: Value(jsonEncode(m.gallery.map((e) => e.toJson()).toList())),
+        currentSessionIndex: Value(m.currentSessionIndex),
+        fav: Value(m.fav),
+        extensionsJson: Value(m.extensions.isNotEmpty ? jsonEncode(m.extensions) : null),
+        characterVersion: Value(m.characterVersion),
       );
 }
