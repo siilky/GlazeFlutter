@@ -5,33 +5,16 @@ import '../../../shared/theme/app_colors.dart';
 import '../image_gen_models.dart';
 import '../image_gen_provider.dart';
 
-class ImageGenSheet extends ConsumerStatefulWidget {
+class ImageGenSheet extends ConsumerWidget {
   const ImageGenSheet({super.key});
 
   @override
-  ConsumerState<ImageGenSheet> createState() => _ImageGenSheetState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(imageGenSettingsProvider).value ?? const ImageGenSettings();
+    final notifier = ref.read(imageGenSettingsProvider.notifier);
 
-class _ImageGenSheetState extends ConsumerState<ImageGenSheet> {
-  late ImageGenSettings _settings;
+    void update(ImageGenSettings s) => notifier.save(s);
 
-  @override
-  void initState() {
-    super.initState();
-    _settings = ref.read(imageGenSettingsProvider).value ?? const ImageGenSettings();
-  }
-
-  Future<void> _save() async {
-    await ref.read(imageGenSettingsProvider.notifier).save(_settings);
-  }
-
-  void _update(ImageGenSettings newSettings) {
-    setState(() => _settings = newSettings);
-    Future.microtask(() => _save());
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.background,
@@ -63,25 +46,25 @@ class _ImageGenSheetState extends ConsumerState<ImageGenSheet> {
                 children: [
                   _ToggleRow(
                     label: 'Enabled',
-                    value: _settings.enabled,
-                    onChanged: (v) => _update(_settings.copyWith(enabled: v)),
+                    value: settings.enabled,
+                    onChanged: (v) => update(settings.copyWith(enabled: v)),
                   ),
                   const SizedBox(height: 16),
-                  _SectionTitle('Provider'),
+                  const _SectionTitle('Provider'),
                   _ProviderSelector(
-                    selected: _settings.apiType,
-                    onChanged: (v) => _update(_settings.copyWith(apiType: v)),
+                    selected: settings.apiType,
+                    onChanged: (v) => update(settings.copyWith(apiType: v)),
                   ),
                   const SizedBox(height: 16),
-                  ..._buildProviderFields(),
+                  ..._buildProviderFields(settings, update),
                   const SizedBox(height: 16),
-                  _SectionTitle('Image Context'),
+                  const _SectionTitle('Image Context'),
                   _ToggleRow(
                     label: 'Send recent images as context',
-                    value: _settings.imageContextEnabled,
-                    onChanged: (v) => _update(_settings.copyWith(imageContextEnabled: v)),
+                    value: settings.imageContextEnabled,
+                    onChanged: (v) => update(settings.copyWith(imageContextEnabled: v)),
                   ),
-                  if (_settings.imageContextEnabled)
+                  if (settings.imageContextEnabled)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Row(
@@ -90,8 +73,8 @@ class _ImageGenSheetState extends ConsumerState<ImageGenSheet> {
                           const SizedBox(width: 8),
                           SegmentedButton<int>(
                             segments: const [ButtonSegment(value: 1, label: Text('1')), ButtonSegment(value: 2, label: Text('2')), ButtonSegment(value: 3, label: Text('3'))],
-                            selected: {_settings.imageContextCount},
-                            onSelectionChanged: (v) => _update(_settings.copyWith(imageContextCount: v.first)),
+                            selected: {settings.imageContextCount},
+                            onSelectionChanged: (v) => update(settings.copyWith(imageContextCount: v.first)),
                           ),
                         ],
                       ),
@@ -114,83 +97,83 @@ class _ImageGenSheetState extends ConsumerState<ImageGenSheet> {
     );
   }
 
-  List<Widget> _buildProviderFields() {
-    switch (_settings.apiType) {
+  List<Widget> _buildProviderFields(ImageGenSettings s, void Function(ImageGenSettings) update) {
+    switch (s.apiType) {
       case ImageGenApiType.openai:
         return [
           _ToggleRow(
             label: 'Use LLM API endpoint',
-            value: _settings.useSameEndpoint,
-            onChanged: (v) => _update(_settings.copyWith(useSameEndpoint: v)),
+            value: s.useSameEndpoint,
+            onChanged: (v) => update(s.copyWith(useSameEndpoint: v)),
           ),
-          if (!_settings.useSameEndpoint) ...[
-            _TextFieldRow(label: 'Endpoint', value: _settings.customEndpoint, onChanged: (v) => _update(_settings.copyWith(customEndpoint: v))),
-            _TextFieldRow(label: 'API Key', value: _settings.customApiKey, obscure: true, onChanged: (v) => _update(_settings.copyWith(customApiKey: v))),
-            _TextFieldRow(label: 'Model', value: _settings.customModel, hint: 'dall-e-3', onChanged: (v) => _update(_settings.copyWith(customModel: v))),
+          if (!s.useSameEndpoint) ...[
+            _TextFieldRow(label: 'Endpoint', value: s.customEndpoint, onChanged: (v) => update(s.copyWith(customEndpoint: v))),
+            _TextFieldRow(label: 'API Key', value: s.customApiKey, obscure: true, onChanged: (v) => update(s.copyWith(customApiKey: v))),
+            _TextFieldRow(label: 'Model', value: s.customModel, hint: 'dall-e-3', onChanged: (v) => update(s.copyWith(customModel: v))),
           ],
-          _DropdownRow(label: 'Size', value: _settings.openaiSize, items: OpenAIConstants.sizes, onChanged: (v) => _update(_settings.copyWith(openaiSize: v))),
-          _DropdownRow(label: 'Quality', value: _settings.openaiQuality, items: OpenAIConstants.qualities, onChanged: (v) => _update(_settings.copyWith(openaiQuality: v))),
+          _DropdownRow(label: 'Size', value: s.openaiSize, items: OpenAIConstants.sizes, onChanged: (v) => update(s.copyWith(openaiSize: v))),
+          _DropdownRow(label: 'Quality', value: s.openaiQuality, items: OpenAIConstants.qualities, onChanged: (v) => update(s.copyWith(openaiQuality: v))),
         ];
       case ImageGenApiType.gemini:
         return [
           _ToggleRow(
             label: 'Use LLM API endpoint',
-            value: _settings.useSameEndpoint,
-            onChanged: (v) => _update(_settings.copyWith(useSameEndpoint: v)),
+            value: s.useSameEndpoint,
+            onChanged: (v) => update(s.copyWith(useSameEndpoint: v)),
           ),
-          if (!_settings.useSameEndpoint) ...[
-            _TextFieldRow(label: 'Endpoint', value: _settings.customEndpoint, onChanged: (v) => _update(_settings.copyWith(customEndpoint: v))),
-            _TextFieldRow(label: 'API Key', value: _settings.customApiKey, obscure: true, onChanged: (v) => _update(_settings.copyWith(customApiKey: v))),
-            _TextFieldRow(label: 'Model', value: _settings.customModel, hint: 'imagen-3.0-generate-002', onChanged: (v) => _update(_settings.copyWith(customModel: v))),
+          if (!s.useSameEndpoint) ...[
+            _TextFieldRow(label: 'Endpoint', value: s.customEndpoint, onChanged: (v) => update(s.copyWith(customEndpoint: v))),
+            _TextFieldRow(label: 'API Key', value: s.customApiKey, obscure: true, onChanged: (v) => update(s.copyWith(customApiKey: v))),
+            _TextFieldRow(label: 'Model', value: s.customModel, hint: 'imagen-3.0-generate-002', onChanged: (v) => update(s.copyWith(customModel: v))),
           ],
-          _DropdownRow(label: 'Aspect Ratio', value: _settings.geminiAspectRatio, items: GeminiConstants.aspectRatios, onChanged: (v) => _update(_settings.copyWith(geminiAspectRatio: v))),
-          _DropdownRow(label: 'Image Size', value: _settings.geminiImageSize, items: GeminiConstants.imageSizes, onChanged: (v) => _update(_settings.copyWith(geminiImageSize: v))),
+          _DropdownRow(label: 'Aspect Ratio', value: s.geminiAspectRatio, items: GeminiConstants.aspectRatios, onChanged: (v) => update(s.copyWith(geminiAspectRatio: v))),
+          _DropdownRow(label: 'Image Size', value: s.geminiImageSize, items: GeminiConstants.imageSizes, onChanged: (v) => update(s.copyWith(geminiImageSize: v))),
         ];
       case ImageGenApiType.naistera:
         return [
-          _TextFieldRow(label: 'API Key', value: _settings.naisteraApiKey, obscure: true, onChanged: (v) => _update(_settings.copyWith(naisteraApiKey: v))),
+          _TextFieldRow(label: 'API Key', value: s.naisteraApiKey, obscure: true, onChanged: (v) => update(s.copyWith(naisteraApiKey: v))),
           _DropdownRow(
             label: 'Model',
-            value: _settings.naisteraModel,
+            value: s.naisteraModel,
             items: NaisteraConstants.models.map((e) => e.$1).toList(),
             labels: NaisteraConstants.models.map((e) => e.$2).toList(),
-            onChanged: (v) => _update(_settings.copyWith(naisteraModel: v)),
+            onChanged: (v) => update(s.copyWith(naisteraModel: v)),
           ),
-          _DropdownRow(label: 'Aspect Ratio', value: _settings.naisteraAspectRatio, items: NaisteraConstants.aspectRatios, onChanged: (v) => _update(_settings.copyWith(naisteraAspectRatio: v))),
-          _ToggleRow(label: 'Send character avatar', value: _settings.naisteraSendCharAvatar, onChanged: (v) => _update(_settings.copyWith(naisteraSendCharAvatar: v))),
-          _ToggleRow(label: 'Send persona avatar', value: _settings.naisteraSendUserAvatar, onChanged: (v) => _update(_settings.copyWith(naisteraSendUserAvatar: v))),
+          _DropdownRow(label: 'Aspect Ratio', value: s.naisteraAspectRatio, items: NaisteraConstants.aspectRatios, onChanged: (v) => update(s.copyWith(naisteraAspectRatio: v))),
+          _ToggleRow(label: 'Send character avatar', value: s.naisteraSendCharAvatar, onChanged: (v) => update(s.copyWith(naisteraSendCharAvatar: v))),
+          _ToggleRow(label: 'Send persona avatar', value: s.naisteraSendUserAvatar, onChanged: (v) => update(s.copyWith(naisteraSendUserAvatar: v))),
         ];
       case ImageGenApiType.routmy:
         return [
-          _TextFieldRow(label: 'API Key', value: _settings.routmyApiKey, obscure: true, onChanged: (v) => _update(_settings.copyWith(routmyApiKey: v))),
+          _TextFieldRow(label: 'API Key', value: s.routmyApiKey, obscure: true, onChanged: (v) => update(s.copyWith(routmyApiKey: v))),
           _DropdownRow(
             label: 'Model',
-            value: _settings.routmyModel,
+            value: s.routmyModel,
             items: RoutMyConstants.models.map((e) => e.$1).toList(),
             labels: RoutMyConstants.models.map((e) => e.$2).toList(),
-            onChanged: (v) => _update(_settings.copyWith(routmyModel: v)),
+            onChanged: (v) => update(s.copyWith(routmyModel: v)),
           ),
-          _DropdownRow(label: 'Aspect Ratio', value: _settings.routmyAspectRatio, items: RoutMyConstants.aspectRatios, onChanged: (v) => _update(_settings.copyWith(routmyAspectRatio: v))),
-          _DropdownRow(label: 'Image Size', value: _settings.routmyImageSize, items: RoutMyConstants.imageSizes, onChanged: (v) => _update(_settings.copyWith(routmyImageSize: v))),
-          _DropdownRow(label: 'Quality', value: _settings.routmyQuality, items: ['standard', 'hd'], onChanged: (v) => _update(_settings.copyWith(routmyQuality: v))),
-          _ToggleRow(label: 'Send character avatar', value: _settings.routmySendCharAvatar, onChanged: (v) => _update(_settings.copyWith(routmySendCharAvatar: v))),
-          _ToggleRow(label: 'Send persona avatar', value: _settings.routmySendUserAvatar, onChanged: (v) => _update(_settings.copyWith(routmySendUserAvatar: v))),
+          _DropdownRow(label: 'Aspect Ratio', value: s.routmyAspectRatio, items: RoutMyConstants.aspectRatios, onChanged: (v) => update(s.copyWith(routmyAspectRatio: v))),
+          _DropdownRow(label: 'Image Size', value: s.routmyImageSize, items: RoutMyConstants.imageSizes, onChanged: (v) => update(s.copyWith(routmyImageSize: v))),
+          _DropdownRow(label: 'Quality', value: s.routmyQuality, items: ['standard', 'hd'], onChanged: (v) => update(s.copyWith(routmyQuality: v))),
+          _ToggleRow(label: 'Send character avatar', value: s.routmySendCharAvatar, onChanged: (v) => update(s.copyWith(routmySendCharAvatar: v))),
+          _ToggleRow(label: 'Send persona avatar', value: s.routmySendUserAvatar, onChanged: (v) => update(s.copyWith(routmySendUserAvatar: v))),
         ];
       case ImageGenApiType.ruRoutmy:
         return [
-          _TextFieldRow(label: 'API Key', value: _settings.ruRoutmyApiKey, obscure: true, onChanged: (v) => _update(_settings.copyWith(ruRoutmyApiKey: v))),
+          _TextFieldRow(label: 'API Key', value: s.ruRoutmyApiKey, obscure: true, onChanged: (v) => update(s.copyWith(ruRoutmyApiKey: v))),
           _DropdownRow(
             label: 'Model',
-            value: _settings.ruRoutmyModel,
+            value: s.ruRoutmyModel,
             items: RuRoutMyConstants.models.map((e) => e.$1).toList(),
             labels: RuRoutMyConstants.models.map((e) => e.$2).toList(),
-            onChanged: (v) => _update(_settings.copyWith(ruRoutmyModel: v)),
+            onChanged: (v) => update(s.copyWith(ruRoutmyModel: v)),
           ),
-          _DropdownRow(label: 'Aspect Ratio', value: _settings.ruRoutmyAspectRatio, items: RuRoutMyConstants.aspectRatios, onChanged: (v) => _update(_settings.copyWith(ruRoutmyAspectRatio: v))),
-          _DropdownRow(label: 'Image Size', value: _settings.ruRoutmyImageSize, items: RuRoutMyConstants.imageSizes, onChanged: (v) => _update(_settings.copyWith(ruRoutmyImageSize: v))),
-          _DropdownRow(label: 'Quality', value: _settings.ruRoutmyQuality, items: ['standard', 'hd'], onChanged: (v) => _update(_settings.copyWith(ruRoutmyQuality: v))),
-          _ToggleRow(label: 'Send character avatar', value: _settings.ruRoutmySendCharAvatar, onChanged: (v) => _update(_settings.copyWith(ruRoutmySendCharAvatar: v))),
-          _ToggleRow(label: 'Send persona avatar', value: _settings.ruRoutmySendUserAvatar, onChanged: (v) => _update(_settings.copyWith(ruRoutmySendUserAvatar: v))),
+          _DropdownRow(label: 'Aspect Ratio', value: s.ruRoutmyAspectRatio, items: RuRoutMyConstants.aspectRatios, onChanged: (v) => update(s.copyWith(ruRoutmyAspectRatio: v))),
+          _DropdownRow(label: 'Image Size', value: s.ruRoutmyImageSize, items: RuRoutMyConstants.imageSizes, onChanged: (v) => update(s.copyWith(ruRoutmyImageSize: v))),
+          _DropdownRow(label: 'Quality', value: s.ruRoutmyQuality, items: ['standard', 'hd'], onChanged: (v) => update(s.copyWith(ruRoutmyQuality: v))),
+          _ToggleRow(label: 'Send character avatar', value: s.ruRoutmySendCharAvatar, onChanged: (v) => update(s.copyWith(ruRoutmySendCharAvatar: v))),
+          _ToggleRow(label: 'Send persona avatar', value: s.ruRoutmySendUserAvatar, onChanged: (v) => update(s.copyWith(ruRoutmySendUserAvatar: v))),
         ];
     }
   }
@@ -237,6 +220,14 @@ class _TextFieldRow extends StatefulWidget {
 class _TextFieldRowState extends State<_TextFieldRow> {
   late final _controller = TextEditingController(text: widget.value);
   bool _obscure = true;
+
+  @override
+  void didUpdateWidget(covariant _TextFieldRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
 
   @override
   void dispose() { _controller.dispose(); super.dispose(); }

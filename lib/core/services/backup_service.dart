@@ -501,7 +501,69 @@ class BackupService {
     }
 
     final profilesRaw = ls['gz_provider_profiles'];
-    if (profilesRaw != null) {
+    Map<String, dynamic>? serviceProfileMap;
+    final spmRaw = ls['gz_service_profile_map'];
+    if (spmRaw is String) {
+      try { serviceProfileMap = jsonDecode(spmRaw); } catch (_) {}
+    } else if (spmRaw is Map<String, dynamic>) {
+      serviceProfileMap = spmRaw;
+    }
+
+    if (profilesRaw != null && serviceProfileMap != null) {
+      final allProfiles = <Map<String, dynamic>>[];
+      _extractPresetsFromRaw(profilesRaw, allProfiles);
+
+      final llmConfig = serviceProfileMap['llm'] as Map<String, dynamic>?;
+      final embConfig = serviceProfileMap['embedding'] as Map<String, dynamic>?;
+
+      final llmProfileId = llmConfig?['profileId'] as String?;
+      final embProfileId = embConfig?['profileId'] as String?;
+      final embUseSame = embConfig?['useSameAsLLM'] as bool? ?? true;
+
+      final seenIds = <String>{};
+      for (final p in allProfiles) {
+        final pid = p['id'] as String? ?? '';
+        if (seenIds.contains(pid)) continue;
+        seenIds.add(pid);
+
+        String mode = 'chat';
+        if (pid == embProfileId && !embUseSame) {
+          mode = 'embedding';
+        }
+
+        await _insertApiConfig(p, mode);
+      }
+
+      if (embUseSame && llmProfileId != null) {
+        final existing = await (_db.select(_db.apiConfigs)
+              ..where((t) => t.configId.equals(llmProfileId)))
+            .getSingleOrNull();
+        if (existing != null) {
+          await (_db.update(_db.apiConfigs)
+                ..where((t) => t.configId.equals('${llmProfileId}_emb')))
+              .write(ApiConfigsCompanion(
+            configId: Value('${llmProfileId}_emb'),
+            mode: const Value('embedding'),
+          ));
+          await _db.into(_db.apiConfigs).insertOnConflictUpdate(
+                ApiConfigsCompanion.insert(
+                  configId: '${llmProfileId}_emb',
+                  name: '${existing.name} (Embedding)',
+                  providerId: Value(existing.providerId),
+                  endpoint: Value(existing.endpoint),
+                  apiKey: Value(existing.apiKey),
+                  model: Value(existing.model),
+                  mode: const Value('embedding'),
+                  maxTokens: Value(existing.maxTokens),
+                  contextSize: Value(existing.contextSize),
+                  temperature: Value(existing.temperature),
+                  topP: Value(existing.topP),
+                  stream: Value(existing.stream),
+                ),
+              );
+        }
+      }
+    } else if (profilesRaw != null) {
       _extractPresetsFromRaw(profilesRaw, presets);
     }
 
@@ -529,57 +591,59 @@ class BackupService {
       if (raw != null) _extractPresetsFromRaw(raw, presets);
     }
 
-    if (presets.isEmpty) return;
-
     for (final preset in presets) {
-      await _db.into(_db.apiConfigs).insertOnConflictUpdate(
-            ApiConfigsCompanion.insert(
-              configId: preset['id'] as String? ?? '',
-              name: preset['name'] as String? ?? '',
-              providerId: Value(
-                  preset['providerId'] as String? ??
-                      preset['provider'] as String? ??
-                      preset['providerType'] as String? ??
-                      'openai_compatible'),
-              endpoint: preset['endpoint'] != null
-                  ? Value(preset['endpoint'] as String)
-                  : const Value.absent(),
-              apiKey: Value(
-                  preset['apiKey'] as String? ?? preset['key'] as String?),
-              model: Value(preset['model'] as String?),
-              mode: Value(
-                  preset['mode'] as String? ??
-                  ((preset['isEmbedding'] as bool?) == true ? 'embedding' : 'chat')),
-              maxTokens: Value(_toInt(preset['max_tokens']) ?? 8000),
-              contextSize: Value(_toInt(preset['context']) ?? 32000),
-              temperature: Value(_toDouble(preset['temp']) ?? 0.7),
-              topP: Value(_toDouble(preset['topp']) ?? 0.9),
-              stream: Value(preset['stream'] as bool? ?? true),
-              reasoningEffort: Value(preset['reasoningEffort'] as String? ??
-                  preset['reasoning_effort'] as String? ??
-                  _extractReasoningEffort(preset)),
-              requestReasoning:
-                  Value(preset['requestReasoning'] as bool? ??
-                      preset['reasoning_enabled'] as bool? ?? false),
-              reasoningTagStart: Value(
-                  preset['reasoningTagStart'] as String? ??
-                      (preset['reasoningTags'] as Map<String, dynamic>?)
-                          ?['start'] as String?),
-              reasoningTagEnd: Value(
-                  preset['reasoningTagEnd'] as String? ??
-                      (preset['reasoningTags'] as Map<String, dynamic>?)
-                          ?['end'] as String?),
-              omitTemperature: Value(
-                  preset['omit_temperature'] as bool? ?? false),
-              omitTopP: Value(
-                  preset['omit_top_p'] as bool? ?? false),
-              omitReasoning: Value(
-                  preset['omit_reasoning'] as bool? ?? false),
-              omitReasoningEffort: Value(
-                  preset['omit_reasoning_effort'] as bool? ?? false),
-            ),
-          );
+      await _insertApiConfig(preset,
+          preset['mode'] as String? ??
+          ((preset['isEmbedding'] as bool?) == true ? 'embedding' : 'chat'));
     }
+  }
+
+  Future<void> _insertApiConfig(Map<String, dynamic> preset, String mode) async {
+    await _db.into(_db.apiConfigs).insertOnConflictUpdate(
+          ApiConfigsCompanion.insert(
+            configId: preset['id'] as String? ?? '',
+            name: preset['name'] as String? ?? '',
+            providerId: Value(
+                preset['providerId'] as String? ??
+                    preset['provider'] as String? ??
+                    preset['providerType'] as String? ??
+                    'openai_compatible'),
+            endpoint: preset['endpoint'] != null
+                ? Value(preset['endpoint'] as String)
+                : const Value.absent(),
+            apiKey: Value(
+                preset['apiKey'] as String? ?? preset['key'] as String?),
+            model: Value(preset['model'] as String?),
+            mode: Value(mode),
+            maxTokens: Value(_toInt(preset['max_tokens']) ?? 8000),
+            contextSize: Value(_toInt(preset['context']) ?? 32000),
+            temperature: Value(_toDouble(preset['temp']) ?? 0.7),
+            topP: Value(_toDouble(preset['topp']) ?? 0.9),
+            stream: Value(preset['stream'] as bool? ?? true),
+            reasoningEffort: Value(preset['reasoningEffort'] as String? ??
+                preset['reasoning_effort'] as String? ??
+                _extractReasoningEffort(preset)),
+            requestReasoning:
+                Value(preset['requestReasoning'] as bool? ??
+                    preset['reasoning_enabled'] as bool? ?? false),
+            reasoningTagStart: Value(
+                preset['reasoningTagStart'] as String? ??
+                    (preset['reasoningTags'] as Map<String, dynamic>?)
+                        ?['start'] as String?),
+            reasoningTagEnd: Value(
+                preset['reasoningTagEnd'] as String? ??
+                    (preset['reasoningTags'] as Map<String, dynamic>?)
+                        ?['end'] as String?),
+            omitTemperature: Value(
+                preset['omit_temperature'] as bool? ?? false),
+            omitTopP: Value(
+                preset['omit_top_p'] as bool? ?? false),
+            omitReasoning: Value(
+                preset['omit_reasoning'] as bool? ?? false),
+            omitReasoningEffort: Value(
+                preset['omit_reasoning_effort'] as bool? ?? false),
+          ),
+        );
   }
 
   void _extractPresetsFromRaw(dynamic raw, List<Map<String, dynamic>> presets) {

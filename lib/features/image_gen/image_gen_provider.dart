@@ -28,11 +28,9 @@ class ImageGenSettingsNotifier extends AsyncNotifier<ImageGenSettings> {
   }
 
   Future<void> save(ImageGenSettings settings) async {
+    state = AsyncData(settings);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(_toJson(settings)));
-    if (state.value != settings) {
-      state = AsyncData(settings);
-    }
   }
 
   Future<void> updateEnabled(bool enabled) async {
@@ -111,7 +109,7 @@ class ImageGenSettingsNotifier extends AsyncNotifier<ImageGenSettings> {
     naisteraSendCharAvatar: m['naisteraSendCharAvatar'] as bool? ?? false,
     naisteraSendUserAvatar: m['naisteraSendUserAvatar'] as bool? ?? false,
     routmyApiKey: m['routmyApiKey'] as String? ?? '',
-    routmyModel: m['routmyModel'] as String? ?? 'flux-1.1-pro',
+    routmyModel: m['routmyModel'] as String? ?? 'google/gemini-3.1-flash-image-preview',
     routmyAspectRatio: m['routmyAspectRatio'] as String? ?? '1:1',
     routmyImageSize: m['routmyImageSize'] as String? ?? '1K',
     routmyQuality: m['routmyQuality'] as String? ?? 'standard',
