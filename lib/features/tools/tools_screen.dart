@@ -10,14 +10,35 @@ import '../../shared/shell/nav_height_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 
+class PersonaInfo {
+  final String name;
+  final String? avatarPath;
+  const PersonaInfo({required this.name, this.avatarPath});
+}
+
+final _activePersonaInfoProvider = FutureProvider<PersonaInfo?>((ref) async {
+  final activeId = ref.watch(activePersonaIdProvider);
+  if (activeId == null) return null;
+  final persona = await ref.read(personaRepoProvider).getById(activeId);
+  if (persona == null) return null;
+  return PersonaInfo(name: persona.name, avatarPath: persona.avatarPath);
+});
+
+final _activePresetNameProvider = FutureProvider<String>((ref) async {
+  final activeId = ref.watch(activePresetIdProvider);
+  if (activeId == null) return 'Default';
+  final preset = await ref.read(presetRepoProvider).getById(activeId);
+  return preset?.name ?? 'Default';
+});
+
 class ToolsScreen extends ConsumerWidget {
   const ToolsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bottomPad = ref.watch(navHeightProvider) + 20;
-    final activePersonaId = ref.watch(activePersonaIdProvider);
-    final activePresetId = ref.watch(activePresetIdProvider);
+    final personaInfo = ref.watch(_activePersonaInfoProvider).value;
+    final presetName = ref.watch(_activePresetNameProvider).value ?? 'Default';
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Column(
@@ -33,13 +54,19 @@ class ToolsScreen extends ConsumerWidget {
             child: ListView(
               padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPad),
               children: [
-                _PersonaHeroCard(
-                  activePersonaId: activePersonaId,
+                _HeroCard(
+                  icon: Icons.face,
+                  title: 'Personas',
+                  subtitle: personaInfo?.name ?? 'user',
+                  avatarPath: personaInfo?.avatarPath,
+                  isAvatar: true,
                   onTap: () => context.go('/tools/personas'),
                 ),
                 const SizedBox(height: 12),
-                _PresetHeroCard(
-                  activePresetId: activePresetId,
+                _HeroCard(
+                  icon: Icons.tune,
+                  title: 'Presets',
+                  subtitle: presetName,
                   onTap: () => context.go('/tools/presets'),
                 ),
                 const SizedBox(height: 16),
@@ -88,73 +115,6 @@ class ToolsScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-}
-
-class _PersonaHeroCard extends ConsumerWidget {
-  final String? activePersonaId;
-  final VoidCallback onTap;
-
-  const _PersonaHeroCard({required this.activePersonaId, required this.onTap});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return FutureBuilder<_PersonaInfo?>(
-      future: _getPersonaInfo(ref),
-      builder: (context, snap) {
-        final info = snap.data;
-        return _HeroCard(
-          icon: Icons.face,
-          title: 'Personas',
-          subtitle: info?.name ?? 'user',
-          avatarPath: info?.avatarPath,
-          isAvatar: true,
-          onTap: onTap,
-        );
-      },
-    );
-  }
-
-  Future<_PersonaInfo?> _getPersonaInfo(WidgetRef ref) async {
-    if (activePersonaId == null) return null;
-    final persona = await ref.read(personaRepoProvider).getById(activePersonaId!);
-    if (persona == null) return null;
-    return _PersonaInfo(name: persona.name, avatarPath: persona.avatarPath);
-  }
-}
-
-class _PersonaInfo {
-  final String name;
-  final String? avatarPath;
-  _PersonaInfo({required this.name, this.avatarPath});
-}
-
-class _PresetHeroCard extends ConsumerWidget {
-  final String? activePresetId;
-  final VoidCallback onTap;
-
-  const _PresetHeroCard({required this.activePresetId, required this.onTap});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return FutureBuilder<String?>(
-      future: _getPresetName(ref),
-      builder: (context, snap) {
-        final subtitle = snap.data ?? 'Default';
-        return _HeroCard(
-          icon: Icons.tune,
-          title: 'Presets',
-          subtitle: subtitle,
-          onTap: onTap,
-        );
-      },
-    );
-  }
-
-  Future<String?> _getPresetName(WidgetRef ref) async {
-    if (activePresetId == null) return 'Default';
-    final preset = await ref.read(presetRepoProvider).getById(activePresetId!);
-    return preset?.name ?? 'Default';
   }
 }
 

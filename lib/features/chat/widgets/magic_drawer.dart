@@ -7,11 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/llm/lorebook_scanner.dart';
 import '../../../core/llm/prompt_isolate.dart';
 import '../../../core/llm/prompt_payload_builder.dart';
 import '../../../core/llm/summary_service.dart';
+import '../../../core/models/lorebook.dart';
 import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/db_provider.dart';
+import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../image_gen/image_gen_provider.dart';
@@ -231,10 +234,23 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       }
     }
 
-    final lorebookEntryCount = lorebooks.fold<int>(
-      0,
-      (sum, lorebook) => sum + lorebook.entries.length,
-    );
+    final lorebookActivations = ref.read(lorebookActivationsProvider);
+    final lorebookSettings = ref.read(lorebookSettingsProvider);
+    final triggeredEntries = session != null
+        ? scanLorebooks(
+            history: session.messages,
+            char: character,
+            textToScan: session.messages.isNotEmpty
+                ? session.messages.last.content
+                : '',
+            chatId: session.id,
+            lorebooks: lorebooks,
+            globalSettings: lorebookSettings,
+            activations: lorebookActivations,
+          )
+        : <ScannedEntry>[];
+
+    final lorebookEntryCount = triggeredEntries.length;
 
     bool imageGenEnabled = false;
     try {
@@ -543,9 +559,39 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         hint: '${lb.entries.length} entries · ${lb.activationScope}',
         onTap: () {
           Navigator.pop(context);
-          Navigator.of(context).pop();
-          context.go('/tools/lorebooks');
+          _showLorebookEntries(lb);
         },
+      )).toList(),
+    );
+  }
+
+  void _showLorebookEntries(Lorebook lb) {
+    final entries = lb.entries;
+    if (entries.isEmpty) {
+      GlazeBottomSheet.show(
+        context,
+        title: lb.name,
+        bigInfo: BottomSheetBigInfo(
+          icon: Icons.menu_book_outlined,
+          description: 'No entries in ${lb.name}',
+          buttonText: 'Open Editor',
+          onButtonTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).pop();
+            context.go('/tools/lorebooks');
+          },
+        ),
+      );
+      return;
+    }
+    GlazeBottomSheet.show(
+      context,
+      title: lb.name,
+      items: entries.take(20).map((e) => BottomSheetItem(
+        icon: e.enabled ? Icons.description : Icons.description_outlined,
+        label: e.comment.isNotEmpty ? e.comment : e.keys.join(', '),
+        hint: e.constant ? 'constant' : (e.keys.isNotEmpty ? e.keys.first : ''),
+        onTap: () {},
       )).toList(),
     );
   }

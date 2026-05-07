@@ -79,7 +79,7 @@ class CharacterRepo {
             postHistoryInstructions: Value(postHistoryInstructions),
             creator: Value(creator),
             creatorNotes: Value(creatorNotes),
-            updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value(DateTime.now().millisecondsSinceEpoch ~/ 1000),
             tagsJson: Value(jsonEncode(tags)),
             alternateGreetingsJson: Value(jsonEncode(alternateGreetings)),
           ),

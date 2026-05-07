@@ -215,6 +215,18 @@ final embeddingConfigProvider = StateProvider<EmbeddingConfig>((ref) {
   return const EmbeddingConfig(endpoint: '', model: '');
 });
 
+Future<void> initEmbeddingConfigFromDb(WidgetRef ref) async {
+  final apiConfigs = await ref.read(apiConfigRepoProvider).getAll();
+  final embConfig = apiConfigs.where((c) => c.mode == 'embedding').firstOrNull;
+  if (embConfig != null) {
+    ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
+      endpoint: embConfig.endpoint,
+      apiKey: embConfig.apiKey,
+      model: embConfig.model,
+    );
+  }
+}
+
 final lorebookVectorSearchProvider = Provider<LorebookVectorSearch>((ref) {
   return LorebookVectorSearch(
     ref.watch(embeddingRepoProvider),

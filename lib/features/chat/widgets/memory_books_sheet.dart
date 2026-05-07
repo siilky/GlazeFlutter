@@ -92,20 +92,11 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
     final entries = _book!.entries;
     final activeEntries = entries.where((e) => e.status == 'active').toList();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
+    return Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
             child: Row(
               children: [
                 const Icon(Icons.auto_stories, color: AppColors.accent, size: 22),
@@ -141,7 +132,10 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          Expanded(
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.5,
+            ),
             child: entries.isEmpty
                 ? Center(
                     child: Column(
@@ -156,6 +150,7 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
                     ),
                   )
                 : ListView.builder(
+                    shrinkWrap: true,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     itemCount: entries.length,
                     itemBuilder: (_, i) => _MemoryEntryTile(
@@ -174,8 +169,7 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
                   ),
           ),
         ],
-      ),
-    );
+      );
   }
 
   Widget _statusChip(String label, bool active, Color color) {

@@ -485,7 +485,9 @@ class BackupService {
                   preset['providerId'] as String? ??
                       preset['provider'] as String? ??
                       'openai_compatible'),
-              endpoint: Value(preset['endpoint'] as String?),
+              endpoint: preset['endpoint'] != null
+                  ? Value(preset['endpoint'] as String)
+                  : const Value.absent(),
               apiKey: Value(
                   preset['apiKey'] as String? ?? preset['key'] as String?),
               model: Value(preset['model'] as String?),

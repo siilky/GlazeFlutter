@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/llm/embedding_service.dart';
 import '../../../core/llm/lorebook_vector_search.dart';
+import '../../../core/state/db_provider.dart';
 import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
@@ -33,6 +34,9 @@ class _EmbeddingSettingsScreenState
   void initState() {
     super.initState();
     final config = ref.read(embeddingConfigProvider);
+    if (config.endpoint.isEmpty) {
+      _initFromDb();
+    }
     final settings = ref.read(lorebookSettingsProvider);
     _endpointCtrl = TextEditingController(text: config.endpoint);
     _apiKeyCtrl = TextEditingController(text: config.apiKey);
@@ -46,6 +50,23 @@ class _EmbeddingSettingsScreenState
     _topKCtrl = TextEditingController(text: settings.vectorTopK.toString());
     _scanDepthCtrl = TextEditingController(text: settings.scanDepth.toString());
     _searchType = settings.searchType;
+  }
+
+  Future<void> _initFromDb() async {
+    final apiConfigs = await ref.read(apiConfigRepoProvider).getAll();
+    final embConfig = apiConfigs.where((c) => c.mode == 'embedding').firstOrNull;
+    if (embConfig != null && mounted) {
+      ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
+        endpoint: embConfig.endpoint,
+        apiKey: embConfig.apiKey,
+        model: embConfig.model,
+      );
+      setState(() {
+        _endpointCtrl.text = embConfig.endpoint;
+        _apiKeyCtrl.text = embConfig.apiKey;
+        _modelCtrl.text = embConfig.model;
+      });
+    }
   }
 
   @override
