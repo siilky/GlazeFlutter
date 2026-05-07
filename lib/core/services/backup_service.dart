@@ -500,6 +500,30 @@ class BackupService {
       }
     }
 
+    final profilesRaw = ls['gz_provider_profiles'];
+    if (profilesRaw != null) {
+      _extractPresetsFromRaw(profilesRaw, presets);
+    }
+
+    if (presets.isEmpty) {
+      final endpoint = ls['api-endpoint'] as String? ??
+                       kv['api-endpoint'] as String?;
+      final apiKey = ls['api-key'] as String? ??
+                     kv['api-key'] as String?;
+      final model = ls['api-model'] as String? ??
+                    kv['api-model'] as String?;
+      if (endpoint != null && endpoint.isNotEmpty) {
+        presets.add({
+          'id': 'default',
+          'name': 'Default',
+          'endpoint': endpoint,
+          'key': apiKey ?? '',
+          'apiKey': apiKey ?? '',
+          'model': model ?? '',
+        });
+      }
+    }
+
     if (topLevel != null) {
       final raw = topLevel['apiPresets'];
       if (raw != null) _extractPresetsFromRaw(raw, presets);
@@ -515,6 +539,7 @@ class BackupService {
               providerId: Value(
                   preset['providerId'] as String? ??
                       preset['provider'] as String? ??
+                      preset['providerType'] as String? ??
                       'openai_compatible'),
               endpoint: preset['endpoint'] != null
                   ? Value(preset['endpoint'] as String)
@@ -531,9 +556,11 @@ class BackupService {
               topP: Value(_toDouble(preset['topp']) ?? 0.9),
               stream: Value(preset['stream'] as bool? ?? true),
               reasoningEffort: Value(preset['reasoningEffort'] as String? ??
+                  preset['reasoning_effort'] as String? ??
                   _extractReasoningEffort(preset)),
               requestReasoning:
-                  Value(preset['requestReasoning'] as bool? ?? false),
+                  Value(preset['requestReasoning'] as bool? ??
+                      preset['reasoning_enabled'] as bool? ?? false),
               reasoningTagStart: Value(
                   preset['reasoningTagStart'] as String? ??
                       (preset['reasoningTags'] as Map<String, dynamic>?)

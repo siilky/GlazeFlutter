@@ -26,11 +26,8 @@ class _ImageGenSheetState extends ConsumerState<ImageGenSheet> {
   }
 
   void _update(ImageGenSettings newSettings) {
-    _settings = newSettings;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
-    _save();
+    setState(() => _settings = newSettings);
+    Future.microtask(() => _save());
   }
 
   @override
