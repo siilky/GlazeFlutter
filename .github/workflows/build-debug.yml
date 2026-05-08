@@ -2,19 +2,26 @@ name: Build Debug
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: false
+        default: ''
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
-      - name: Create .env from secrets
+      - name: Create .env (placeholder)
         run: |
-          echo "DROPBOX_APP_KEY=${{ secrets.VITE_DROPBOX_APP_KEY }}" >> .env
-          echo "DROPBOX_REDIRECT_NATIVE=${{ secrets.VITE_DROPBOX_REDIRECT_NATIVE }}" >> .env
-          echo "GDRIVE_CLIENT_ID=${{ secrets.VITE_GDRIVE_CLIENT_ID }}" >> .env
-          echo "GDRIVE_CLIENT_SECRET=${{ secrets.VITE_GDRIVE_CLIENT_SECRET }}" >> .env
+          echo "DROPBOX_APP_KEY=" >> .env
+          echo "DROPBOX_REDIRECT_NATIVE=" >> .env
+          echo "GDRIVE_CLIENT_ID=" >> .env
+          echo "GDRIVE_CLIENT_SECRET=" >> .env
           echo "GDRIVE_REDIRECT_NATIVE=com.hydall.glaze://oauth/gdrive" >> .env
 
       - name: Set up Java 17
@@ -52,7 +59,7 @@ jobs:
       - name: Generate code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Build APK (arm64 only)
+      - name: Build debug APK
         run: flutter build apk --debug --no-pub --target-platform android-arm64
 
       - name: Rename APK
@@ -61,21 +68,23 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Glaze-APK-debug
+          name: Glaze-debug-APK
           path: build/app/outputs/flutter-apk/*.apk
 
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
-      - name: Create .env from secrets
+      - name: Create .env (placeholder)
         shell: bash
         run: |
-          echo "DROPBOX_APP_KEY=${{ secrets.VITE_DROPBOX_APP_KEY }}" >> .env
-          echo "DROPBOX_REDIRECT_NATIVE=${{ secrets.VITE_DROPBOX_REDIRECT_NATIVE }}" >> .env
-          echo "GDRIVE_CLIENT_ID=${{ secrets.VITE_GDRIVE_CLIENT_ID }}" >> .env
-          echo "GDRIVE_CLIENT_SECRET=${{ secrets.VITE_GDRIVE_CLIENT_SECRET }}" >> .env
+          echo "DROPBOX_APP_KEY=" >> .env
+          echo "DROPBOX_REDIRECT_NATIVE=" >> .env
+          echo "GDRIVE_CLIENT_ID=" >> .env
+          echo "GDRIVE_CLIENT_SECRET=" >> .env
           echo "GDRIVE_REDIRECT_NATIVE=com.hydall.glaze://oauth/gdrive" >> .env
 
       - name: Install Flutter
@@ -97,26 +106,28 @@ jobs:
       - name: Generate code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Build Windows
+      - name: Build Windows (debug)
         run: flutter build windows --debug --no-pub
 
       - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
-          name: Glaze-Windows-debug
+          name: Glaze-debug-Windows
           path: build/windows/x64/runner/Debug/**
 
   build-ios:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
-      - name: Create .env from secrets
+      - name: Create .env (placeholder)
         run: |
-          echo "DROPBOX_APP_KEY=${{ secrets.VITE_DROPBOX_APP_KEY }}" >> .env
-          echo "DROPBOX_REDIRECT_NATIVE=${{ secrets.VITE_DROPBOX_REDIRECT_NATIVE }}" >> .env
-          echo "GDRIVE_CLIENT_ID=${{ secrets.VITE_GDRIVE_CLIENT_ID }}" >> .env
-          echo "GDRIVE_CLIENT_SECRET=${{ secrets.VITE_GDRIVE_CLIENT_SECRET }}" >> .env
+          echo "DROPBOX_APP_KEY=" >> .env
+          echo "DROPBOX_REDIRECT_NATIVE=" >> .env
+          echo "GDRIVE_CLIENT_ID=" >> .env
+          echo "GDRIVE_CLIENT_SECRET=" >> .env
           echo "GDRIVE_REDIRECT_NATIVE=com.hydall.glaze://oauth/gdrive" >> .env
 
       - name: Install Flutter
@@ -148,17 +159,17 @@ jobs:
       - name: Install CocoaPods
         run: cd ios && pod install && cd ..
 
-      - name: Build iOS (no signing)
+      - name: Build iOS (debug, no signing)
         run: flutter build ios --debug --no-codesign --no-pub
 
-      - name: Create IPA Structure
+      - name: Create IPA
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/*.app Payload/
-          zip -r Glaze.ipa Payload
+          zip -r Glaze-debug.ipa Payload
 
-      - name: Upload iOS artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Glaze-iOS-debug
-          path: Glaze.ipa
+          name: Glaze-debug-iOS
+          path: Glaze-debug.ipa
