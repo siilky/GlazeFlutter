@@ -35,6 +35,7 @@
 - **~~iOS can't select .glz backup files.~~** Fixed — all file pickers now use `FileType.any` on iOS and `FileType.custom` on other platforms.
 - **~~PNG character import uses file picker instead of gallery on iOS.~~** Fixed — iOS now uses `image_picker` to open the photo gallery; other platforms keep file picker.
 - **~~JSONL chat import doesn't work on iOS.~~** Fixed — same FileType fix as .glz backups.
+- **~~iOS JSONL import shows "No messages found" for SillyTavern files.~~** Fixed — iOS `FilePicker` doesn't expose accessible `file.path` in sandbox, so `File(path).readAsString()` returned empty string. Now uses `file.bytes` directly with `utf8.decode` fallback.
 
 ## Tokenizer / Prompt Counting
 
