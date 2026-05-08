@@ -10,6 +10,7 @@ import '../../../core/models/character.dart';
 import '../../../core/state/character_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
+import '../character_detail_screen.dart';
 
 class CharacterCard extends ConsumerWidget {
   final Character character;
@@ -120,7 +121,13 @@ class CharacterCard extends ConsumerWidget {
   }
 
   void _showDetailSheet(BuildContext context) {
-    context.go('/character/${character.id}');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CharacterDetailScreen(charId: character.id),
+    );
   }
 
   void _showActions(BuildContext context, WidgetRef ref) {

@@ -45,6 +45,40 @@ const _kHeaderH = 80.0;
 
 // ─── Screen ────────────────────────────────────────────────────────────────
 
+class CharacterDetailSheetLauncher extends StatefulWidget {
+  final String charId;
+  const CharacterDetailSheetLauncher({super.key, required this.charId});
+
+  @override
+  State<CharacterDetailSheetLauncher> createState() =>
+      _CharacterDetailSheetLauncherState();
+}
+
+class _CharacterDetailSheetLauncherState
+    extends State<CharacterDetailSheetLauncher> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _show());
+  }
+
+  Future<void> _show() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CharacterDetailScreen(charId: widget.charId),
+    );
+    if (mounted) context.go('/characters');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox.shrink();
+  }
+}
+
 class CharacterDetailScreen extends ConsumerStatefulWidget {
   final String charId;
   const CharacterDetailScreen({super.key, required this.charId});
@@ -153,18 +187,15 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.78,
-        minChildSize: 0.3,
-        maxChildSize: 1.0,
-        snap: true,
-        snapSizes: const [0.78, 1.0],
-        controller: _sheetController,
-        builder: (_, scrollController) => _buildSheet(scrollController),
-      ),
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.78,
+      minChildSize: 0.3,
+      maxChildSize: 1.0,
+      snap: true,
+      snapSizes: const [0.78, 1.0],
+      controller: _sheetController,
+      builder: (_, scrollController) => _buildSheet(scrollController),
     );
   }
 
