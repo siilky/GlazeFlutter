@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/llm/sse_client.dart';
 import '../../core/models/memory_book.dart';
 import '../../core/services/memory_prompt_presets.dart';
-import '../../core/state/db_provider.dart';
+import '../settings/api_list_provider.dart';
 
 class MemoryDraftGenerator {
   final WidgetRef _ref;
@@ -36,8 +36,7 @@ class MemoryDraftGenerator {
       apiKey = settings.generationApiKey;
       model = settings.generationModel;
     } else {
-      final configs = await _ref.read(apiConfigRepoProvider).getAll();
-      final chatConfig = configs.where((c) => c.mode != 'embedding').firstOrNull;
+      final chatConfig = _ref.read(activeApiConfigProvider);
       if (chatConfig == null) {
         throw Exception('No chat API config available');
       }

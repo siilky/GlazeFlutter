@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/models/memory_book.dart';
 import '../../../core/services/memory_prompt_presets.dart';
@@ -23,14 +24,15 @@ class _MemoryGenerationSettingsSheetState extends State<MemoryGenerationSettings
   late bool _useDelayedAutomation;
   late String _injectionTarget;
   late String _generationSource;
-  late String _generationModel;
-  late String _generationEndpoint;
-  late String _generationApiKey;
-  late double _generationTemperature;
-  late int _generationMaxTokens;
   late String _promptPreset;
   late String _keyMatchMode;
   late bool _vectorSearchEnabled;
+
+  late final TextEditingController _generationModelCtrl;
+  late final TextEditingController _generationEndpointCtrl;
+  late final TextEditingController _generationApiKeyCtrl;
+  late final TextEditingController _temperatureCtrl;
+  late final TextEditingController _maxTokensCtrl;
 
   @override
   void initState() {
@@ -45,17 +47,30 @@ class _MemoryGenerationSettingsSheetState extends State<MemoryGenerationSettings
     _useDelayedAutomation = s.useDelayedAutomation;
     _injectionTarget = s.injectionTarget;
     _generationSource = s.generationSource;
-    _generationModel = s.generationModel;
-    _generationEndpoint = s.generationEndpoint;
-    _generationApiKey = s.generationApiKey;
-    _generationTemperature = s.generationTemperature ?? 0.0;
-    _generationMaxTokens = s.generationMaxTokens ?? 0;
     _promptPreset = s.promptPreset;
     _keyMatchMode = s.keyMatchMode;
     _vectorSearchEnabled = s.vectorSearchEnabled;
+
+    _generationModelCtrl = TextEditingController(text: s.generationModel);
+    _generationEndpointCtrl = TextEditingController(text: s.generationEndpoint);
+    _generationApiKeyCtrl = TextEditingController(text: s.generationApiKey);
+    _temperatureCtrl = TextEditingController(text: s.generationTemperature != null && s.generationTemperature! > 0 ? s.generationTemperature!.round().toString() : '');
+    _maxTokensCtrl = TextEditingController(text: s.generationMaxTokens != null && s.generationMaxTokens! > 0 ? s.generationMaxTokens.toString() : '');
+  }
+
+  @override
+  void dispose() {
+    _generationModelCtrl.dispose();
+    _generationEndpointCtrl.dispose();
+    _generationApiKeyCtrl.dispose();
+    _temperatureCtrl.dispose();
+    _maxTokensCtrl.dispose();
+    super.dispose();
   }
 
   void _save() {
+    final temp = int.tryParse(_temperatureCtrl.text);
+    final tokens = int.tryParse(_maxTokensCtrl.text);
     final settings = widget.settings.copyWith(
       enabled: _enabled,
       autoCreateEnabled: _autoCreate,
@@ -66,11 +81,11 @@ class _MemoryGenerationSettingsSheetState extends State<MemoryGenerationSettings
       useDelayedAutomation: _useDelayedAutomation,
       injectionTarget: _injectionTarget,
       generationSource: _generationSource,
-      generationModel: _generationModel,
-      generationEndpoint: _generationEndpoint,
-      generationApiKey: _generationApiKey,
-      generationTemperature: _generationTemperature > 0 ? _generationTemperature : null,
-      generationMaxTokens: _generationMaxTokens > 0 ? _generationMaxTokens : null,
+      generationModel: _generationModelCtrl.text,
+      generationEndpoint: _generationEndpointCtrl.text,
+      generationApiKey: _generationApiKeyCtrl.text,
+      generationTemperature: temp != null && temp > 0 ? temp.toDouble() : null,
+      generationMaxTokens: tokens != null && tokens > 0 ? tokens : null,
       promptPreset: _promptPreset,
       keyMatchMode: _keyMatchMode,
       vectorSearchEnabled: _vectorSearchEnabled,
@@ -117,20 +132,18 @@ class _MemoryGenerationSettingsSheetState extends State<MemoryGenerationSettings
               subtitle: 'Use the same endpoint as LLM for memory generation'),
           if (_generationSource == 'custom') ...[
             const SizedBox(height: 8),
-            _textField('Endpoint', _generationEndpoint, (v) => setState(() => _generationEndpoint = v), hint: 'https://...'),
+            _labeledField('Endpoint', _generationEndpointCtrl, hint: 'https://...'),
             const SizedBox(height: 8),
-            _textField('Model', _generationModel, (v) => setState(() => _generationModel = v), hint: 'gpt-4o-mini'),
+            _labeledField('Model', _generationModelCtrl, hint: 'gpt-4o-mini'),
             const SizedBox(height: 8),
-            _textField('API Key', _generationApiKey, (v) => setState(() => _generationApiKey = v), hint: 'sk-...', obscure: true),
+            _labeledField('API Key', _generationApiKeyCtrl, hint: 'sk-...', obscure: true),
           ] else ...[
             const SizedBox(height: 8),
-            _textField('Model Override (optional)', _generationModel, (v) => setState(() => _generationModel = v), hint: 'Leave blank for current LLM model'),
+            _labeledField('Model Override (optional)', _generationModelCtrl, hint: 'Leave blank for current LLM model'),
           ],
           const SizedBox(height: 8),
-          _numberField('Temperature Override', _generationTemperature.round(), (v) => setState(() => _generationTemperature = v.toDouble()), min: 0, max: 200,
-              hint: '0 = use API default'),
-          _numberField('Output Token Limit', _generationMaxTokens, (v) => setState(() => _generationMaxTokens = v), min: 0, max: 32000,
-              hint: '0 = auto (recommended 2000-4000)'),
+          _labeledField('Temperature Override', _temperatureCtrl, hint: '0 = use API default', inputType: TextInputType.number),
+          _labeledField('Output Token Limit', _maxTokensCtrl, hint: '0 = auto (recommended 2000-4000)', inputType: TextInputType.number),
           const SizedBox(height: 12),
           _sectionLabel('Search'),
           _switchTile('Vector Search', _vectorSearchEnabled, (v) => setState(() => _vectorSearchEnabled = v)),
@@ -177,7 +190,7 @@ class _MemoryGenerationSettingsSheetState extends State<MemoryGenerationSettings
     );
   }
 
-  Widget _numberField(String label, int value, ValueChanged<int> onChanged, {int min = 0, int max = 99999, String? hint}) {
+  Widget _numberField(String label, int value, ValueChanged<int> onChanged, {int min = 0, int max = 99999}) {
     return Row(
       children: [
         Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: AppColors.textPrimary))),
@@ -195,11 +208,12 @@ class _MemoryGenerationSettingsSheetState extends State<MemoryGenerationSettings
     );
   }
 
-  Widget _textField(String label, String value, ValueChanged<String> onChanged, {String? hint, bool obscure = false}) {
+  Widget _labeledField(String label, TextEditingController controller, {String? hint, bool obscure = false, TextInputType? inputType}) {
     return TextField(
-      onChanged: onChanged,
-      controller: TextEditingController(text: value)..selection = TextSelection.collapsed(offset: value.length),
+      controller: controller,
       obscureText: obscure,
+      keyboardType: inputType,
+      inputFormatters: inputType == TextInputType.number ? [FilteringTextInputFormatter.digitsOnly] : null,
       style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,
