@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/llm/sse_client.dart';
 import '../../core/models/memory_book.dart';
 import '../../core/services/memory_prompt_presets.dart';
+import '../../core/state/memory_settings_provider.dart';
 import '../settings/api_list_provider.dart';
 
 class MemoryDraftGenerator {
@@ -20,7 +21,10 @@ class MemoryDraftGenerator {
     required String historyText,
     CancelToken? cancelToken,
   }) async {
-    final template = MemoryPromptPresets.resolve(settings.promptPreset);
+    final customPrompts = MemoryPromptPreset.fromJsonList(
+      _ref.read(memoryGlobalSettingsProvider).customPrompts,
+    );
+    final template = MemoryPromptPresets.resolve(settings.promptPreset, customPrompts);
     var prompt = template.replaceAll('{{history}}', historyText);
     if (!template.contains('{{history}}')) {
       prompt = '$prompt\n\n$historyText';

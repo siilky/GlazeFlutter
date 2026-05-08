@@ -23,8 +23,8 @@
 - **~~Memory books scan only 3 drafts for ~150 messages.~~** Fixed — `_scanChat` now includes the last partial segment and uses looser duplicate detection.
 - **~~Memory books generation returns 401.~~** Fixed — `MemoryDraftGenerator` now uses `activeApiConfigProvider` instead of picking a random non-embedding config.
 
-- **No custom prompt manager.** JS has `MemoryPromptManagerSheet` to add/edit/delete custom prompt templates. Flutter only has built-in presets.
-- **No quick model selector.** JS fetches models from the API and shows a picker. Flutter only has a text field for model name.
+- **~~No custom prompt manager.~~** Fixed — `CustomPromptManagerSheet` with add/edit/delete UI; `MemoryPromptPresets.resolve()` and `label()` now accept custom presets; settings sheet shows built-in + custom sections with "Manage prompts" button.
+- **~~No quick model selector.~~** Fixed — model text field now has a fetch button that calls `/models` endpoint and shows a picker.
 
 ## Backup Import
 
