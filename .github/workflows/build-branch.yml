@@ -55,6 +55,11 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build APK (arm64 only)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build apk --${{ inputs.build_type }} --no-pub --target-platform android-arm64
 
       - name: Rename APK
