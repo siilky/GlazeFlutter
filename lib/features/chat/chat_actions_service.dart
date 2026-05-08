@@ -61,6 +61,11 @@ class ChatActionsService {
 
   Future<int> importChat(String charId, String filePath) async {
     final importResult = await importChatFromJsonl(filePath);
+    return importChatFromResult(charId, importResult);
+  }
+
+  Future<int> importChatFromResult(
+      String charId, ChatImportResult importResult) async {
     if (importResult.messages.isEmpty) {
       return 0;
     }

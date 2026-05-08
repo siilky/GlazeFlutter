@@ -77,7 +77,14 @@ Future<ChatExportResult> exportChatAsJsonl({
 }
 
 Future<ChatImportResult> importChatFromJsonl(String filePath) async {
-  final content = await File(filePath).readAsString();
+  final file = File(filePath);
+  if (!await file.exists()) {
+    throw FileSystemException('File not found', filePath);
+  }
+  final content = await file.readAsString();
+  if (content.trim().isEmpty) {
+    throw StateError('File is empty: $filePath');
+  }
   return importChatFromJsonlString(content);
 }
 
