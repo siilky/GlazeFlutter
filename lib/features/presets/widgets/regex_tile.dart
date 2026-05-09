@@ -146,14 +146,18 @@ class _NoPageStorageExpansionTile extends StatefulWidget {
 
 class _NoPageStorageExpansionTileState extends State<_NoPageStorageExpansionTile> {
   bool _expanded = false;
+  final _bucket = PageStorageBucket();
 
   @override
   Widget build(BuildContext context) {
-    return ExpansionTile(
-      initiallyExpanded: _expanded,
-      onExpansionChanged: (v) => setState(() => _expanded = v),
-      title: widget.title,
-      children: widget.children,
+    return PageStorage(
+      bucket: _bucket,
+      child: ExpansionTile(
+        initiallyExpanded: _expanded,
+        onExpansionChanged: (v) => setState(() => _expanded = v),
+        title: widget.title,
+        children: widget.children,
+      ),
     );
   }
 }
