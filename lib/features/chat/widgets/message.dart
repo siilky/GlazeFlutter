@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -11,6 +10,7 @@ import '../../../core/llm/tokenizer.dart';
 import '../../../core/models/character.dart';
 import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/character_provider.dart';
+import '../../../core/utils/html_to_markdown.dart';
 import '../../../shared/widgets/pencil_animation.dart';
 import '../../image_gen/widgets/image_content_renderer.dart';
 import '../../settings/app_settings_provider.dart';
@@ -334,20 +334,9 @@ class _MessageState extends ConsumerState<Message> {
               _TypingIndicator(textColor: textColor, scheme: scheme)
             else if (ImageContentRenderer.hasImageMarkers(displayContent))
               ImageContentRenderer(content: displayContent, textColor: textColor)
-            else if (_hasHtmlTags(displayContent))
-              HtmlWidget(
-                displayContent,
-                textStyle: TextStyle(color: textColor),
-                customStylesBuilder: (element) {
-                  if (element.localName == 'body' || element.localName == 'p') {
-                    return {'white-space': 'pre-line'};
-                  }
-                  return null;
-                },
-              )
             else
               MarkdownBody(
-                data: _highlightPhrases(displayContent), 
+                data: _highlightPhrases(hasHtmlTags(displayContent) ? htmlToMarkdown(displayContent) : displayContent), 
                 styleSheet: MarkdownStyleSheet(
                   p: TextStyle(color: textColor),
                   em: TextStyle(color: asteriskColor, fontStyle: FontStyle.italic),
@@ -798,10 +787,3 @@ class _MetadataRow extends StatelessWidget {
     );
   }
 }
-
-final _htmlTagRegex = RegExp(
-  r'<(div|span|p|br|img|a|table|tr|td|th|ul|ol|li|h[1-6]|hr|pre|code|blockquote|style|font|center|b|i|u|s|em|strong|small|sub|sup|mark|details|summary|section|article|header|footer|nav|figure|figcaption|iframe)\b',
-  caseSensitive: false,
-);
-
-bool _hasHtmlTags(String content) => _htmlTagRegex.hasMatch(content);
