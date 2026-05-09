@@ -82,7 +82,7 @@
 
 - **~~Android: fresh APK only installs clean (uninstall first), update over existing install fails.~~** Fixed — CI builds now decode `DEBUG_KEYSTORE_BASE64` secret into a persistent `debug-key.keystore`, so all CI APKs are signed with the same key. DB `createTable`/`addColumn` collision on migration from early schemas still possible but rare.
 
-- **~~No HTML rendering in chat.~~** Fixed — messages with HTML tags are converted to markdown via `htmlToMarkdown()` before rendering in `MarkdownBody`. Chat session previews use `stripHtml()` to show clean text. No separate HTML widget needed. Note: inline CSS styles and `style` attributes are stripped during conversion, so HTML-specific colors/fonts are not preserved.
+- **~~No HTML rendering in chat.~~** Fixed — messages with HTML tags are converted to markdown via `htmlToMarkdown()` before rendering in `MarkdownBody`. Inline colors (`<span style="color:...">`, `<font color="...">`) are preserved using custom `==hc:#RRGGBB==text==` syntax and rendered by `HtmlColorSyntax` + `_HtmlColorBuilder`. Chat session previews use `stripHtml()` to show clean text. CSS named colors, rgb(), hsl(), and hex are all supported.
 
 - **No user/character avatars and names in chat.** Bug — on desktop (standard layout), avatars and display names for user and character messages are not visible. In standard layout (`isStandard`), the avatar row (`CircleAvatar` + `displayName`) should render above each message, but it may be hidden or not showing. In bubble layout, there are no avatars/names at all — this is by design but may need to be reconsidered.
 

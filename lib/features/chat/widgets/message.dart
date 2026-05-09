@@ -38,6 +38,17 @@ class ActiveMarkSyntax extends md.InlineSyntax {
   }
 }
 
+class HtmlColorSyntax extends md.InlineSyntax {
+  HtmlColorSyntax() : super(r'==hc:(#[0-9a-fA-F]{3,8})==(.*?)==');
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final el = md.Element('htmlcolor', [md.Text(match[2]!)]);
+    el.attributes['color'] = match[1]!;
+    parser.addNode(el);
+    return true;
+  }
+}
+
 class _MarkElementBuilder extends MarkdownElementBuilder {
   final Color bgColor;
   final Color textColor;
@@ -56,6 +67,36 @@ class _MarkElementBuilder extends MarkdownElementBuilder {
       ),
     );
   }
+}
+
+class _HtmlColorBuilder extends MarkdownElementBuilder {
+  final Color defaultTextColor;
+  _HtmlColorBuilder(this.defaultTextColor);
+
+  @override
+  Widget visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    final colorAttr = element.attributes['color'];
+    Color color = defaultTextColor;
+    if (colorAttr != null) {
+      final parsed = _parseHexColor(colorAttr);
+      if (parsed != null) color = parsed;
+    }
+    return Text(
+      element.textContent,
+      style: preferredStyle?.copyWith(color: color) ?? TextStyle(color: color),
+    );
+  }
+}
+
+Color? _parseHexColor(String hex) {
+  var h = hex.replaceFirst('#', '');
+  if (h.length == 3) h = '${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}';
+  if (h.length == 4) h = '${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}';
+  if (h.length == 6) h = 'ff$h';
+  if (h.length != 8) return null;
+  final value = int.tryParse(h, radix: 16);
+  if (value == null) return null;
+  return Color(value);
 }
 
 class Message extends ConsumerStatefulWidget {
@@ -349,10 +390,12 @@ class _MessageState extends ConsumerState<Message> {
                   ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
                   MarkSyntax(),
                   ActiveMarkSyntax(),
+                  HtmlColorSyntax(),
                 ]),
                 builders: {
                   'mark': _MarkElementBuilder(scheme.primary.withValues(alpha: 0.3), scheme.onSurface),
                   'activemark': _MarkElementBuilder(Colors.orange.withValues(alpha: 0.6), Colors.white, activeKey: _activePhraseKey),
+                  'htmlcolor': _HtmlColorBuilder(textColor),
                 },
               ),
             if (isStreaming)
