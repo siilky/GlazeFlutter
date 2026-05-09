@@ -131,7 +131,7 @@ Preset parseSillyTavernPreset(Map<String, dynamic> json, String fileName) {
     final blockName = (pm['name'] as String?) ?? identifier;
     final normalizedId = _normalizeImportedBlockId(identifier, blockName);
     final isMandatory = _mandatoryBlockIds.contains(normalizedId);
-    final isEnabled = pm['enabled'] as bool? ?? true;
+    final isEnabled = pm['enabled'] is bool ? pm['enabled'] as bool : true;
 
     String insertionMode;
     int? depth;
@@ -139,7 +139,7 @@ Preset parseSillyTavernPreset(Map<String, dynamic> json, String fileName) {
       insertionMode = 'relative';
     } else if (pm['injection_position'] == 1) {
       insertionMode = 'depth';
-      depth = pm['injection_depth'] as int? ?? 4;
+      depth = pm['injection_depth'] is num ? (pm['injection_depth'] as num).toInt() : 4;
     } else {
       insertionMode = 'relative';
     }
@@ -166,11 +166,11 @@ Preset parseSillyTavernPreset(Map<String, dynamic> json, String fileName) {
         name: (r['scriptName'] as String?) ?? 'Regex $i',
         regex: (r['findRegex'] as String?) ?? '',
         replacement: (r['replaceString'] as String?) ?? '',
-        placement: (r['placement'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [1, 2],
+        placement: (r['placement'] as List<dynamic>?)?.map((e) => e is int ? e : int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2],
         disabled: !(r['isEnabled'] as bool? ?? !((r['disabled'] as bool?) ?? false)),
-        ephemerality: (r['ephemerality'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [1, 2],
-        minDepth: r['minDepth'] as int?,
-        maxDepth: r['maxDepth'] as int?,
+        ephemerality: (r['ephemerality'] as List<dynamic>?)?.map((e) => e is int ? e : int.tryParse(e.toString()) ?? 1).toList() ?? [1, 2],
+        minDepth: r['minDepth'] is num ? (r['minDepth'] as num).toInt() : null,
+        maxDepth: r['maxDepth'] is num ? (r['maxDepth'] as num).toInt() : null,
       ));
     }
   }

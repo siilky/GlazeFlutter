@@ -15,7 +15,9 @@ class GlobalRegexNotifier extends AsyncNotifier<List<PresetRegex>> {
     if (raw == null || raw.isEmpty) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => PresetRegex.fromJson(_normalizeJsRegex(e as Map<String, dynamic>))).toList();
+      final result = list.map((e) => PresetRegex.fromJson(_normalizeJsRegex(e as Map<String, dynamic>))).toList();
+      _persist(result);
+      return result;
     } catch (_) {
       return [];
     }

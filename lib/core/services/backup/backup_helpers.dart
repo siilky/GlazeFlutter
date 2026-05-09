@@ -245,7 +245,7 @@ mixin BackupHelpers {
               'relative',
           depth: toInt(b['depth']),
           prefix: b['prefix'] as String?,
-          isStashed: b['isStashed'] as bool? ?? false,
+          isStashed: b['isStashed'] is bool ? b['isStashed'] as bool : false,
         ));
       }
     }
@@ -266,7 +266,7 @@ mixin BackupHelpers {
               r['trimOut'] as String? ?? joinTrimStrings(r['trimStrings']),
           placement: toIntList(r['placement']),
           ephemerality: toIntList(r['ephemerality']),
-          disabled: r['disabled'] as bool? ?? false,
+          disabled: r['disabled'] is bool ? r['disabled'] as bool : !(r['isEnabled'] as bool? ?? true),
           macroRules:
               (r['macroRules'] ?? r['substituteRegex'] ?? 0).toString(),
           minDepth: toInt(r['minDepth']),

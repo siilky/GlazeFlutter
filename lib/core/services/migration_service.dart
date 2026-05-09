@@ -360,7 +360,7 @@ class MigrationService {
           insertionMode: (b['insertion_mode'] as String?) ?? (b['insertionMode'] as String?) ?? 'relative',
           depth: _toInt(b['depth']),
           prefix: b['prefix'] as String?,
-          isStashed: b['isStashed'] as bool? ?? false,
+          isStashed: b['isStashed'] is bool ? b['isStashed'] as bool : false,
         ));
       }
     }
@@ -378,7 +378,7 @@ class MigrationService {
           trimOut: r['trimOut'] as String? ?? _joinTrimStrings(r['trimStrings']),
           placement: _toIntList(r['placement']),
           ephemerality: _toIntList(r['ephemerality']),
-          disabled: r['disabled'] as bool? ?? false,
+          disabled: r['disabled'] is bool ? r['disabled'] as bool : !(r['isEnabled'] as bool? ?? true),
           macroRules: (r['macroRules'] ?? r['substituteRegex'] ?? 0).toString(),
           minDepth: _toInt(r['minDepth']),
           maxDepth: _toInt(r['maxDepth']),
