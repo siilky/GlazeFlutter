@@ -11,9 +11,9 @@ class RegexTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _NoPageStorageExpansionTile(
+    return _SimpleExpansionTile(
       key: ValueKey(regex.id),
-      title: Row(
+      header: Row(
         children: [
           Switch(
             value: !regex.disabled,
@@ -28,136 +28,187 @@ class RegexTile extends StatelessWidget {
           ),
         ],
       ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextFormField(
-                initialValue: regex.name,
-                decoration: const InputDecoration(labelText: 'Name'),
-                onChanged: (v) => onChanged(regex.copyWith(name: v)),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: regex.regex,
-                decoration: const InputDecoration(labelText: 'Find (regex)'),
-                onChanged: (v) => onChanged(regex.copyWith(regex: v)),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: regex.replacement,
-                decoration: const InputDecoration(labelText: 'Replace with'),
-                onChanged: (v) => onChanged(regex.copyWith(replacement: v)),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                initialValue: regex.trimOut,
-                decoration: const InputDecoration(labelText: 'Trim output'),
-                onChanged: (v) => onChanged(regex.copyWith(trimOut: v)),
-              ),
-              const SizedBox(height: 16),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              initialValue: regex.name,
+              decoration: const InputDecoration(labelText: 'Name'),
+              onChanged: (v) => onChanged(regex.copyWith(name: v)),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              initialValue: regex.regex,
+              decoration: const InputDecoration(labelText: 'Find (regex)'),
+              onChanged: (v) => onChanged(regex.copyWith(regex: v)),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              initialValue: regex.replacement,
+              decoration: const InputDecoration(labelText: 'Replace with'),
+              onChanged: (v) => onChanged(regex.copyWith(replacement: v)),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              initialValue: regex.trimOut,
+              decoration: const InputDecoration(labelText: 'Trim output'),
+              onChanged: (v) => onChanged(regex.copyWith(trimOut: v)),
+            ),
+            const SizedBox(height: 16),
 
-              _SubHeader('Affects (Placement)'),
-              _CheckboxRow(
-                options: const [
-                  (1, 'User Input'),
-                  (2, 'AI Output'),
-                  (4, 'World Info'),
-                  (5, 'Reasoning'),
-                ],
-                selected: regex.placement,
-                onChanged: (v) => onChanged(regex.copyWith(placement: v)),
-              ),
-              const SizedBox(height: 12),
+            _SubHeader('Affects (Placement)'),
+            _CheckboxRow(
+              options: const [
+                (1, 'User Input'),
+                (2, 'AI Output'),
+                (4, 'World Info'),
+                (5, 'Reasoning'),
+              ],
+              selected: regex.placement,
+              onChanged: (v) => onChanged(regex.copyWith(placement: v)),
+            ),
+            const SizedBox(height: 12),
 
-              _SubHeader('Ephemerality'),
-              _CheckboxRow(
-                options: const [
-                  (1, 'Alter Chat Display'),
-                  (2, 'Alter Outgoing Prompt'),
-                ],
-                selected: regex.ephemerality,
-                onChanged: (v) => onChanged(regex.copyWith(ephemerality: v)),
-              ),
-              const SizedBox(height: 12),
+            _SubHeader('Ephemerality'),
+            _CheckboxRow(
+              options: const [
+                (1, 'Alter Chat Display'),
+                (2, 'Alter Outgoing Prompt'),
+              ],
+              selected: regex.ephemerality,
+              onChanged: (v) => onChanged(regex.copyWith(ephemerality: v)),
+            ),
+            const SizedBox(height: 12),
 
-              _SubHeader('Depth Range'),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: regex.minDepth?.toString() ?? '',
-                      decoration: const InputDecoration(
-                        labelText: 'Min Depth',
-                        hintText: 'Unlimited',
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (v) {
-                        final n = int.tryParse(v);
-                        onChanged(regex.copyWith(minDepth: n));
-                      },
+            _SubHeader('Depth Range'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: regex.minDepth?.toString() ?? '',
+                    decoration: const InputDecoration(
+                      labelText: 'Min Depth',
+                      hintText: 'Unlimited',
+                      isDense: true,
                     ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      final n = int.tryParse(v);
+                      onChanged(regex.copyWith(minDepth: n));
+                    },
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: regex.maxDepth?.toString() ?? '',
-                      decoration: const InputDecoration(
-                        labelText: 'Max Depth',
-                        hintText: 'Unlimited',
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (v) {
-                        final n = int.tryParse(v);
-                        onChanged(regex.copyWith(maxDepth: n));
-                      },
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    initialValue: regex.maxDepth?.toString() ?? '',
+                    decoration: const InputDecoration(
+                      labelText: 'Max Depth',
+                      hintText: 'Unlimited',
+                      isDense: true,
                     ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      final n = int.tryParse(v);
+                      onChanged(regex.copyWith(maxDepth: n));
+                    },
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
 
-              _SubHeader('Macro Substitution'),
-              _MacroRulesSelector(
-                value: regex.macroRules,
-                onChanged: (v) => onChanged(regex.copyWith(macroRules: v)),
-              ),
-            ],
-          ),
+            _SubHeader('Macro Substitution'),
+            _MacroRulesSelector(
+              value: regex.macroRules,
+              onChanged: (v) => onChanged(regex.copyWith(macroRules: v)),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class _NoPageStorageExpansionTile extends StatefulWidget {
-  final Widget title;
-  final List<Widget> children;
+class _SimpleExpansionTile extends StatefulWidget {
+  final Widget header;
+  final Widget body;
 
-  const _NoPageStorageExpansionTile({super.key, required this.title, required this.children});
+  const _SimpleExpansionTile({super.key, required this.header, required this.body});
 
   @override
-  State<_NoPageStorageExpansionTile> createState() => _NoPageStorageExpansionTileState();
+  State<_SimpleExpansionTile> createState() => _SimpleExpansionTileState();
 }
 
-class _NoPageStorageExpansionTileState extends State<_NoPageStorageExpansionTile> {
+class _SimpleExpansionTileState extends State<_SimpleExpansionTile>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _heightFactor;
   bool _expanded = false;
-  final _bucket = PageStorageBucket();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _heightFactor = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() {
+      _expanded = !_expanded;
+      if (_expanded) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return PageStorage(
-      bucket: _bucket,
-      child: ExpansionTile(
-        initiallyExpanded: _expanded,
-        onExpansionChanged: (v) => setState(() => _expanded = v),
-        title: widget.title,
-        children: widget.children,
-      ),
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: _toggle,
+          child: Row(
+            children: [
+              RotationTransition(
+                turns: Tween(begin: 0.0, end: 0.25).animate(_controller),
+                child: Icon(Icons.chevron_right, color: theme.iconTheme.color),
+              ),
+              Expanded(child: widget.header),
+            ],
+          ),
+        ),
+        ClipRect(
+          child: AnimatedBuilder(
+            animation: _heightFactor,
+            builder: (context, child) {
+              return Align(
+                alignment: Alignment.topCenter,
+                heightFactor: _heightFactor.value,
+                child: child,
+              );
+            },
+            child: widget.body,
+          ),
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 }
