@@ -1,16 +1,16 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:gradient_blur/gradient_blur.dart';
 
 import '../../core/models/character.dart';
+import '../../core/state/character_provider.dart';
 import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_tab_bar.dart';
+import '../../shared/widgets/sheet_view.dart';
 
 // ─── Colour tokens ─────────────────────────────────────────────────────────
 
@@ -35,13 +35,6 @@ const _kTabs = [
   GlazeTabItem(label: 'Information', icon: Icons.info_outline_rounded),
   GlazeTabItem(label: 'Prompts', icon: Icons.description_outlined),
 ];
-
-// ─── Layout constants ──────────────────────────────────────────────────────
-
-// handle pill (10 top pad + 4 pill + 10 bottom pad) = 24px
-// back/menu row (4 gap + 48 height) = 52px
-// total overlay height: 76px → round to 80 for scroll padding
-const _kHeaderH = 80.0;
 
 // ─── Screen ────────────────────────────────────────────────────────────────
 
@@ -75,7 +68,12 @@ class _CharacterDetailSheetLauncherState
         builder: (_) => CharacterDetailScreen(charId: widget.charId),
       );
     } catch (_) {}
-    if (mounted) context.go('/characters');
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/characters');
+    }
   }
 
   @override
@@ -99,37 +97,11 @@ class CharacterDetailScreen extends ConsumerStatefulWidget {
 class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
   late final Future<Character?> _charFuture;
   int _activeTabIndex = 0;
-  final _sheetController = DraggableScrollableController();
 
   @override
   void initState() {
     super.initState();
     _charFuture = ref.read(characterRepoProvider).getById(widget.charId);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _sheetController.addListener(_onSheetSizeChange);
-    });
-  }
-
-  @override
-  void dispose() {
-    _sheetController.dispose();
-    super.dispose();
-  }
-
-  void _onSheetSizeChange() {
-    if (!mounted || !_sheetController.isAttached) return;
-    if (_sheetController.size < 0.45) {
-      Navigator.of(context, rootNavigator: true).maybePop();
-    }
-  }
-
-  void _toggleExpand() {
-    if (!_sheetController.isAttached) return;
-    _sheetController.animateTo(
-      _sheetController.size > 0.9 ? 0.78 : 1.0,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   void _openActionsMenu() {
@@ -141,7 +113,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
           label: 'Edit',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
-            context.go('/character/${widget.charId}/edit');
+            context.push('/character/${widget.charId}/edit');
           },
         ),
         BottomSheetItem(
@@ -149,16 +121,66 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
           label: 'Gallery',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
-            context.go('/character/${widget.charId}/gallery');
+            context.push('/character/${widget.charId}/gallery');
           },
         ),
-        BottomSheetItem(
-          icon: Icons.delete_outline,
-          label: 'Delete',
-          isDestructive: true,
-          onTap: () => Navigator.of(context, rootNavigator: true).pop(),
-        ),
+          BottomSheetItem(
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            isDestructive: true,
+            onTap: () {
+              Navigator.of(context, rootNavigator: true).pop();
+              _confirmDelete(context);
+            },
+          ),
       ],
+    );
+  }
+
+  void _confirmDelete(BuildContext context) async {
+    final char = await _charFuture;
+    if (char == null) return;
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceHigh,
+        title: const Text(
+          'Delete Character',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          'Delete ${char.name}? This cannot be undone.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(charactersProvider.notifier).remove(char.id);
+              if (context.mounted) {
+                 if (context.canPop()) {
+                   context.pop();
+                 } else {
+                   context.go('/characters');
+                 }
+              }
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Color(0xFFFF4444)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -195,147 +217,36 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.78,
-      minChildSize: 0.3,
-      maxChildSize: 1.0,
-      snap: true,
-      snapSizes: const [0.78, 1.0],
-      controller: _sheetController,
-      builder: (_, scrollController) => _buildSheet(scrollController),
-    );
-  }
-
-  Widget _buildSheet(ScrollController scrollController) {
-    final safeBottom = MediaQuery.of(context).padding.bottom;
-    return ListenableBuilder(
-      listenable: _sheetController,
-      builder: (context, child) {
-        final t = _sheetController.isAttached
-            ? ((_sheetController.size - 0.78) / 0.22).clamp(0.0, 1.0)
-            : 0.0;
-        return ClipRRect(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(24.0 * (1.0 - t)),
-          ),
-          child: child!,
+    return FutureBuilder<Character?>(
+      future: _charFuture,
+      builder: (context, snap) {
+        final char = snap.data;
+        return SheetView(
+          collapsedFraction: 0.78,
+          showBack: true,
+          actions: char == null
+              ? const []
+              : [
+                  SheetViewAction(
+                    icon: const Icon(
+                      Icons.more_vert_rounded,
+                      size: 20,
+                      color: _kAccent,
+                    ),
+                    onPressed: _openActionsMenu,
+                  ),
+                ],
+          bodyPadding: EdgeInsets.zero,
+          body: _buildBody(snap),
+          floatingActionButton: char == null
+              ? null
+              : _ChatFab(onTap: () => _openChat(context, char.id)),
         );
       },
-      child: _buildInner(scrollController, safeBottom),
     );
   }
 
-  Widget _buildInner(ScrollController scrollController, double safeBottom) {
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xE81A1A1A),
-          border: Border(top: BorderSide(color: AppColors.glassBorder)),
-        ),
-        child: FutureBuilder<Character?>(
-          future: _charFuture,
-          builder: (context, snap) {
-            final char = snap.data;
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: _buildScrollBody(
-                    context,
-                    snap,
-                    scrollController,
-                    safeBottom,
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: IgnorePointer(
-                    child: GradientBlur(
-                      maxBlur: 8,
-                      curve: Curves.easeIn,
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0xEB141416),
-                          Color(0x88141416),
-                          Color(0x00141416),
-                        ],
-                        stops: [0.0, 0.55, 1.0],
-                      ),
-                      child: const SizedBox(height: _kHeaderH),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: _toggleExpand,
-                    behavior: HitTestBehavior.opaque,
-                    child: const SizedBox(
-                      height: 28,
-                      child: Center(child: _HandlePill()),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 28,
-                  left: 16,
-                  right: 16,
-                  child: SizedBox(
-                    height: 48,
-                    child: Row(
-                      children: [
-                        _HeaderBtn(
-                          onTap: () => Navigator.of(
-                            context,
-                            rootNavigator: true,
-                          ).maybePop(),
-                          child: const Icon(
-                            Icons.arrow_back,
-                            size: 20,
-                            color: _kAccent,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (char != null)
-                          _HeaderBtn(
-                            onTap: _openActionsMenu,
-                            child: const Icon(
-                              Icons.more_vert_rounded,
-                              size: 20,
-                              color: _kAccent,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (char != null)
-                  Positioned(
-                    right: 16,
-                    bottom: 16 + safeBottom,
-                    child: _ChatFab(onTap: () => _openChat(context, char.id)),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildScrollBody(
-    BuildContext context,
-    AsyncSnapshot<Character?> snap,
-    ScrollController scrollController,
-    double safeBottom,
-  ) {
+  Widget _buildBody(AsyncSnapshot<Character?> snap) {
     if (snap.connectionState == ConnectionState.waiting) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -348,10 +259,11 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
         ),
       );
     }
+    final safeBottom = MediaQuery.of(context).padding.bottom;
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: SingleChildScrollView(
-        controller: scrollController,
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -377,55 +289,6 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
             ),
             SizedBox(height: 100 + safeBottom),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Handle pill ───────────────────────────────────────────────────────────
-
-class _HandlePill extends StatelessWidget {
-  const _HandlePill();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 36,
-      height: 4,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(2),
-      ),
-    );
-  }
-}
-
-// ─── Header button ─────────────────────────────────────────────────────────
-
-class _HeaderBtn extends StatelessWidget {
-  final VoidCallback onTap;
-  final Widget child;
-
-  const _HeaderBtn({required this.onTap, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xCC1E1E1E),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            ),
-            child: Center(child: child),
-          ),
         ),
       ),
     );

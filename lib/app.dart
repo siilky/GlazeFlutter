@@ -8,7 +8,6 @@ import 'core/services/generation_notification_service.dart';
 import 'core/state/active_selection_provider.dart';
 import 'core/state/lorebook_provider.dart';
 import 'core/services/preset_seeder.dart';
-import 'core/services/crash_recovery_service.dart';
 import 'core/services/onboarding_service.dart';
 import 'features/character_list/character_detail_screen.dart';
 import 'features/character_list/character_editor_screen.dart';
@@ -67,7 +66,8 @@ final routerProvider = Provider<GoRouter>(
                   ),
                   GoRoute(
                     path: 'personas',
-                    builder: (_, __) => const PersonaListScreen(),
+                    builder: (_, __) =>
+                        const PersonaListScreen(startExpanded: true),
                   ),
                   GoRoute(
                     path: 'presets',
@@ -115,18 +115,16 @@ final routerProvider = Provider<GoRouter>(
         path: '/character/:charId',
         builder: (_, state) => CharacterDetailSheetLauncher(
             charId: state.pathParameters['charId']!),
-        routes: [
-          GoRoute(
-            path: 'edit',
-            builder: (_, state) =>
-                CharacterEditorScreen(charId: state.pathParameters['charId']!),
-          ),
-          GoRoute(
-            path: 'gallery',
-            builder: (_, state) =>
-                GalleryScreen(charId: state.pathParameters['charId']!),
-          ),
-        ],
+      ),
+      GoRoute(
+        path: '/character/:charId/edit',
+        builder: (_, state) =>
+            CharacterEditorScreen(charId: state.pathParameters['charId']!),
+      ),
+      GoRoute(
+        path: '/character/:charId/gallery',
+        builder: (_, state) =>
+            GalleryScreen(charId: state.pathParameters['charId']!),
       ),
 
       GoRoute(path: '/settings', builder: (_, __) => const AppSettingsScreen()),
@@ -155,7 +153,6 @@ class _GlazeAppState extends ConsumerState<GlazeApp> with WidgetsBindingObserver
     loadLorebookSettings(ref);
     seedDefaultPresets(ref);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      checkAndOfferCrashRecovery(context, ref);
       checkAndShowOnboarding(context);
       _listenNotificationNavigation();
     });

@@ -1,7 +1,10 @@
-﻿import 'dart:async';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,14 +14,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/llm/summary_service.dart';
 import '../../../core/models/lorebook.dart';
+import '../../../core/services/chat_import_export.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/state/db_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
+import '../../../shared/widgets/glaze_toast.dart';
 import '../../image_gen/widgets/image_gen_sheet.dart';
+import '../chat_actions_service.dart';
 import '../chat_provider.dart';
+import '../../character_list/character_detail_screen.dart';
+import '../../personas/persona_list_screen.dart';
 import '../../presets/preset_list_screen.dart';
 import '../../settings/api_settings_screen.dart';
+import 'authors_note_sheet.dart';
 import 'lorebook_coverage_sheet.dart';
 import 'magic_drawer_models.dart';
 import 'magic_drawer_stats_service.dart';
@@ -27,17 +36,19 @@ import 'memory_books_sheet.dart';
 import 'prompt_preview_screen.dart';
 import 'tokenizer_sheet.dart';
 
-void showMagicDrawer(BuildContext context, String charId) {
-  GlazeBottomSheet.show(
-    context,
-    child: MagicDrawerPanel(charId: charId),
-  );
-}
-
 class MagicDrawerPanel extends ConsumerStatefulWidget {
   final String charId;
 
-  const MagicDrawerPanel({super.key, required this.charId});
+  /// Called when the drawer wants to dismiss itself (e.g. after the user picks
+  /// an item that opens another screen). The host owns visibility, so we ask
+  /// it to hide us instead of popping a route.
+  final VoidCallback? onClose;
+
+  const MagicDrawerPanel({
+    super.key,
+    required this.charId,
+    this.onClose,
+  });
 
   @override
   ConsumerState<MagicDrawerPanel> createState() => _MagicDrawerPanelState();
@@ -312,8 +323,16 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         await _showStatsSheet();
         return;
       case 'char-card':
-        Navigator.of(context).pop();
-        if (mounted) context.go('/character/${widget.charId}');
+        widget.onClose?.call();
+        if (mounted) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => CharacterDetailScreen(charId: widget.charId),
+          );
+        }
         return;
       case 'lorebooks':
         await _showLorebooksSheet();
@@ -322,24 +341,32 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         await _showMemoryBooks();
         return;
       case 'regex':
-        Navigator.of(context).pop();
+        widget.onClose?.call();
         if (mounted) context.go('/tools/regex');
         return;
       case 'api':
-        Navigator.of(context).pop();
+        widget.onClose?.call();
         if (mounted) {
-          GlazeBottomSheet.show(
-            context,
-            child: const ApiSettingsScreen(),
+          showModalBottomSheet(
+            context: context,
+            useRootNavigator: true,
+            backgroundColor: Colors.transparent,
+            barrierColor: Colors.black54,
+            isScrollControlled: true,
+            builder: (_) => const ApiSettingsScreen(),
           );
         }
         return;
       case 'presets':
-        Navigator.of(context).pop();
+        widget.onClose?.call();
         if (mounted) {
-          GlazeBottomSheet.show(
-            context,
-            child: const PresetListScreen(),
+          showModalBottomSheet(
+            context: context,
+            useRootNavigator: true,
+            backgroundColor: Colors.transparent,
+            barrierColor: Colors.black54,
+            isScrollControlled: true,
+            builder: (_) => const PresetListScreen(),
           );
         }
         return;
@@ -350,15 +377,23 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         showLorebookCoverageSheet(context, ref, widget.charId);
         return;
       case 'personas':
-        Navigator.of(context).pop();
-        if (mounted) context.go('/tools/personas');
+        widget.onClose?.call();
+        if (mounted) {
+          showModalBottomSheet(
+            context: context,
+            useRootNavigator: true,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => const PersonaListScreen(),
+          );
+        }
         return;
       case 'image-gen':
-        Navigator.of(context).pop();
+        widget.onClose?.call();
         GlazeBottomSheet.show(context, child: const ImageGenSheet());
         return;
       case 'authors-note':
-        await _showAuthorsNoteEditor();
+        showAuthorsNoteSheet(context, widget.charId);
         return;
     }
   }
@@ -387,7 +422,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
     }
 
     if (!mounted) return;
-    Navigator.of(context).pop();
+    widget.onClose?.call();
     try {
       final summary = await ref
           .read(summaryServiceProvider)
@@ -428,153 +463,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
     GlazeBottomSheet.show(
       context,
       child: MemoryBooksSheet(sessionId: session.id, charId: widget.charId),
-    );
-  }
-
-  Future<void> _showAuthorsNoteEditor() async {
-    final chatState = ref.read(chatProvider(widget.charId)).value;
-    final session = chatState?.session;
-    if (session == null) return;
-
-    final controller = TextEditingController(text: session.authorsNote?.content ?? '');
-    final currentAn = session.authorsNote;
-    String insertionMode = currentAn?.insertionMode ?? 'depth';
-    int depth = currentAn?.depth ?? 4;
-    String role = currentAn?.role ?? 'system';
-    bool enabled = currentAn?.enabled ?? true;
-
-    await GlazeBottomSheet.show(
-      context,
-      title: "Author's Note",
-      child: StatefulBuilder(
-        builder: (sheetContext, setSheetState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-                child: Row(
-                  children: [
-                    const Spacer(),
-                    Switch(
-                      value: enabled,
-                      onChanged: (v) => setSheetState(() => enabled = v),
-                      activeColor: AppColors.accent,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: TextField(
-                  controller: controller,
-                  maxLines: 6,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.05),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                    hintText: 'Enter author\'s note...',
-                    hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.5)),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: insertionMode,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.05),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                          labelText: 'Insertion',
-                          labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                        ),
-                        dropdownColor: const Color(0xFF2A2A2A),
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                        items: const [
-                          DropdownMenuItem(value: 'depth', child: Text('Depth')),
-                          DropdownMenuItem(value: 'relative', child: Text('Relative')),
-                        ],
-                        onChanged: (v) { if (v != null) setSheetState(() => insertionMode = v); },
-                      ),
-                    ),
-                    if (insertionMode == 'depth') ...[
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 80,
-                        child: DropdownButtonFormField<int>(
-                          value: depth,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white.withValues(alpha: 0.05),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                            labelText: 'Depth',
-                            labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                          ),
-                          dropdownColor: const Color(0xFF2A2A2A),
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                          items: List.generate(20, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}'))),
-                          onChanged: (v) { if (v != null) setSheetState(() => depth = v); },
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 100,
-                      child: DropdownButtonFormField<String>(
-                        value: role,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.05),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                          labelText: 'Role',
-                          labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                        ),
-                        dropdownColor: const Color(0xFF2A2A2A),
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                        items: const [
-                          DropdownMenuItem(value: 'system', child: Text('System')),
-                          DropdownMenuItem(value: 'user', child: Text('User')),
-                          DropdownMenuItem(value: 'assistant', child: Text('Assistant')),
-                        ],
-                        onChanged: (v) { if (v != null) setSheetState(() => role = v); },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: FilledButton(
-                  onPressed: () async {
-                    final content = controller.text.trim();
-                    final note = content.isNotEmpty
-                        ? AuthorsNote(content: content, role: role, insertionMode: insertionMode, depth: depth, enabled: enabled)
-                        : null;
-                    final updated = session.copyWith(authorsNote: note, updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000);
-                    await ref.read(chatRepoProvider).put(updated);
-                    ref.invalidate(chatProvider(widget.charId));
-                    if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    minimumSize: const Size.fromHeight(44),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-              ),
-              SizedBox(height: MediaQuery.of(sheetContext).padding.bottom + 8),
-            ],
-          ),
-        ),
     );
   }
 
@@ -624,7 +512,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           buttonText: 'Open Editor',
           onButtonTap: () {
             Navigator.of(context).pop();
-            Navigator.of(context).pop();
+            widget.onClose?.call();
             context.go('/tools/lorebooks');
           },
         ),
@@ -714,15 +602,13 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       );
     }
 
+    if (!mounted) return;
     await GlazeBottomSheet.show(context, title: 'Chat Stats', items: items);
   }
 
   Future<void> _showSessionsSheet() async {
     final currentSession = ref.read(chatProvider(widget.charId)).value?.session;
     if (currentSession == null) return;
-    final sessions = await ref
-        .read(chatProvider(widget.charId).notifier)
-        .getSessions();
 
     if (!mounted) return;
     await GlazeBottomSheet.show(
@@ -730,41 +616,109 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       title: 'Sessions',
       headerAction: IconButton(
         icon: const Icon(Icons.add, color: AppColors.accent),
-        onPressed: () async {
-          Navigator.of(context).pop();
-          await ref.read(chatProvider(widget.charId).notifier).newSession();
-        },
+        onPressed: _showSessionAddMenu,
       ),
-      sessionItems: sessions
-          .map(
-            (session) => BottomSheetSessionItem(
-              title: 'Session #${session.sessionIndex}',
-              count: session.messages.length,
-              time: session.updatedAt == 0
-                  ? ''
-                  : _formatRelativeTime(session.updatedAt),
-              preview:
-                  session.messages.lastOrNull?.content ?? 'No messages yet',
-              isActive: session.id == currentSession.id,
-              onTap: () {
-                Navigator.of(context).pop();
-                if (session.sessionIndex != currentSession.sessionIndex) {
-                  ref
-                      .read(chatProvider(widget.charId).notifier)
-                      .switchSession(session.sessionIndex);
-                }
-              },
-              onDelete: () async {
-                await ref.read(chatRepoProvider).delete(session.id);
-                ref.invalidate(chatProvider(widget.charId));
-                if (!mounted) return;
-                Navigator.of(context).pop();
-              },
-            ),
-          )
-          .toList(),
+      child: _SessionsSheetContent(
+        charId: widget.charId,
+        onSessionActions: _showSessionActions,
+      ),
     );
   }
+
+  void _showSessionAddMenu() {
+    GlazeBottomSheet.show(
+      context,
+      title: 'Add Session',
+      items: [
+        BottomSheetItem(
+          icon: Icons.add_circle_outline,
+          label: 'New Session',
+          onTap: () async {
+            Navigator.of(context).pop(); // Pops Add Menu
+            Navigator.of(context).pop(); // Pops Sessions Sheet
+            await ref.read(chatProvider(widget.charId).notifier).newSession();
+          },
+        ),
+        BottomSheetItem(
+          icon: Icons.file_download,
+          label: 'Import Chat',
+          onTap: () async {
+            Navigator.of(context).pop(); // Pops Add Menu
+            await _importChat();
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showSessionActions(String sessionId) {
+    GlazeBottomSheet.show(
+      context,
+      title: 'Session',
+      items: [
+        BottomSheetItem(
+          icon: Icons.upload_file,
+          label: 'Export (JSONL)',
+          onTap: () async {
+            Navigator.of(context).pop(); // Pops Actions Sheet
+            await ChatActionsService(ref).exportSessionUI(
+              context,
+              charId: widget.charId,
+              sessionId: sessionId,
+            );
+          },
+        ),
+        BottomSheetItem(
+          icon: Icons.delete_outline,
+          label: 'Delete',
+          isDestructive: true,
+          onTap: () async {
+            Navigator.of(context).pop(); // Pops Actions Sheet
+            await ref.read(chatRepoProvider).delete(sessionId);
+            ref.invalidate(chatProvider(widget.charId));
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _importChat() async {
+    final result = await FilePicker.pickFiles(
+      type: Platform.isIOS ? FileType.any : FileType.custom,
+      allowedExtensions: Platform.isIOS ? null : ['jsonl', 'json'],
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final filePath = file.path;
+    try {
+      int count;
+      if (file.bytes != null) {
+        final importResult = importChatFromJsonlString(
+          utf8.decode(file.bytes!),
+        );
+        count = await ChatActionsService(ref)
+            .importChatFromResult(widget.charId, importResult);
+      } else if (filePath != null) {
+        count = await ChatActionsService(ref)
+            .importChat(widget.charId, filePath);
+      } else {
+        return;
+      }
+      if (!mounted) return;
+      if (count > 0) {
+        // Pop the sessions sheet if import succeeds
+        Navigator.of(context).pop();
+      }
+      GlazeToast.show(
+        context,
+        count == 0 ? 'No messages found in file' : 'Imported $count messages',
+      );
+    } catch (e) {
+      if (mounted) GlazeToast.error(context, 'Import failed: ', e);
+    }
+  }
+
 
   String _formatRelativeTime(int updatedAtSeconds) {
     final updated = DateTime.fromMillisecondsSinceEpoch(
@@ -789,28 +743,18 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       }
     });
 
-    final panelHeight = math.min(
-      MediaQuery.of(context).size.height * 0.54,
-      430.0,
-    );
     final items = _displayItems;
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          height: panelHeight,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E).withValues(alpha: 0.8),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: const Border(top: BorderSide(color: AppColors.glassBorder)),
-          ),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: RawScrollbar(
-                  padding: const EdgeInsets.only(top: 60),
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        border: Border(top: BorderSide(color: AppColors.glassBorder)),
+      ),
+      child: Stack(
+          children: [
+            Positioned.fill(
+              child: RawScrollbar(
+                padding: const EdgeInsets.only(top: 60),
                   thickness: 3,
                   radius: const Radius.circular(3),
                   thumbColor: Colors.white24,
@@ -968,10 +912,99 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
                     child: Center(child: CircularProgressIndicator()),
                   ),
                 ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
 }
+
+class _SessionsSheetContent extends ConsumerStatefulWidget {
+  final String charId;
+  final void Function(String) onSessionActions;
+
+  const _SessionsSheetContent({
+    required this.charId,
+    required this.onSessionActions,
+  });
+
+  @override
+  ConsumerState<_SessionsSheetContent> createState() => _SessionsSheetContentState();
+}
+
+class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
+  List<ChatSession> _sessions = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final sessions = await ref.read(chatProvider(widget.charId).notifier).getSessions();
+    if (mounted) {
+      setState(() {
+        _sessions = sessions;
+        _loading = false;
+      });
+    }
+  }
+
+  String _formatRelativeTime(int updatedAtSeconds) {
+    final updated = DateTime.fromMillisecondsSinceEpoch(updatedAtSeconds * 1000);
+    final diff = DateTime.now().difference(updated);
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m';
+    if (diff.inDays < 1) return '${diff.inHours}h';
+    return '${diff.inDays}d';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(chatProvider(widget.charId), (prev, next) {
+      _load();
+    });
+
+    if (_loading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final currentSession = ref.watch(chatProvider(widget.charId)).value?.session;
+    final currentSessionId = currentSession?.id;
+
+    return GlazeSessionList(
+      items: _sessions
+          .map(
+            (session) => BottomSheetSessionItem(
+              title: 'Session #${session.sessionIndex}',
+              count: session.messages.length,
+              time: session.updatedAt == 0
+                  ? ''
+                  : _formatRelativeTime(session.updatedAt),
+              preview:
+                  session.messages.lastOrNull?.content ?? 'No messages yet',
+              isActive: session.id == currentSessionId,
+              onTap: () {
+                Navigator.of(context).pop();
+                if (session.sessionIndex != currentSession?.sessionIndex) {
+                  ref
+                      .read(chatProvider(widget.charId).notifier)
+                      .switchSession(session.sessionIndex);
+                }
+              },
+              onMore: () {
+                widget.onSessionActions(session.id);
+              },
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+

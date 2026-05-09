@@ -46,11 +46,15 @@ class SheetView extends StatefulWidget {
   final Widget? headerBottom;
   final Widget body;
   final Widget? floating;
-  final FloatingActionButton? floatingActionButton;
+  final Widget? floatingActionButton;
   final bool showHandle;
   final EdgeInsetsGeometry? bodyPadding;
   final bool startExpanded;
   final ScrollController? scrollController;
+
+  /// Fraction of screen height for the collapsed snap point (0.0–1.0).
+  /// When null, defaults to `min(0.55 * h, 500)`.
+  final double? collapsedFraction;
 
   const SheetView({
     super.key,
@@ -70,6 +74,7 @@ class SheetView extends StatefulWidget {
     this.bodyPadding,
     this.startExpanded = false,
     this.scrollController,
+    this.collapsedFraction,
   });
 
   @override
@@ -82,6 +87,11 @@ class _SheetViewState extends State<SheetView>
   double _currentHeight = 0;
   bool _heightInit = false;
 
+  /// Whether this SheetView is hosted inside [showModalBottomSheet]. When
+  /// false (e.g. opened as a route via GoRouter), we behave as a regular
+  /// fullscreen page: no drag handle, no resize, no drag-down dismiss.
+  bool _inModalSheet = true;
+
   late AnimationController _ctrl;
   Animation<double>? _anim;
 
@@ -91,8 +101,15 @@ class _SheetViewState extends State<SheetView>
   double _dragStartY = 0;
   double _dragStartH = 0;
 
-  double _collapsed(BuildContext ctx) =>
-      math.min(MediaQuery.of(ctx).size.height * 0.55, 500.0);
+  bool get _effectiveShowHandle => widget.showHandle && _inModalSheet;
+
+  double _collapsed(BuildContext ctx) {
+    final h = MediaQuery.of(ctx).size.height;
+    if (!_inModalSheet) return h;
+    final f = widget.collapsedFraction;
+    if (f != null) return h * f.clamp(0.0, 1.0);
+    return math.min(h * 0.55, 500.0);
+  }
 
   double _full(BuildContext ctx) => MediaQuery.of(ctx).size.height;
 
@@ -111,7 +128,7 @@ class _SheetViewState extends State<SheetView>
       return 0;
     }
     double h = 0;
-    if (widget.showHandle) {
+    if (_effectiveShowHandle) {
       h += 24;
     }
     if (widget.title != null ||
@@ -148,11 +165,12 @@ class _SheetViewState extends State<SheetView>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _inModalSheet = ModalRoute.of(context) is ModalBottomSheetRoute;
     if (!_heightInit) {
-      _currentHeight = widget.startExpanded
+      _currentHeight = (widget.startExpanded || !_inModalSheet)
           ? _full(context)
           : _collapsed(context);
-      _expanded = widget.startExpanded;
+      _expanded = widget.startExpanded || !_inModalSheet;
       _heightInit = true;
     }
   }
@@ -222,7 +240,7 @@ class _SheetViewState extends State<SheetView>
       widget.actions.isNotEmpty ||
       widget.tabs.isNotEmpty ||
       widget.headerBottom != null ||
-      widget.showHandle;
+      _effectiveShowHandle;
 
   @override
   Widget build(BuildContext context) {
@@ -333,7 +351,7 @@ class _SheetViewState extends State<SheetView>
                         activeTabId: widget.activeTabId,
                         onTabSelected: widget.onTabSelected,
                         headerBottom: widget.headerBottom,
-                        showHandle: widget.showHandle,
+                        showHandle: _effectiveShowHandle,
                         expanded: _expanded,
                         topPad: topPad,
                         onHandleTap: _toggle,

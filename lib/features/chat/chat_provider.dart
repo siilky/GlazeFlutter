@@ -12,6 +12,7 @@ import 'chat_generation_service.dart';
 import 'chat_message_service.dart';
 import 'chat_session_service.dart';
 import 'chat_state.dart';
+import 'initial_message_builder.dart';
 
 final chatProvider =
     AsyncNotifierProvider.family<ChatNotifier, ChatState, String>(
@@ -216,6 +217,35 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final current = state.value;
     if (current == null || current.session == null) return;
     final updated = _messageSvc.setSwipe(current.session!, messageIndex, swipeId);
+    _invalidateHistory();
+    state = AsyncData(ChatState(session: updated));
+  }
+
+  Future<void> setGreeting(int messageIndex, int direction) async {
+    final current = state.value;
+    if (current == null || current.session == null || current.isGenerating) return;
+    if (messageIndex != 0) return;
+    if (messageIndex >= current.messages.length) return;
+    final msg = current.messages[messageIndex];
+    if (msg.role != 'assistant') return;
+
+    final character = await ref.read(characterRepoProvider).getById(arg);
+    if (character == null) return;
+    final persona = await _sessionSvc.resolvePersona(arg);
+    final greetings = InitialMessageBuilder.resolveGreetings(
+      character: character,
+      persona: persona,
+      sessionId: current.session!.id,
+    );
+    if (greetings.length <= 1) return;
+
+    final currentIdx = msg.greetingIndex ?? 0;
+    final updated = _messageSvc.setGreeting(
+      current.session!,
+      messageIndex,
+      currentIdx + direction,
+      greetings,
+    );
     _invalidateHistory();
     state = AsyncData(ChatState(session: updated));
   }

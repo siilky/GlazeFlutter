@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/llm/tokenizer.dart';
 import '../../core/models/chat_message.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../core/state/db_provider.dart';
@@ -11,10 +12,14 @@ class ChatMessageService {
 
   ChatSession editMessage(ChatSession session, int index, String newContent) {
     if (index < 0 || index >= session.messages.length) return session;
+    final msg = session.messages[index];
+    if (msg.content == newContent) return session;
     final newMessages = List<ChatMessage>.from(session.messages);
-    newMessages[index] = session.messages[index].content != newContent
-        ? session.messages[index].copyWith(content: newContent)
-        : session.messages[index];
+    final swipeIdx = msg.swipeId;
+    final updatedSwipes = msg.swipes.isNotEmpty && swipeIdx >= 0 && swipeIdx < msg.swipes.length
+        ? (List<String>.from(msg.swipes)..[swipeIdx] = newContent)
+        : msg.swipes;
+    newMessages[index] = msg.copyWith(content: newContent, swipes: updatedSwipes);
     return _persist(session, newMessages);
   }
 
@@ -81,6 +86,36 @@ class ChatMessageService {
       reasoning: meta?['reasoning'] as String?,
       genTime: meta?['genTime'] as String?,
       tokens: meta?['tokens'] as int?,
+    );
+    final newMessages = List<ChatMessage>.from(session.messages);
+    newMessages[messageIndex] = updated;
+    return _persist(session, newMessages);
+  }
+
+  ChatSession setGreeting(
+    ChatSession session,
+    int messageIndex,
+    int newGreetingIndex,
+    List<String> resolvedGreetings,
+  ) {
+    if (messageIndex < 0 || messageIndex >= session.messages.length) return session;
+    if (resolvedGreetings.length <= 1) return session;
+    var idx = newGreetingIndex;
+    if (idx < 0) idx = resolvedGreetings.length - 1;
+    if (idx >= resolvedGreetings.length) idx = 0;
+
+    final msg = session.messages[messageIndex];
+    final newText = resolvedGreetings[idx];
+    final updated = msg.copyWith(
+      greetingIndex: idx,
+      content: newText,
+      swipes: [newText],
+      swipeId: 0,
+      swipesMeta: const [],
+      reasoning: null,
+      isError: false,
+      tokens: estimateTokens(newText),
+      genTime: null,
     );
     final newMessages = List<ChatMessage>.from(session.messages);
     newMessages[messageIndex] = updated;

@@ -10,8 +10,35 @@ class InitialMessageBuilder {
     required Persona? persona,
     required String sessionId,
   }) {
-    if (character?.firstMes == null || character!.firstMes!.isEmpty) return [];
+    final greetings = resolveGreetings(
+      character: character,
+      persona: persona,
+      sessionId: sessionId,
+    );
+    if (greetings.isEmpty) return [];
+    return [
+      ChatMessage(
+        id: generateId(),
+        role: 'assistant',
+        content: greetings.first,
+        greetingIndex: 0,
+        swipes: [greetings.first],
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+  }
 
+  static List<String> resolveGreetings({
+    required Character? character,
+    required Persona? persona,
+    required String sessionId,
+  }) {
+    if (character == null) return const [];
+    final raw = <String>[
+      if ((character.firstMes ?? '').isNotEmpty) character.firstMes!,
+      ...character.alternateGreetings.where((g) => g.isNotEmpty),
+    ];
+    if (raw.isEmpty) return const [];
     final macroCtx = MacroContext(
       charName: character.name,
       charDescription: character.description,
@@ -23,14 +50,6 @@ class InitialMessageBuilder {
       charId: character.id,
       sessionId: sessionId,
     );
-    final resolved = replaceMacros(character.firstMes!, macroCtx);
-    return [
-      ChatMessage(
-        id: generateId(),
-        role: 'assistant',
-        content: resolved.text,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-      ),
-    ];
+    return raw.map((g) => replaceMacros(g, macroCtx).text).toList();
   }
 }

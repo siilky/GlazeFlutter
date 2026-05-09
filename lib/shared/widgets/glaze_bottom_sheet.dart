@@ -46,7 +46,7 @@ class BottomSheetSessionItem {
   final String preview;
   final bool isActive;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback onMore;
 
   const BottomSheetSessionItem({
     required this.title,
@@ -55,7 +55,7 @@ class BottomSheetSessionItem {
     required this.preview,
     this.isActive = false,
     required this.onTap,
-    required this.onDelete,
+    required this.onMore,
   });
 }
 
@@ -295,7 +295,7 @@ class _GlazeBottomSheetContentState extends State<_GlazeBottomSheetContent> {
                           _ItemsList(items: widget.items!),
                         if (widget.sessionItems != null &&
                             widget.sessionItems!.isNotEmpty)
-                          _SessionList(items: widget.sessionItems!),
+                          GlazeSessionList(items: widget.sessionItems!),
                         if (widget.cardItems != null &&
                             widget.cardItems!.isNotEmpty)
                           _CardList(items: widget.cardItems!),
@@ -501,10 +501,10 @@ class _ItemLabel extends StatelessWidget {
   }
 }
 
-class _SessionList extends StatelessWidget {
+class GlazeSessionList extends StatelessWidget {
   final List<BottomSheetSessionItem> items;
 
-  const _SessionList({required this.items});
+  const GlazeSessionList({super.key, required this.items});
 
   @override
   Widget build(BuildContext context) {
@@ -526,7 +526,7 @@ class _SessionList extends StatelessWidget {
                   thickness: 1,
                   color: Colors.white.withValues(alpha: 0.06),
                 ),
-              _SessionRow(item: items[i]),
+              GlazeSessionRow(item: items[i]),
             ],
           ],
         ),
@@ -535,10 +535,10 @@ class _SessionList extends StatelessWidget {
   }
 }
 
-class _SessionRow extends StatelessWidget {
+class GlazeSessionRow extends StatelessWidget {
   final BottomSheetSessionItem item;
 
-  const _SessionRow({required this.item});
+  const GlazeSessionRow({super.key, required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -625,13 +625,13 @@ class _SessionRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 GestureDetector(
-                  onTap: item.onDelete,
+                  onTap: item.onMore,
                   child: const Padding(
                     padding: EdgeInsets.all(4),
                     child: Icon(
-                      Icons.delete_outline,
+                      Icons.more_vert,
                       size: 20,
-                      color: Color(0xFFFF4444),
+                      color: AppColors.textSecondary,
                     ),
                   ),
                 ),

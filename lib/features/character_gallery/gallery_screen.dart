@@ -21,7 +21,13 @@ class GalleryScreen extends ConsumerWidget {
 
     return GlazeScaffold(
       title: 'Gallery',
-      onBack: () => context.go('/character/$charId'),
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/characters');
+        }
+      },
       body: galleryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),

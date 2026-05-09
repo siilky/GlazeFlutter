@@ -10,6 +10,21 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onMagicDrawer;
   final VoidCallback? onImageGen;
 
+  /// When true, the magic-drawer button shows the active state. The host
+  /// also uses this to interpret onMagicDrawer as a toggle.
+  final bool isDrawerOpen;
+
+  /// Optional focus node from the host so it can mediate keyboard ↔ drawer
+  /// transitions (Telegram-style: keyboard and drawer replace each other).
+  final FocusNode? focusNode;
+
+  final bool showSearchControls;
+  final String searchQuery;
+  final int searchMatchCount;
+  final int searchCurrentIndex;
+  final VoidCallback? onSearchNext;
+  final VoidCallback? onSearchPrev;
+
   const ChatInputBar({
     super.key,
     required this.onSend,
@@ -18,6 +33,14 @@ class ChatInputBar extends StatefulWidget {
     this.onStop,
     this.onMagicDrawer,
     this.onImageGen,
+    this.isDrawerOpen = false,
+    this.focusNode,
+    this.showSearchControls = false,
+    this.searchQuery = '',
+    this.searchMatchCount = 0,
+    this.searchCurrentIndex = 0,
+    this.onSearchNext,
+    this.onSearchPrev,
   });
 
   @override
@@ -50,6 +73,55 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.showSearchControls) {
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 56),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.8),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 18),
+                    const Icon(Icons.search, size: 20, color: AppColors.accent),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        widget.searchMatchCount > 0 
+                            ? '${widget.searchCurrentIndex + 1} of ${widget.searchMatchCount} matches' 
+                            : 'No matches found',
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_up, size: 24, color: AppColors.textPrimary),
+                      onPressed: widget.onSearchPrev,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down, size: 24, color: AppColors.textPrimary),
+                      onPressed: widget.onSearchNext,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return SafeArea(
       top: false,
       child: Padding(
@@ -104,6 +176,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                   child: TextField(
                     controller: _controller,
+                    focusNode: widget.focusNode,
                     maxLines: 5,
                     minLines: 1,
                     textInputAction: TextInputAction.send,
@@ -131,7 +204,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _CircleBtn(icon: Icons.auto_awesome, onTap: widget.onMagicDrawer),
+                    _CircleBtn(
+                      icon: Icons.auto_awesome,
+                      onTap: widget.onMagicDrawer,
+                      color: widget.isDrawerOpen ? Colors.amber : null,
+                    ),
                     const SizedBox(width: 8),
                     _CircleBtn(
                       icon: _guidanceMode ? Icons.tips_and_updates : Icons.tips_and_updates_outlined,

@@ -47,6 +47,12 @@ class CharactersNotifier extends AsyncNotifier<List<Character>> {
 
   Future<void> remove(String id) async {
     final repo = ref.read(characterRepoProvider);
+    // Cascade-delete all chat sessions for this character
+    final chatRepo = ref.read(chatRepoProvider);
+    final deletedSessionIds = await chatRepo.deleteByCharacterId(id);
+    for (final sid in deletedSessionIds) {
+      await SyncDeletionTracker.record('chat', sid);
+    }
     await repo.delete(id);
     await SyncDeletionTracker.record('character', id);
   }

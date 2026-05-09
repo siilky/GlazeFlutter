@@ -43,6 +43,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
   late final _depthPromptCtrl = TextEditingController();
 
   String? _avatarPath;
+  int _avatarVersion = 0;
   bool _loading = true;
   bool _saving = false;
   Character? _original;
@@ -124,7 +125,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
 
     return GlazeScaffold(
       title: 'Edit Character',
-      onBack: () => context.go('/character/${widget.charId}'),
+      onBack: _goBack,
       actions: [
         PopupMenuButton<String>(
           icon: const Icon(Icons.share_outlined, color: AppColors.accent),
@@ -329,6 +330,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
       child: Stack(
         children: [
           CircleAvatar(
+            key: ValueKey(_avatarVersion),
             radius: 56,
             backgroundImage: _avatarPath != null && _avatarPath!.isNotEmpty
                 ? FileImage(File(_avatarPath!))
@@ -364,17 +366,30 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
     );
   }
 
+  void _goBack() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/characters');
+    }
+  }
+
   Future<void> _pickAvatar() async {
     final result = await FilePicker.pickFiles(type: FileType.image);
     if (result == null || result.files.isEmpty) return;
 
-    final file = result.files.first;
-    if (file.bytes == null) return;
+    final filePath = result.files.first.path;
+    if (filePath == null) return;
 
+    final bytes = await File(filePath).readAsBytes();
     final storage = await ref.read(imageStorageProvider.future);
-    final savedPath = await storage.saveAvatar(widget.charId, file.bytes!);
+    final savedPath = await storage.saveAvatar(widget.charId, bytes);
+    await FileImage(File(savedPath)).evict();
     if (mounted) {
-      setState(() => _avatarPath = savedPath);
+      setState(() {
+        _avatarPath = savedPath;
+        _avatarVersion++;
+      });
     }
   }
 
@@ -437,9 +452,12 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
       );
 
       await ref.read(characterRepoProvider).put(updated);
+      if (_avatarPath != null && _avatarPath!.isNotEmpty) {
+        await FileImage(File(_avatarPath!)).evict();
+      }
       if (mounted) {
         GlazeToast.show(context, 'Character saved');
-        context.go('/character/${widget.charId}');
+        _goBack();
       }
     } catch (e) {
       if (mounted) {

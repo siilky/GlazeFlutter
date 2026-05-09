@@ -7,7 +7,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../shared/shell/nav_height_provider.dart';
 import '../../shared/theme/app_colors.dart';
+import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
+import '../../shared/widgets/glaze_toast.dart';
+import '../chat/chat_actions_service.dart';
+import '../chat/chat_provider.dart';
 import 'chat_history_provider.dart';
 
 class ChatHistoryScreen extends ConsumerStatefulWidget {
@@ -309,6 +313,7 @@ class _SessionTile extends ConsumerWidget {
         ),
         trailing: _buildTrailing(context),
         onTap: () => context.go('/chat/${info.characterId}?session=${info.sessionIndex}'),
+        onLongPress: () => _showSessionActions(context, ref),
       ),
     );
   }
@@ -335,6 +340,40 @@ class _SessionTile extends ConsumerWidget {
     );
     return result ?? false;
   }
+
+  void _showSessionActions(BuildContext context, WidgetRef ref) {
+    GlazeBottomSheet.show(
+      context,
+      title: 'Session',
+      items: [
+        BottomSheetItem(
+          icon: Icons.upload_file,
+          label: 'Export (JSONL)',
+          onTap: () async {
+            Navigator.of(context).pop(); // Pops Actions Sheet
+            await ChatActionsService(ref).exportSessionUI(
+              context,
+              charId: info.characterId,
+              sessionId: info.sessionId,
+            );
+          },
+        ),
+        BottomSheetItem(
+          icon: Icons.delete_outline,
+          label: 'Delete',
+          isDestructive: true,
+          onTap: () async {
+            Navigator.of(context).pop(); // Pops Actions Sheet
+            final confirm = await _confirmDelete(context);
+            if (confirm) {
+              ref.read(chatHistoryProvider.notifier).deleteSession(info.sessionId);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
 
   Widget _buildAvatar() {
     if (info.avatarPath != null && info.avatarPath!.isNotEmpty) {

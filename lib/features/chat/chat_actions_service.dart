@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -7,6 +8,7 @@ import '../../core/services/chat_import_export.dart';
 import '../../core/llm/summary_service.dart';
 import '../../core/state/db_provider.dart';
 import '../../core/utils/time_helpers.dart';
+import '../../shared/widgets/glaze_toast.dart';
 import '../chat_history/chat_history_provider.dart';
 import 'chat_provider.dart';
 
@@ -57,6 +59,35 @@ class ChatActionsService {
     await Share.shareXFiles([XFile(result.filePath)],
         text: 'Chat with ${character.name}');
     return result.filePath;
+  }
+
+  Future<void> exportSessionUI(
+    BuildContext context, {
+    required String charId,
+    required String sessionId,
+  }) async {
+    final notifier = _ref.read(chatProvider(charId).notifier);
+    final currentSessionId = _ref.read(chatProvider(charId)).value?.session?.id;
+    final needsSwitch = currentSessionId != sessionId;
+
+    if (needsSwitch) {
+      final sessions = await notifier.getSessions();
+      final target = sessions.where((s) => s.id == sessionId).firstOrNull;
+      if (target != null) {
+        await notifier.switchSession(target.sessionIndex);
+      }
+    }
+
+    try {
+      final filePath = await exportChat(charId);
+      if (context.mounted) {
+        GlazeToast.show(context, 'Chat exported to $filePath');
+      }
+    } on StateError catch (e) {
+      if (context.mounted) GlazeToast.show(context, e.message);
+    } catch (e) {
+      if (context.mounted) GlazeToast.error(context, 'Export failed: ', e);
+    }
   }
 
   Future<int> importChat(String charId, String filePath) async {

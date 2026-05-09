@@ -3,18 +3,61 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../../../core/llm/regex_service.dart';
 import '../../../core/llm/tokenizer.dart';
+import '../../../core/models/character.dart';
 import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/character_provider.dart';
 import '../../../shared/widgets/pencil_animation.dart';
 import '../../image_gen/widgets/image_content_renderer.dart';
 import '../../settings/app_settings_provider.dart';
 import '../chat_provider.dart';
+import '../editing_message_provider.dart';
 import 'message_actions.dart';
 
-class Message extends ConsumerWidget {
+class MarkSyntax extends md.InlineSyntax {
+  MarkSyntax() : super(r'==mark==(.*?)==');
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final el = md.Element.text('mark', match[1]!);
+    parser.addNode(el);
+    return true;
+  }
+}
+
+class ActiveMarkSyntax extends md.InlineSyntax {
+  ActiveMarkSyntax() : super(r'==active==(.*?)==');
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final el = md.Element.text('activemark', match[1]!);
+    parser.addNode(el);
+    return true;
+  }
+}
+
+class _MarkElementBuilder extends MarkdownElementBuilder {
+  final Color bgColor;
+  final Color textColor;
+  final GlobalKey? activeKey;
+  _MarkElementBuilder(this.bgColor, this.textColor, {this.activeKey});
+
+  @override
+  Widget visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    return Container(
+      key: activeKey,
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(2)),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      child: Text(
+        element.textContent,
+        style: preferredStyle?.copyWith(color: textColor) ?? TextStyle(color: textColor),
+      ),
+    );
+  }
+}
+
+class Message extends ConsumerStatefulWidget {
   final String content;
   final bool isUser;
   final bool isSystem;
@@ -32,7 +75,11 @@ class Message extends ConsumerWidget {
   final String charId;
   final List<String> swipes;
   final int swipeId;
+  final int? greetingIndex;
   final Map<String, dynamic> memoryCoverage;
+  final bool isSearchMatch;
+  final String searchQuery;
+  final int activeMatchIndex;
 
   const Message({
     super.key,
@@ -53,14 +100,152 @@ class Message extends ConsumerWidget {
     required this.charId,
     this.swipes = const [],
     this.swipeId = 0,
+    this.greetingIndex,
     this.memoryCoverage = const {},
+    this.isSearchMatch = false,
+    this.searchQuery = '',
+    this.activeMatchIndex = -1,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<Message> createState() => _MessageState();
+}
+
+class _MessageState extends ConsumerState<Message> {
+  TextEditingController? _editController;
+  bool _highlighted = false;
+  final GlobalKey _activePhraseKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isSearchMatch) {
+      _triggerHighlight();
+    }
+  }
+
+  @override
+  void didUpdateWidget(Message oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((widget.isSearchMatch && !oldWidget.isSearchMatch) ||
+        (widget.activeMatchIndex != -1 && widget.activeMatchIndex != oldWidget.activeMatchIndex)) {
+      _triggerHighlight();
+    }
+  }
+
+  String _highlightPhrases(String content) {
+    if (widget.searchQuery.isEmpty || !widget.isSearchMatch) return content;
+    final lowerContent = content.toLowerCase();
+    final lowerQuery = widget.searchQuery.toLowerCase();
+    final buffer = StringBuffer();
+    int startIndex = 0;
+    int currentMatchIndex = 0;
+    
+    while (true) {
+      final idx = lowerContent.indexOf(lowerQuery, startIndex);
+      if (idx == -1) {
+        buffer.write(content.substring(startIndex));
+        break;
+      }
+      buffer.write(content.substring(startIndex, idx));
+      final originalText = content.substring(idx, idx + lowerQuery.length);
+      if (currentMatchIndex == widget.activeMatchIndex) {
+        buffer.write('==active==$originalText==');
+      } else {
+        buffer.write('==mark==$originalText==');
+      }
+      currentMatchIndex++;
+      startIndex = idx + lowerQuery.length;
+    }
+    return buffer.toString();
+  }
+
+  void _triggerHighlight() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_activePhraseKey.currentContext != null) {
+        Scrollable.ensureVisible(
+          _activePhraseKey.currentContext!,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: 0.5,
+        );
+      } else {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: 0.5,
+        );
+      }
+      setState(() => _highlighted = true);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _highlighted = false);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _editController?.dispose();
+    super.dispose();
+  }
+
+  void _ensureEditController() {
+    _editController ??= TextEditingController(text: widget.content);
+  }
+
+  void _disposeEditController() {
+    _editController?.dispose();
+    _editController = null;
+  }
+
+  void _saveEdit() {
+    final text = _editController?.text.trim() ?? '';
+    if (text.isNotEmpty) {
+      ref.read(chatProvider(widget.charId).notifier).editMessage(widget.messageIndex, text);
+    }
+    ref.read(editingMessageIndexProvider(widget.charId).notifier).state = null;
+  }
+
+  void _cancelEdit() {
+    ref.read(editingMessageIndexProvider(widget.charId).notifier).state = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final content = widget.content;
+    final isUser = widget.isUser;
+    final isSystem = widget.isSystem;
+    final isStreaming = widget.isStreaming;
+    final isTyping = widget.isTyping;
+    final reasoning = widget.reasoning;
+    final genTime = widget.genTime;
+    final tokens = widget.tokens;
+    final isHidden = widget.isHidden;
+    final isError = widget.isError;
+    final messageIndex = widget.messageIndex;
+    final totalMessages = widget.totalMessages;
+    final isLast = widget.isLast;
+    final isGenerating = widget.isGenerating;
+    final charId = widget.charId;
+    final memoryCoverage = widget.memoryCoverage;
+
     final scheme = Theme.of(context).colorScheme;
     final appSettings = ref.watch(appSettingsProvider).value;
     final isStandard = (appSettings?.chatLayout ?? 'default') == 'default';
+
+    final editingIndex = ref.watch(editingMessageIndexProvider(charId));
+    final isEditing = editingIndex == messageIndex && !isSystem && !isStreaming && !isTyping;
+    if (isEditing) {
+      _ensureEditController();
+    } else if (_editController != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ref.read(editingMessageIndexProvider(charId)) != widget.messageIndex) {
+          _disposeEditController();
+        }
+      });
+    }
 
     final chars = ref.watch(charactersProvider).value ?? [];
     final character = chars.where((c) => c.id == charId).firstOrNull;
@@ -95,11 +280,15 @@ class Message extends ConsumerWidget {
 
     Widget bubble = Align(
       alignment: style.alignment,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
         constraints: BoxConstraints(maxWidth: isStandard ? double.infinity : MediaQuery.of(context).size.width * 0.88),
         margin: EdgeInsets.symmetric(horizontal: isStandard ? 16 : 12, vertical: isStandard ? 8 : 4),
         padding: isStandard ? const EdgeInsets.all(0) : const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: style.bg, borderRadius: isStandard ? BorderRadius.zero : BorderRadius.circular(16)),
+        decoration: BoxDecoration(
+          color: _highlighted ? scheme.primary.withValues(alpha: 0.2) : style.bg,
+          borderRadius: isStandard ? BorderRadius.zero : BorderRadius.circular(16)
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -123,14 +312,30 @@ class Message extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
             ],
-            if (reasoning != null && reasoning!.isNotEmpty)
+            if (reasoning != null && reasoning!.isNotEmpty && !isEditing)
               _ReasoningBlock(reasoning: reasoning!, scheme: scheme),
-            if (isTyping && content.isEmpty)
+            if (isEditing)
+              _EditTextarea(controller: _editController!, textColor: textColor, scheme: scheme)
+            else if (isTyping && content.isEmpty)
               _TypingIndicator(textColor: textColor, scheme: scheme)
             else if (ImageContentRenderer.hasImageMarkers(displayContent))
               ImageContentRenderer(content: displayContent, textColor: textColor)
             else
-              MarkdownBody(data: displayContent, styleSheet: MarkdownStyleSheet(p: TextStyle(color: textColor))),
+              MarkdownBody(
+                data: _highlightPhrases(displayContent), 
+                styleSheet: MarkdownStyleSheet(p: TextStyle(color: textColor)),
+                extensionSet: md.ExtensionSet([
+                  ...md.ExtensionSet.gitHubFlavored.blockSyntaxes
+                ], [
+                  ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+                  MarkSyntax(),
+                  ActiveMarkSyntax(),
+                ]),
+                builders: {
+                  'mark': _MarkElementBuilder(scheme.primary.withValues(alpha: 0.3), scheme.onSurface),
+                  'activemark': _MarkElementBuilder(Colors.orange.withValues(alpha: 0.6), Colors.white, activeKey: _activePhraseKey),
+                },
+              ),
             if (isStreaming)
               Text('...', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
             if (!isSystem && !isStreaming) ...[
@@ -147,17 +352,18 @@ class Message extends ConsumerWidget {
                   context: context, ref: ref, charId: charId, content: content,
                   messageIndex: messageIndex, isUser: isUser, isTyping: isTyping,
                   isError: isError, isLast: isLast, isGenerating: isGenerating, isHidden: isHidden,
-                  totalMessages: totalMessages,
                 ),
-                swipeCount: swipes.length,
-                swipeId: swipeId,
-                onSwipeLeft: swipeId > 0
-                    ? () => ref.read(chatProvider(charId).notifier).setSwipe(messageIndex, swipeId - 1)
-                    : null,
-                onSwipeRight: swipeId < swipes.length - 1
-                    ? () => ref.read(chatProvider(charId).notifier).setSwipe(messageIndex, swipeId + 1)
-                    : null,
+                swipeCount: _switcherCount(character),
+                swipeId: _switcherIndex(character),
+                onSwipeLeft: isEditing ? null : _onSwitcherLeft(character),
+                onSwipeRight: isEditing ? null : _onSwitcherRight(character),
                 memoryEntryCount: memoryCoverage.length,
+                onRegenerate: (!isEditing && ((isUser && isLast) || isError) && !isGenerating)
+                    ? () => ref.read(chatProvider(charId).notifier).regenerateLastAssistant()
+                    : null,
+                isEditing: isEditing,
+                onSaveEdit: isEditing ? _saveEdit : null,
+                onCancelEdit: isEditing ? _cancelEdit : null,
               ),
             ],
           ],
@@ -166,6 +372,7 @@ class Message extends ConsumerWidget {
     );
 
     Widget bubbleWidget = isHidden ? Opacity(opacity: 0.5, child: bubble) : bubble;
+
     if (isSystem || isStreaming) return bubbleWidget;
 
     return GestureDetector(
@@ -173,10 +380,46 @@ class Message extends ConsumerWidget {
         context: context, ref: ref, charId: charId, content: content,
         messageIndex: messageIndex, isUser: isUser, isTyping: isTyping,
         isError: isError, isLast: isLast, isGenerating: isGenerating, isHidden: isHidden,
-        totalMessages: totalMessages,
       ),
       child: bubbleWidget,
     );
+  }
+
+  bool _isFirstCharGreeting(Character? character) {
+    if (widget.isUser || widget.isSystem || widget.messageIndex != 0) return false;
+    if (character == null) return false;
+    return _greetingsCount(character) > 1 && widget.swipes.length <= 1;
+  }
+
+  int _greetingsCount(Character? character) {
+    if (character == null) return 0;
+    final hasFirst = (character.firstMes ?? '').isNotEmpty ? 1 : 0;
+    final alts = character.alternateGreetings.where((g) => g.isNotEmpty).length;
+    return hasFirst + alts;
+  }
+
+  int _switcherCount(Character? character) =>
+      _isFirstCharGreeting(character) ? _greetingsCount(character) : widget.swipes.length;
+
+  int _switcherIndex(Character? character) =>
+      _isFirstCharGreeting(character) ? (widget.greetingIndex ?? 0) : widget.swipeId;
+
+  VoidCallback? _onSwitcherLeft(Character? character) {
+    if (_isFirstCharGreeting(character)) {
+      return () => ref.read(chatProvider(widget.charId).notifier).setGreeting(widget.messageIndex, -1);
+    }
+    return widget.swipeId > 0
+        ? () => ref.read(chatProvider(widget.charId).notifier).setSwipe(widget.messageIndex, widget.swipeId - 1)
+        : null;
+  }
+
+  VoidCallback? _onSwitcherRight(Character? character) {
+    if (_isFirstCharGreeting(character)) {
+      return () => ref.read(chatProvider(widget.charId).notifier).setGreeting(widget.messageIndex, 1);
+    }
+    return widget.swipeId < widget.swipes.length - 1
+        ? () => ref.read(chatProvider(widget.charId).notifier).setSwipe(widget.messageIndex, widget.swipeId + 1)
+        : null;
   }
 }
 
@@ -215,8 +458,32 @@ class _ReasoningBlock extends StatefulWidget {
   State<_ReasoningBlock> createState() => _ReasoningBlockState();
 }
 
-class _ReasoningBlockState extends State<_ReasoningBlock> {
+class _ReasoningBlockState extends State<_ReasoningBlock> with SingleTickerProviderStateMixin {
   bool _collapsed = true;
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 250));
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _collapsed = !_collapsed);
+    if (_collapsed) {
+      _ctrl.reverse();
+    } else {
+      _ctrl.forward();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -227,14 +494,12 @@ class _ReasoningBlockState extends State<_ReasoningBlock> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => setState(() => _collapsed = !_collapsed),
+            onTap: _toggle,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
-                  Icon(Icons.psychology, size: 14, color: widget.scheme.onSurfaceVariant),
-                  const SizedBox(width: 4),
                   Text('Reasoning', style: TextStyle(fontSize: 11, color: widget.scheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
                   const Spacer(),
                   AnimatedRotation(
@@ -246,18 +511,21 @@ class _ReasoningBlockState extends State<_ReasoningBlock> {
               ),
             ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOut,
-            child: _collapsed
-                ? const SizedBox.shrink()
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    child: Text(
-                      widget.reasoning,
-                      style: TextStyle(fontSize: 12, color: widget.scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
-                    ),
+          ClipRect(
+            child: SizeTransition(
+              sizeFactor: _anim,
+              axisAlignment: -1.0,
+              child: SlideTransition(
+                position: Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(_anim),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: Text(
+                    widget.reasoning,
+                    style: TextStyle(fontSize: 12, color: widget.scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
                   ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -286,6 +554,41 @@ class _TypingIndicator extends StatelessWidget {
   }
 }
 
+class _EditTextarea extends StatelessWidget {
+  final TextEditingController controller;
+  final Color textColor;
+  final ColorScheme scheme;
+  const _EditTextarea({required this.controller, required this.textColor, required this.scheme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: textColor.withValues(alpha: 0.05),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLines: null,
+        minLines: 1,
+        keyboardType: TextInputType.multiline,
+        textInputAction: TextInputAction.newline,
+        style: TextStyle(color: textColor, fontSize: 14),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.all(8),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+        ),
+      ),
+    );
+  }
+}
+
 class _MetadataRow extends StatelessWidget {
   final String? genTime;
   final int? tokens;
@@ -300,6 +603,10 @@ class _MetadataRow extends StatelessWidget {
   final VoidCallback? onSwipeLeft;
   final VoidCallback? onSwipeRight;
   final int memoryEntryCount;
+  final VoidCallback? onRegenerate;
+  final bool isEditing;
+  final VoidCallback? onSaveEdit;
+  final VoidCallback? onCancelEdit;
 
   const _MetadataRow({
     required this.genTime,
@@ -315,6 +622,10 @@ class _MetadataRow extends StatelessWidget {
     this.onSwipeLeft,
     this.onSwipeRight,
     this.memoryEntryCount = 0,
+    this.onRegenerate,
+    this.isEditing = false,
+    this.onSaveEdit,
+    this.onCancelEdit,
   });
 
   @override
@@ -375,25 +686,72 @@ class _MetadataRow extends StatelessWidget {
               ],
             ),
           ),
-        // Right: action button
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: InkWell(
-              onTap: onMenuTap,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: isStandard ? scheme.surfaceContainerHighest : (isUser ? Colors.transparent : scheme.surfaceContainerHighest),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.menu, size: 16, color: textColor),
+        // Center: regenerate button
+        if (onRegenerate != null)
+          InkWell(
+            onTap: onRegenerate,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.refresh, size: 14, color: textColor),
+                  const SizedBox(width: 4),
+                  Text('Regenerate', style: TextStyle(fontSize: 12, color: textColor)),
+                ],
               ),
             ),
           ),
+        // Right: action button or edit buttons
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: isEditing
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _editCircleBtn(Icons.close, const Color(0xFFFF4444), onCancelEdit),
+                      const SizedBox(width: 8),
+                      _editCircleBtn(Icons.check, const Color(0xFF4CAF50), onSaveEdit),
+                    ],
+                  )
+                : InkWell(
+                    onTap: onMenuTap,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isStandard ? scheme.surfaceContainerHighest : (isUser ? Colors.transparent : scheme.surfaceContainerHighest),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.menu, size: 16, color: textColor),
+                    ),
+                  ),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _editCircleBtn(IconData icon, Color iconColor, VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh.withValues(alpha: 0.8),
+          shape: BoxShape.circle,
+          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        ),
+        child: Icon(icon, size: 16, color: iconColor),
+      ),
     );
   }
 

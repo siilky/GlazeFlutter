@@ -84,30 +84,15 @@ class ChatHeader extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              InkWell(
-                onTap: () => _showSessionPicker(context, ref),
-                borderRadius: BorderRadius.circular(4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      sessionName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Icon(
-                      Icons.swap_horiz,
-                      size: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                  ],
+              Text(
+                sessionName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  height: 1.1,
                 ),
               ),
             ],
@@ -117,39 +102,4 @@ class ChatHeader extends ConsumerWidget {
     );
   }
 
-  void _showSessionPicker(BuildContext context, WidgetRef ref) async {
-    final sessions = await ref
-        .read(chatProvider(character.id).notifier)
-        .getSessions();
-
-    if (!context.mounted) return;
-    if (sessions.length <= 1) return;
-
-    GlazeBottomSheet.show(
-      context,
-      title: 'Switch Session',
-      items: sessions
-          .map(
-            (s) => BottomSheetItem(
-              icon: s.sessionIndex == currentSessionIndex
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_unchecked,
-              iconColor: s.sessionIndex == currentSessionIndex
-                  ? AppColors.accent
-                  : AppColors.textSecondary,
-              label: 'Session #${s.sessionIndex}',
-              hint: '${s.messages.length} messages',
-              onTap: () {
-                Navigator.of(context, rootNavigator: true).pop();
-                if (s.sessionIndex != currentSessionIndex) {
-                  ref
-                      .read(chatProvider(character.id).notifier)
-                      .switchSession(s.sessionIndex);
-                }
-              },
-            ),
-          )
-          .toList(),
-    );
-  }
 }

@@ -209,23 +209,14 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
       showBack: true,
       onBack: _goBack,
       scrollController: _scrollController,
-      actions: [
-        SheetViewAction(
-          icon: const Icon(Icons.add_rounded, size: 20),
-          tooltip: 'New config',
-          onPressed: () => _createNewPreset(list),
-          color: AppColors.accent,
-        ),
-      ],
-      headerBottom: _buildHeaderBottom(list, activeName),
       body: asyncList.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (list) => list.isEmpty
             ? _buildEmptyState()
             : _tab == 0
-            ? _buildLlmTab()
-            : _buildEmbeddingsTab(),
+            ? _buildLlmTab(list, activeName)
+            : _buildEmbeddingsTab(list, activeName),
       ),
     );
   }
@@ -237,7 +228,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
     return 'Unnamed';
   }
 
-  Widget _buildHeaderBottom(List<ApiConfig> list, String activeName) {
+  Widget _buildTopControls(List<ApiConfig> list, String activeName) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -330,7 +321,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
 
   // ── LLM tab ───────────────────────────────────────────────────────────────────
 
-  Widget _buildLlmTab() {
+  Widget _buildLlmTab(List<ApiConfig> list, String activeName) {
     return Builder(
       builder: (context) => ListView(
         controller: _scrollController,
@@ -339,6 +330,10 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
           bottom: 32,
         ),
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: _buildTopControls(list, activeName),
+          ),
           SettingsGroup(
             header: 'Connection',
             children: [
@@ -513,7 +508,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
 
   // ── Embeddings tab ────────────────────────────────────────────────────────────
 
-  Widget _buildEmbeddingsTab() {
+  Widget _buildEmbeddingsTab(List<ApiConfig> list, String activeName) {
     return Builder(
       builder: (context) => ListView(
         controller: _scrollController,
@@ -522,6 +517,10 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
           bottom: 32,
         ),
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: _buildTopControls(list, activeName),
+          ),
           SettingsGroup(
             header: 'Embeddings',
             children: [

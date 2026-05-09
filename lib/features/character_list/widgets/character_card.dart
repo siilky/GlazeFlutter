@@ -157,7 +157,7 @@ class CharacterCard extends ConsumerWidget {
           label: 'Edit',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
-            context.go('/character/${character.id}/edit');
+            context.push('/character/${character.id}/edit');
           },
         ),
         BottomSheetItem(

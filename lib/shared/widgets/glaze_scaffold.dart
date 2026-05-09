@@ -18,6 +18,7 @@ class GlazeScaffold extends StatelessWidget {
   final bool showBack;
   final VoidCallback? onBack;
   final bool extendBodyBehindHeader;
+  final bool resizeToAvoidBottomInset;
 
   const GlazeScaffold({
     super.key,
@@ -28,6 +29,7 @@ class GlazeScaffold extends StatelessWidget {
     this.showBack = true,
     this.onBack,
     this.extendBodyBehindHeader = false,
+    this.resizeToAvoidBottomInset = true,
   });
 
   @override
@@ -48,6 +50,7 @@ class GlazeScaffold extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
       body: extendBodyBehindHeader
           ? Stack(
               children: [

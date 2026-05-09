@@ -5,8 +5,8 @@ import '../../../core/models/persona.dart';
 import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/character_provider.dart';
 import '../../../core/state/db_provider.dart';
-import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../../shared/widgets/sheet_view.dart';
 
 class PersonaConnectionsSheet extends ConsumerStatefulWidget {
   final String personaId;
@@ -44,34 +44,15 @@ class _PersonaConnectionsSheetState
                 .firstOrNull ??
             Persona(id: widget.personaId, name: 'Persona');
 
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(20)),
-            border: Border(
-                top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.1))),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        return SheetView(
+          title: 'Connections: ${persona.name}',
+          showBack: true,
+          body: ListView(
+            padding: EdgeInsets.only(
+              top: MediaQuery.paddingOf(context).top + 4,
+              bottom: MediaQuery.paddingOf(context).bottom + 24,
+            ),
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Connections: ${persona.name}',
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
-                    IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context)),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-
               _Section(
                 icon: Icons.public,
                 title: 'Global',
@@ -83,7 +64,6 @@ class _PersonaConnectionsSheetState
                   },
                 ),
               ),
-
               _Section(
                 icon: Icons.person,
                 title: 'Characters',
@@ -104,7 +84,6 @@ class _PersonaConnectionsSheetState
                             .toList(),
                       ),
               ),
-
               _Section(
                 icon: Icons.chat,
                 title: 'Chats',
@@ -125,8 +104,6 @@ class _PersonaConnectionsSheetState
                             .toList(),
                       ),
               ),
-
-              const SizedBox(height: 24),
             ],
           ),
         );
@@ -331,8 +308,11 @@ class _EmptyHint extends StatelessWidget {
 }
 
 void showPersonaConnections(BuildContext context, String personaId) {
-  GlazeBottomSheet.show(
-    context,
-    child: PersonaConnectionsSheet(personaId: personaId),
+  showModalBottomSheet(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => PersonaConnectionsSheet(personaId: personaId),
   );
 }

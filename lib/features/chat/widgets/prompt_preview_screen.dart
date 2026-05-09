@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:convert';
+
 import '../../../core/llm/history_assembler.dart';
 import '../../../core/llm/prompt_builder.dart';
 import '../../../core/llm/prompt_isolate.dart';
@@ -9,8 +11,8 @@ import '../../../core/llm/prompt_payload_builder.dart';
 import '../../../core/llm/tokenizer.dart';
 import '../../../core/models/api_config.dart';
 import '../../../shared/theme/app_colors.dart';
-import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/widgets/glaze_filter_chip_bar.dart';
+import '../../../shared/widgets/glaze_tab_bar.dart';
 import '../../../shared/widgets/glaze_toast.dart';
 import '../../../shared/widgets/sheet_view.dart';
 import '../chat_provider.dart';
@@ -29,7 +31,8 @@ class _PromptPreviewScreenState extends ConsumerState<PromptPreviewScreen> {
   ApiConfig? _apiConfig;
   bool _loading = true;
   _SectionFilter _filter = _SectionFilter.all;
-  bool _showTokens = true;
+  int _dataTabIndex = 0;
+  int _previewTabIndex = 0;
 
   @override
   void initState() {
@@ -77,55 +80,191 @@ class _PromptPreviewScreenState extends ConsumerState<PromptPreviewScreen> {
       }
     });
     return SheetView(
-      title: 'Prompt Preview',
-      showBack: true,
-      onBack: () => Navigator.of(context).maybePop(),
-      actions: [
-        SheetViewAction(
-          icon: Icon(
-            _showTokens ? Icons.numbers : Icons.numbers_outlined,
-            size: 20,
-          ),
-          onPressed: () => setState(() => _showTokens = !_showTokens),
-          tooltip: 'Toggle token counts',
-        ),
-        SheetViewAction(
-          icon: const Icon(Icons.copy, size: 20),
-          onPressed: _copyJson,
-          tooltip: 'Copy as JSON',
-        ),
-      ],
-      body: Column(
+      titleWidget: Row(
         children: [
-          Builder(
-            builder: (context) =>
-                SizedBox(height: MediaQuery.paddingOf(context).top),
+          const Expanded(
+            child: Text(
+              'Request Preview',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
-          if (_result != null && _apiConfig != null)
-            _SummaryBar(result: _result!, contextSize: _apiConfig!.contextSize),
-          GlazeFilterChipBar<_SectionFilter>(
-            current: _filter,
-            options: _SectionFilter.values.toList(),
-            labelBuilder: _labelForFilter,
-            onSelected: (f) => setState(() => _filter = f),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _result == null
-                ? Center(
-                    child: Text(
-                      'No data',
-                      style: TextStyle(color: AppColors.textSecondary),
+          if (_previewTabIndex == 1) ...[
+            Material(
+              color: Colors.white.withValues(alpha: 0.06),
+              shape: const CircleBorder(),
+              child: Tooltip(
+                message: 'Copy',
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _copyContent,
+                  child: const SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Center(
+                      child: Icon(Icons.copy, size: 20, color: AppColors.accent),
                     ),
-                  )
-                : _MessageList(
-                    messages: _filteredMessages,
-                    showTokens: _showTokens,
                   ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          _SegmentedToggle(
+            isRaw: _previewTabIndex == 1,
+            onChanged: (isRaw) => setState(() => _previewTabIndex = isRaw ? 1 : 0),
           ),
         ],
       ),
+      showBack: true,
+      onBack: () => Navigator.of(context).maybePop(),
+      headerBottom: GlazeTabBar(
+        tabs: const [
+          GlazeTabItem(label: 'Request', icon: Icons.upload_rounded),
+          GlazeTabItem(label: 'Response', icon: Icons.download_rounded),
+        ],
+        activeIndex: _dataTabIndex,
+        onChanged: (i) => setState(() => _dataTabIndex = i),
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    return Builder(
+      builder: (context) {
+        final topPad = MediaQuery.paddingOf(context).top;
+
+        if (_dataTabIndex == 0) {
+          if (_loading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (_result == null) {
+            return Center(
+              child: Text(
+                'No data',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            );
+          }
+          if (_previewTabIndex == 1) {
+            return _buildRawView(_getRawPromptJson(), topPad);
+          }
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: SizedBox(height: topPad),
+              ),
+              if (_apiConfig != null) ...[
+                SliverToBoxAdapter(
+                  child: _SummaryBar(result: _result!, contextSize: _apiConfig!.contextSize),
+                ),
+                const SliverToBoxAdapter(child: _SectionTitle('Parameters')),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverToBoxAdapter(
+                    child: _buildParamsGrid(_apiConfig!),
+                  ),
+                ),
+              ],
+              SliverToBoxAdapter(
+                child: _SectionTitle('Messages (${_result!.messages.length})'),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GlazeFilterChipBar<_SectionFilter>(
+                    current: _filter,
+                    options: _SectionFilter.values.toList(),
+                    labelBuilder: _labelForFilter,
+                    onSelected: (f) => setState(() => _filter = f),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => _PromptMessageCard(
+                      message: _filteredMessages[i],
+                      index: i,
+                    ),
+                    childCount: _filteredMessages.length,
+                  ),
+                ),
+              ),
+            ],
+          );
+        } else {
+          final chatState = ref.watch(chatProvider(widget.charId)).value;
+          final raw = chatState?.lastRawResponse;
+          if (raw == null || raw.isEmpty) {
+            return Center(
+              child: Text(
+                'No response data',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            );
+          }
+          String displayString = raw;
+          if (_previewTabIndex == 0) {
+            try {
+              final decoded = jsonDecode(raw);
+              displayString = const JsonEncoder.withIndent('  ').convert(decoded);
+            } catch (_) {
+            }
+          }
+          return _buildRawView(displayString, topPad);
+        }
+      },
+    );
+  }
+
+  Widget _buildRawView(String text, double topPad) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: topPad + 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SelectableText(
+              text,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParamsGrid(ApiConfig config) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - 8) / 2;
+        final items = [
+          _ParamItem(label: 'model', value: config.model),
+          _ParamItem(label: 'max_tokens', value: config.maxTokens.toString()),
+          _ParamItem(label: 'temperature', value: config.temperature.toString()),
+          _ParamItem(label: 'top_p', value: config.topP.toString()),
+          _ParamItem(label: 'stream', value: config.stream.toString()),
+        ];
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: items.map((w) => SizedBox(width: itemWidth, child: w)).toList(),
+        );
+      },
     );
   }
 
@@ -143,17 +282,52 @@ class _PromptPreviewScreenState extends ConsumerState<PromptPreviewScreen> {
     };
   }
 
-  void _copyJson() {
-    if (_result == null) return;
-    final json = _result!.messages.map((m) {
-      final map = <String, dynamic>{'role': m.role, 'content': m.content};
-      if (m.isLorebook) map['lorebook'] = true;
-      if (m.blockName != null) map['block'] = m.blockName;
-      if (m.isDepth) map['depth'] = m.depth;
-      return map;
-    }).toList();
-    Clipboard.setData(ClipboardData(text: json.toString()));
+  void _copyContent() {
+    String textToCopy = '';
+    if (_dataTabIndex == 0) {
+      if (_previewTabIndex == 0) {
+        if (_result == null) return;
+        final json = _result!.messages.map((m) {
+          final map = <String, dynamic>{'role': m.role, 'content': m.content};
+          if (m.isLorebook) map['lorebook'] = true;
+          if (m.blockName != null) map['block'] = m.blockName;
+          if (m.isDepth) map['depth'] = m.depth;
+          return map;
+        }).toList();
+        textToCopy = jsonEncode(json);
+      } else {
+        textToCopy = _getRawPromptJson();
+      }
+    } else {
+      final chatState = ref.read(chatProvider(widget.charId)).value;
+      textToCopy = chatState?.lastRawResponse ?? '';
+    }
+
+    if (textToCopy.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: textToCopy));
     GlazeToast.show(context, 'Copied to clipboard');
+  }
+
+  String _getRawPromptJson() {
+    if (_result == null || _apiConfig == null) return '';
+    try {
+      final rawJson = const JsonEncoder.withIndent('  ').convert({
+        'model': _apiConfig!.model,
+        'messages': _result!.messages.map((m) {
+          final map = <String, dynamic>{'role': m.role, 'content': m.content};
+          if (m.isLorebook) map['lorebook'] = true;
+          if (m.blockName != null) map['block'] = m.blockName;
+          return map;
+        }).toList(),
+        'max_tokens': _apiConfig!.maxTokens,
+        'temperature': _apiConfig!.temperature,
+        'top_p': _apiConfig!.topP,
+        'stream': _apiConfig!.stream,
+      });
+      return rawJson;
+    } catch (_) {
+      return '';
+    }
   }
 }
 
@@ -235,20 +409,62 @@ String _labelForFilter(_SectionFilter f) => switch (f) {
   _SectionFilter.depth => 'Depth',
 };
 
-class _MessageList extends StatelessWidget {
-  final List<PromptMessage> messages;
-  final bool showTokens;
-  const _MessageList({required this.messages, required this.showTokens});
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle(this.title);
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-      itemCount: messages.length,
-      itemBuilder: (_, i) => _PromptMessageCard(
-        message: messages[i],
-        index: i,
-        showTokens: showTokens,
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 10, left: 16, right: 16),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _ParamItem extends StatelessWidget {
+  final String label;
+  final String value;
+  const _ParamItem({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -257,11 +473,9 @@ class _MessageList extends StatelessWidget {
 class _PromptMessageCard extends StatefulWidget {
   final PromptMessage message;
   final int index;
-  final bool showTokens;
   const _PromptMessageCard({
     required this.message,
     required this.index,
-    required this.showTokens,
   });
 
   @override
@@ -274,18 +488,17 @@ class _PromptMessageCardState extends State<_PromptMessageCard> {
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
-    final scheme = _schemeFor(msg);
-    final tokenCount = widget.showTokens ? estimateTokens(msg.content) : 0;
+    final tokenCount = estimateTokens(msg.content);
 
     return Card(
-      color: scheme.bgColor,
-      margin: const EdgeInsets.symmetric(vertical: 3),
+      color: Colors.white.withValues(alpha: 0.05),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: scheme.accentColor.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() => _expanded = !_expanded),
         child: Padding(
           padding: const EdgeInsets.all(10),
@@ -293,31 +506,17 @@ class _PromptMessageCardState extends State<_PromptMessageCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: scheme.accentColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    scheme.label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.accentColor,
-                    ),
-                  ),
+                  _buildRoleChip(msg.role),
                   if (msg.blockName != null) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         msg.blockName!,
                         style: TextStyle(
                           fontSize: 11,
+                          fontWeight: FontWeight.w500,
                           color: AppColors.textSecondary,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -325,14 +524,13 @@ class _PromptMessageCardState extends State<_PromptMessageCard> {
                     ),
                   ],
                   const Spacer(),
-                  if (widget.showTokens)
-                    Text(
-                      '$tokenCount t',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textSecondary,
-                      ),
+                  Text(
+                    '$tokenCount t',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textSecondary,
                     ),
+                  ),
                   if (msg.isDepth && msg.depth != null) ...[
                     const SizedBox(width: 4),
                     Container(
@@ -400,67 +598,110 @@ class _PromptMessageCardState extends State<_PromptMessageCard> {
       ),
     );
   }
-}
+  Widget _buildRoleChip(String role) {
+    Color bg = const Color(0xFF424242);
+    Color fg = const Color(0xFFE0E0E0);
+    if (role == 'system') {
+      bg = const Color(0xFF1565C0);
+      fg = const Color(0xFFE3F2FD);
+    } else if (role == 'user') {
+      bg = const Color(0xFF7B1FA2);
+      fg = const Color(0xFFF3E5F5);
+    } else if (role == 'assistant') {
+      bg = const Color(0xFF2E7D32);
+      fg = const Color(0xFFE8F5E9);
+    }
 
-_SectionScheme _schemeFor(PromptMessage msg) {
-  if (msg.isLorebook) {
-    return _SectionScheme(
-      label: 'Lorebook',
-      accentColor: Colors.cyan,
-      bgColor: Colors.cyan.withValues(alpha: 0.04),
-    );
-  }
-  if (msg.isDepth) {
-    return _SectionScheme(
-      label: 'Depth Block',
-      accentColor: Colors.orange,
-      bgColor: Colors.orange.withValues(alpha: 0.04),
-    );
-  }
-  if (msg.isHistory) {
-    return _SectionScheme(
-      label: msg.role == 'user' ? 'User' : 'Assistant',
-      accentColor: msg.role == 'user' ? Colors.blue : Colors.green,
-      bgColor: (msg.role == 'user' ? Colors.blue : Colors.green).withValues(
-        alpha: 0.04,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        role.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
       ),
     );
   }
-  if (msg.blockName == 'Memory Book') {
-    return _SectionScheme(
-      label: 'Memory Book',
-      accentColor: Colors.amber,
-      bgColor: Colors.amber.withValues(alpha: 0.04),
-    );
-  }
-  if (msg.blockName == 'Summary') {
-    return _SectionScheme(
-      label: 'Summary',
-      accentColor: Colors.purple,
-      bgColor: Colors.purple.withValues(alpha: 0.04),
-    );
-  }
-  return _SectionScheme(
-    label: msg.blockName ?? msg.role,
-    accentColor: AppColors.accent,
-    bgColor: AppColors.accent.withValues(alpha: 0.04),
-  );
 }
 
-class _SectionScheme {
-  final String label;
-  final Color accentColor;
-  final Color bgColor;
-  const _SectionScheme({
-    required this.label,
-    required this.accentColor,
-    required this.bgColor,
-  });
+class _SegmentedToggle extends StatelessWidget {
+  final bool isRaw;
+  final ValueChanged<bool> onChanged;
+
+  const _SegmentedToggle({required this.isRaw, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!isRaw),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 32,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              left: isRaw ? 32 : 0,
+              top: 0,
+              bottom: 0,
+              width: 32,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 32,
+                  child: Center(
+                    child: Icon(
+                      Icons.visibility,
+                      size: 16,
+                      color: !isRaw ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 32,
+                  child: Center(
+                    child: Icon(
+                      Icons.code,
+                      size: 16,
+                      color: isRaw ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 void showPromptPreviewScreen(BuildContext context, String charId) {
-  GlazeBottomSheet.show(
-    context,
-    child: PromptPreviewScreen(charId: charId),
+  showModalBottomSheet(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => PromptPreviewScreen(charId: charId),
   );
 }

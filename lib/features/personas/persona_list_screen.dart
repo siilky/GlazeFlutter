@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/persona.dart';
+import '../../core/state/active_selection_provider.dart';
 import '../../core/state/db_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
@@ -16,16 +17,20 @@ import 'persona_connections_sheet.dart';
 import 'persona_list_provider.dart';
 
 class PersonaListScreen extends ConsumerWidget {
-  const PersonaListScreen({super.key});
+  final bool startExpanded;
+  const PersonaListScreen({super.key, this.startExpanded = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final personas = ref.watch(personaListProvider);
 
     return SheetView(
+      startExpanded: startExpanded,
       title: 'Personas',
       showBack: true,
-      onBack: () => context.go('/tools'),
+      onBack: startExpanded
+          ? () => context.go('/tools')
+          : () => Navigator.of(context).maybePop(),
       actions: [
         SheetViewAction(
           icon: const Icon(Icons.add, size: 20),
@@ -78,15 +83,26 @@ class _PersonaTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeId = ref.watch(activePersonaIdProvider);
+    final isActive = activeId == persona.id;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: isActive
+            ? AppColors.accent.withValues(alpha: 0.12)
+            : Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: isActive
+              ? AppColors.accent.withValues(alpha: 0.5)
+              : AppColors.border,
+        ),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        onTap: () =>
+            setActivePersona(ref, isActive ? null : persona.id),
         leading: CircleAvatar(
           radius: 24,
           backgroundColor: AppColors.accent.withValues(alpha: 0.18),

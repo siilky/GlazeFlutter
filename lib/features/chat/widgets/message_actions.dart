@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../chat_provider.dart';
+import '../editing_message_provider.dart';
 
 void showMessageContextMenu({
   required BuildContext context,
@@ -17,7 +18,6 @@ void showMessageContextMenu({
   required bool isLast,
   required bool isGenerating,
   required bool isHidden,
-  required int totalMessages,
 }) {
   final notifier = ref.read(chatProvider(charId).notifier);
 
@@ -48,13 +48,7 @@ void showMessageContextMenu({
           label: 'Edit',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
-            showMessageEditDialog(
-              context: context,
-              ref: ref,
-              charId: charId,
-              content: content,
-              messageIndex: messageIndex,
-            );
+            ref.read(editingMessageIndexProvider(charId).notifier).state = messageIndex;
           },
         ),
       if ((!isUser && isLast && !isGenerating) || isError)
@@ -94,26 +88,6 @@ void showMessageContextMenu({
             notifier.branchSession(messageIndex);
           },
         ),
-      if (messageIndex > 0 && !(isGenerating && isLast))
-        BottomSheetItem(
-          icon: Icons.arrow_upward,
-          label: 'Move Up',
-          onTap: () {
-            Navigator.of(context, rootNavigator: true).pop();
-            notifier.moveMessage(messageIndex, messageIndex - 1);
-          },
-        ),
-      if (!isLast &&
-          !(isGenerating && isLast) &&
-          messageIndex < totalMessages - 1)
-        BottomSheetItem(
-          icon: Icons.arrow_downward,
-          label: 'Move Down',
-          onTap: () {
-            Navigator.of(context, rootNavigator: true).pop();
-            notifier.moveMessage(messageIndex, messageIndex + 1);
-          },
-        ),
       BottomSheetItem(
         icon: isHidden ? Icons.visibility : Icons.visibility_off,
         label: isHidden ? 'Unhide' : 'Hide',
@@ -138,41 +112,3 @@ void showMessageContextMenu({
   GlazeBottomSheet.show(context, items: items);
 }
 
-void showMessageEditDialog({
-  required BuildContext context,
-  required WidgetRef ref,
-  required String charId,
-  required String content,
-  required int messageIndex,
-}) {
-  final controller = TextEditingController(text: content);
-  showDialog(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Edit Message'),
-      content: TextField(
-        controller: controller,
-        maxLines: 8,
-        minLines: 3,
-        autofocus: true,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            final newText = controller.text.trim();
-            if (newText.isNotEmpty)
-              ref
-                  .read(chatProvider(charId).notifier)
-                  .editMessage(messageIndex, newText);
-            Navigator.pop(ctx);
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-}

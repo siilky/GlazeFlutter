@@ -41,11 +41,15 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
           ),
         ),
       ],
-      body: PresetEditorBody(
-        key: _editorKey,
-        preset: widget.preset,
-        onSaved: (_) => Navigator.of(context).pop(),
-        onDeleted: () => Navigator.of(context).pop(),
+      body: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        child: PresetEditorBody(
+          key: _editorKey,
+          preset: widget.preset,
+          onSaved: (_) => Navigator.of(context).pop(),
+          onDeleted: () => Navigator.of(context).pop(),
+        ),
       ),
     );
   }
@@ -102,6 +106,11 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        top: MediaQuery.paddingOf(context).top,
+        bottom: MediaQuery.paddingOf(context).bottom +
+            MediaQuery.viewInsetsOf(context).bottom,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -352,23 +361,16 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
   void _editBlockAt(int index) {
     GlazeBottomSheet.show(
       context,
-      title: _blocks[index].name,
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.65,
-        maxChildSize: 0.92,
-        builder: (_, scrollCtrl) => _BlockEditorSheet(
-          block: _blocks[index],
-          scrollController: scrollCtrl,
-          onSave: (updated) {
-            setState(() => _blocks[index] = updated);
-            Navigator.pop(context);
-          },
-          onDelete: () {
-            setState(() => _blocks.removeAt(index));
-            Navigator.pop(context);
-          },
-        ),
+      child: _BlockEditorSheet(
+        block: _blocks[index],
+        onSave: (updated) {
+          setState(() => _blocks[index] = updated);
+          Navigator.pop(context);
+        },
+        onDelete: () {
+          setState(() => _blocks.removeAt(index));
+          Navigator.pop(context);
+        },
       ),
     );
   }
@@ -446,16 +448,9 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
   void _showRegexSheet() {
     GlazeBottomSheet.show(
       context,
-      title: 'Regex Scripts',
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.92,
-        builder: (_, scrollCtrl) => _RegexSheet(
-          regexes: _regexes,
-          scrollController: scrollCtrl,
-          onChanged: (list) => setState(() => _regexes = list),
-        ),
+      child: _RegexSheet(
+        regexes: _regexes,
+        onChanged: (list) => setState(() => _regexes = list),
       ),
     );
   }
@@ -890,13 +885,11 @@ class _SettingsToggle extends StatelessWidget {
 
 class _BlockEditorSheet extends StatefulWidget {
   final PresetBlock block;
-  final ScrollController scrollController;
   final ValueChanged<PresetBlock> onSave;
   final VoidCallback onDelete;
 
   const _BlockEditorSheet({
     required this.block,
-    required this.scrollController,
     required this.onSave,
     required this.onDelete,
   });
@@ -922,17 +915,9 @@ class _BlockEditorSheetState extends State<_BlockEditorSheet> {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Drag handle
-        Container(
-          width: 36,
-          height: 4,
-          margin: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
         // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -970,11 +955,11 @@ class _BlockEditorSheetState extends State<_BlockEditorSheet> {
           ),
         ),
         Divider(color: AppColors.border, height: 1),
-        // Scrollable fields
-        Expanded(
-          child: ListView(
-            controller: widget.scrollController,
-            padding: const EdgeInsets.all(16),
+        // Fields
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _fieldLabel('Block Name'),
               const SizedBox(height: 6),
@@ -1222,12 +1207,10 @@ class _InsertionModeSelector extends StatelessWidget {
 
 class _RegexSheet extends StatefulWidget {
   final List<PresetRegex> regexes;
-  final ScrollController scrollController;
   final ValueChanged<List<PresetRegex>> onChanged;
 
   const _RegexSheet({
     required this.regexes,
-    required this.scrollController,
     required this.onChanged,
   });
 
@@ -1252,17 +1235,9 @@ class _RegexSheetState extends State<_RegexSheet> {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Handle
-        Container(
-          width: 36,
-          height: 4,
-          margin: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
         // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -1302,44 +1277,47 @@ class _RegexSheetState extends State<_RegexSheet> {
         ),
         Divider(color: AppColors.border, height: 1),
         // List
-        Expanded(
-          child: _regexes.isEmpty
-              ? Center(
-                  child: Text(
-                    'No regex scripts',
-                    style: TextStyle(
-                      color: AppColors.textSecondary.withValues(alpha: 0.6),
-                      fontSize: 15,
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  controller: widget.scrollController,
-                  itemCount: _regexes.length,
-                  itemBuilder: (_, i) => Dismissible(
-                    key: ValueKey(_regexes[i].id),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      color: const Color(0xFFFF4444).withValues(alpha: 0.15),
-                      child: const Icon(Icons.delete,
-                          color: Color(0xFFFF4444)),
-                    ),
-                    onDismissed: (_) {
-                      setState(() => _regexes.removeAt(i));
-                      widget.onChanged(_regexes);
-                    },
-                    child: RegexTile(
-                      regex: _regexes[i],
-                      onChanged: (r) {
-                        setState(() => _regexes[i] = r);
-                        widget.onChanged(_regexes);
-                      },
-                    ),
-                  ),
+        if (_regexes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text(
+                'No regex scripts',
+                style: TextStyle(
+                  color: AppColors.textSecondary.withValues(alpha: 0.6),
+                  fontSize: 15,
                 ),
-        ),
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _regexes.length,
+            itemBuilder: (_, i) => Dismissible(
+              key: ValueKey(_regexes[i].id),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                color: const Color(0xFFFF4444).withValues(alpha: 0.15),
+                child: const Icon(Icons.delete,
+                    color: Color(0xFFFF4444)),
+              ),
+              onDismissed: (_) {
+                setState(() => _regexes.removeAt(i));
+                widget.onChanged(_regexes);
+              },
+              child: RegexTile(
+                regex: _regexes[i],
+                onChanged: (r) {
+                  setState(() => _regexes[i] = r);
+                  widget.onChanged(_regexes);
+                },
+              ),
+            ),
+          ),
         // Add regex button
         Padding(
           padding: const EdgeInsets.all(12),
