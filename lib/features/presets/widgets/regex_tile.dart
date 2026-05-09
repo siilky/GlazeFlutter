@@ -11,7 +11,7 @@ class RegexTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ExpansionTile(
+    return _NoPageStorageExpansionTile(
       key: ValueKey(regex.id),
       title: Row(
         children: [
@@ -130,6 +130,30 @@ class RegexTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _NoPageStorageExpansionTile extends StatefulWidget {
+  final Widget title;
+  final List<Widget> children;
+
+  const _NoPageStorageExpansionTile({super.key, required this.title, required this.children});
+
+  @override
+  State<_NoPageStorageExpansionTile> createState() => _NoPageStorageExpansionTileState();
+}
+
+class _NoPageStorageExpansionTileState extends State<_NoPageStorageExpansionTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      initiallyExpanded: _expanded,
+      onExpansionChanged: (v) => setState(() => _expanded = v),
+      title: widget.title,
+      children: widget.children,
     );
   }
 }

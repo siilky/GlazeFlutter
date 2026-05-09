@@ -110,9 +110,23 @@ String _extractColor(String styleAttr) {
   return color;
 }
 
+String _convertInlineTags(String html) {
+  var result = html;
+  for (final entry in [
+    ('strong', '**'), ('b', '**'), ('em', '*'), ('i', '*'),
+    ('del', '~~'), ('s', '~~'), ('u', '__'), ('code', '`'),
+  ]) {
+    result = result.replaceAllMapped(
+      RegExp('<${entry.$1}[^>]*>(.*?)</${entry.$1}>', caseSensitive: false, dotAll: true),
+      (m) => '${entry.$2}${m[1]!}${entry.$2}',
+    );
+  }
+  return result;
+}
+
 String _wrapColored(String color, String content) {
   if (!color.startsWith('#')) return _inline(content);
-  final text = _inline(content);
+  final text = _convertInlineTags(content).replaceAll(RegExp(r'<[^>]+>'), '').trim();
   return text.split('\n').map((line) {
     final trimmed = line.trim();
     if (trimmed.isEmpty) return '';
