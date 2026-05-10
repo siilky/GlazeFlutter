@@ -11,6 +11,25 @@
 - **~~No "Retry Failed" button.~~** Fixed — added to lorebook editor toolbar.
 - **~~`characterFilter` not applied during vector search.~~** Fixed — entries with character filters are now excluded.
 - **~~`keywordVectorSplit` unused.~~** Already implemented in `lorebook_merger.dart`.
+- **~~`initEmbeddingConfigFromDb` never called — vector search/reindex always says "check settings".~~** Fixed — added call in `loadActiveSelections()` so `embeddingConfigProvider` is populated from API config on startup.
+
+### Vector Search Architecture (parity with Glaze JS)
+
+**Algorithm: MaxSim** — `findTopKMulti()` in `vector_math.dart` matches JS exactly:
+- Each entry is chunked → multiple vectors stored per entry
+- Query is also chunked (focused + fallback)
+- Score = `max(cosineSimilarity(q, c))` across all (query_chunk, candidate_chunk) pairs
+- This is NOT average pooling — a single highly relevant paragraph in a long entry can trigger retrieval
+
+**Flow (matches JS):**
+1. Query construction: focused (user messages + current text, ~1024 tokens) + fallback (all recent, ~1536 tokens)
+2. Query chunks embedded via API
+3. MaxSim against all indexed candidates
+4. Hybrid boost: keyword overlap with entry comment (+0.18), keys (+0.04/key, max +0.12), retrieval hints (+0.025/hint, max +0.10)
+5. Merge focused + fallback (best score wins per entry)
+6. Filter by `vectorThreshold`, take top K
+
+**Known difference from JS:** `getEmbeddings()` (single-vector path) averages multi-chunk vectors into one. This is used only by `memory_embedding_service.dart`. Lorebook search uses `getEmbeddingsWithChunks()` which preserves all chunks — correct.
 
 ## Image Generation
 

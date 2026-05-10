@@ -115,7 +115,7 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
     if (session == null) return;
 
     final messages = session.messages.where((m) =>
-        !m.isHidden && !m.isTyping && (m.role == 'user' || m.role == 'assistant')).toList();
+        !m.isTyping && (m.role == 'user' || m.role == 'assistant')).toList();
     if (messages.isEmpty) {
       if (mounted) GlazeToast.show(context, 'No stable messages to scan');
       return;
@@ -185,7 +185,7 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
       );
     });
     await _save();
-    if (mounted) GlazeToast.show(context, '${newDrafts.length} draft placeholders created');
+    if (mounted) GlazeToast.show(context, '${newDrafts.length} drafts created');
   }
 
   void _generateAllPending() {
