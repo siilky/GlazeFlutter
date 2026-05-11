@@ -581,6 +581,14 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           },
         ),
         BottomSheetItem(
+          icon: Icons.drive_file_rename_outline,
+          label: 'Rename',
+          onTap: () {
+            Navigator.of(context).pop();
+            _showRenameDialog(sessionId);
+          },
+        ),
+        BottomSheetItem(
           icon: Icons.delete_outline,
           label: 'Delete',
           isDestructive: true,
@@ -591,6 +599,32 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           },
         ),
       ],
+    );
+  }
+
+  void _showRenameDialog(String sessionId) async {
+    final session = await ref.read(chatRepoProvider).getById(sessionId);
+    if (!mounted || session == null) return;
+    final currentName = session.sessionVars['sessionName']?.isNotEmpty == true
+        ? session.sessionVars['sessionName']!
+        : 'Session #${session.sessionIndex}';
+    GlazeBottomSheet.show(
+      context,
+      title: 'Rename Session',
+      input: BottomSheetInput(
+        placeholder: 'Session name',
+        value: currentName,
+        confirmLabel: 'Rename',
+        onConfirm: (val) {
+          Navigator.pop(context);
+          if (val.trim().isNotEmpty) {
+            final updatedVars = Map<String, String>.from(session.sessionVars);
+            updatedVars['sessionName'] = val.trim();
+            ref.read(chatRepoProvider).put(session.copyWith(sessionVars: updatedVars));
+            ref.invalidate(chatProvider(widget.charId));
+          }
+        },
+      ),
     );
   }
 
@@ -885,7 +919,9 @@ class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
       items: _sessions
           .map(
             (session) => BottomSheetSessionItem(
-              title: 'Session #${session.sessionIndex}',
+              title: session.sessionVars['sessionName']?.isNotEmpty == true
+                  ? session.sessionVars['sessionName']!
+                  : 'Session #${session.sessionIndex}',
               count: session.messages.length,
               time: session.updatedAt == 0
                   ? ''

@@ -494,6 +494,27 @@ class _SessionTile extends ConsumerWidget {
     return '${dt.day}/${dt.month}';
   }
 
+  void _showRenameDialog(BuildContext context, WidgetRef ref) {
+    final currentName = info.sessionName?.isNotEmpty == true
+        ? info.sessionName!
+        : 'Session #${info.sessionIndex}';
+    GlazeBottomSheet.show(
+      context,
+      title: 'Rename Session',
+      input: BottomSheetInput(
+        placeholder: 'Session name',
+        value: currentName,
+        confirmLabel: 'Rename',
+        onConfirm: (val) {
+          Navigator.pop(context);
+          if (val.trim().isNotEmpty) {
+            ref.read(chatHistoryProvider.notifier).renameSession(info.sessionId, val.trim());
+          }
+        },
+      ),
+    );
+  }
+
   void _confirmDelete(BuildContext context, WidgetRef ref) {
     GlazeBottomSheet.show(
       context,
@@ -536,6 +557,14 @@ class _SessionTile extends ConsumerWidget {
               charId: info.characterId,
               sessionId: info.sessionId,
             );
+          },
+        ),
+        BottomSheetItem(
+          icon: Icons.drive_file_rename_outline,
+          label: 'Rename',
+          onTap: () {
+            Navigator.of(context).pop();
+            _showRenameDialog(context, ref);
           },
         ),
         BottomSheetItem(
