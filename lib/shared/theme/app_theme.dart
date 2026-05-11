@@ -7,9 +7,12 @@ import 'app_colors.dart';
 import 'theme_preset.dart';
 
 class AppTheme {
-  static ThemeData dark(ThemePreset preset) {
+  static ThemeData dark(ThemePreset preset, {String? fontFamily}) {
     final accent = preset.accent;
     final c = GlazeColors.fromPreset(preset, isDark: true);
+    final effectiveFont = fontFamily ?? GoogleFonts.inter().fontFamily;
+    final uiSize = preset.uiFontSizeValue;
+    final uiSpacing = preset.uiLetterSpacing;
 
     final base = FlexThemeData.dark(
       colors: FlexSchemeColor.from(
@@ -27,7 +30,7 @@ class AppTheme {
         dialogRadius: 16,
       ),
       visualDensity: VisualDensity.compact,
-      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamily: effectiveFont,
     );
 
     return base.copyWith(
@@ -74,6 +77,8 @@ class AppTheme {
       textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
         bodyColor: c.textPrimary,
         displayColor: c.textPrimary,
+        fontSizeDelta: (preset.uiFontSize is num) ? uiSize - 14.0 : 0.0,
+        letterSpacingDelta: uiSpacing,
       ),
       extensions: [
         c,
@@ -94,9 +99,12 @@ class AppTheme {
     );
   }
 
-  static ThemeData light(ThemePreset preset) {
+  static ThemeData light(ThemePreset preset, {String? fontFamily}) {
     final accent = preset.accent;
     final c = GlazeColors.fromPreset(preset, isDark: false);
+    final effectiveFont = fontFamily ?? GoogleFonts.inter().fontFamily;
+    final uiSize = preset.uiFontSizeValue;
+    final uiSpacing = preset.uiLetterSpacing;
 
     final base = FlexThemeData.light(
       colors: FlexSchemeColor.from(
@@ -114,7 +122,7 @@ class AppTheme {
         dialogRadius: 16,
       ),
       visualDensity: VisualDensity.compact,
-      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamily: effectiveFont,
     );
 
     return base.copyWith(
@@ -161,6 +169,8 @@ class AppTheme {
       textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
         bodyColor: c.textPrimary,
         displayColor: c.textPrimary,
+        fontSizeDelta: (preset.uiFontSize is num) ? uiSize - 14.0 : 0.0,
+        letterSpacingDelta: uiSpacing,
       ),
       extensions: [
         c,

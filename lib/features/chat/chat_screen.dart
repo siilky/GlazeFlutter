@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,10 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/state/character_provider.dart';
 import '../../shared/theme/app_colors.dart';
+import '../../shared/theme/theme_font_provider.dart';
+import '../../shared/theme/theme_provider.dart';
 
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/glaze_toast.dart';
+import '../../shared/widgets/noise_overlay.dart';
 import '../settings/app_settings_provider.dart';
 import 'chat_actions_service.dart';
 import 'chat_provider.dart';
@@ -403,8 +407,26 @@ class _ChatBody extends ConsumerWidget {
     final messageListBottom =
         _inputBarApproxHeight + targetBottomPanelInset + safeBottom;
 
+    final preset = ref.watch(themeProvider).activePreset;
+
     return Stack(
       children: [
+        if (ref.watch(bgImageProvider).valueOrNull case final path?)
+          Positioned.fill(
+            child: Image.file(
+              File(path),
+              fit: BoxFit.cover,
+              opacity: AlwaysStoppedAnimation(preset.bgOpacity.clamp(0.0, 1.0)),
+            ),
+          ),
+        if (preset.bgNoiseOpacity > 0)
+          Positioned.fill(
+            child: NoiseOverlay(opacity: preset.bgNoiseOpacity, intensity: preset.bgNoiseIntensity),
+          ),
+        if (preset.noiseOpacity > 0)
+          Positioned.fill(
+            child: NoiseOverlay(opacity: preset.noiseOpacity, intensity: preset.noiseIntensity),
+          ),
         Positioned.fill(
           child: NotificationListener<UserScrollNotification>(
             onNotification: (notification) {

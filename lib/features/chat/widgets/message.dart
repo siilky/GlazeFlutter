@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,8 +18,12 @@ import '../../../shared/theme/app_colors.dart';
 import '../../../features/personas/persona_list_provider.dart';
 import '../../../shared/widgets/pencil_animation.dart';
 import '../../../shared/widgets/rolling_number.dart';
+import '../../../shared/widgets/colored_markdown.dart';
 import '../../../shared/widgets/image_viewer.dart';
 import '../../../shared/widgets/glaze_toast.dart';
+import '../../../shared/theme/theme_font_provider.dart';
+import '../../../shared/theme/theme_provider.dart';
+import '../../../shared/theme/theme_preset.dart';
 import '../../image_gen/widgets/image_content_renderer.dart';
 import '../../settings/app_settings_provider.dart';
 import '../chat_provider.dart';
@@ -431,7 +436,13 @@ class _MessageState extends ConsumerState<Message>
         ? content
         : applyRegexes(content, placement, 1, regexScripts, regexCtx);
 
-    final style = _BubbleStyle.resolve(context: context, isStandard: isStandard, isUser: isUser, isSystem: isSystem);
+    final style = _BubbleStyle.resolve(
+      context: context,
+      isStandard: isStandard,
+      isUser: isUser,
+      isSystem: isSystem,
+      preset: ref.watch(themeProvider).activePreset,
+    );
 
     final personas = ref.watch(personaListProvider).value ?? [];
     final activePersonaId = ref.watch(activePersonaIdProvider);
@@ -457,49 +468,49 @@ class _MessageState extends ConsumerState<Message>
         ? tokens
         : (isUser && content.isNotEmpty ? estimateTokens(content) : null);
 
-    Widget bubble = Align(
-      alignment: style.alignment,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: isStandard ? double.infinity : MediaQuery.of(context).size.width * 0.88),
-        child: FadeTransition(
-          opacity: _appearanceFade,
-          child: SlideTransition(
-            position: _appearanceSlide,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              margin: EdgeInsets.symmetric(horizontal: isStandard ? 16 : 12, vertical: isStandard ? 8 : 4),
-              padding: isStandard ? const EdgeInsets.all(0) : const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _highlighted ? context.colors.accent.withValues(alpha: 0.15) : style.bg,
-                borderRadius: isStandard ? BorderRadius.zero : BorderRadius.circular(16),
-                border: isStandard ? null : Border.all(color: context.colors.border.withValues(alpha: 0.2)),
+    final preset = ref.watch(themeProvider).activePreset;
+    final container = AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: EdgeInsets.symmetric(horizontal: isStandard ? 16 : 12, vertical: isStandard ? 8 : 4),
+      padding: isStandard ? const EdgeInsets.all(0) : const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _highlighted
+            ? context.colors.accent.withValues(alpha: 0.15)
+            : style.bg.withValues(alpha: style.elementOpacity),
+        borderRadius: isStandard ? BorderRadius.zero : BorderRadius.circular(16),
+        border: isStandard || style.borderWidth <= 0
+            ? null
+            : Border.all(
+                color: style.borderColor.withValues(alpha: preset.borderOpacity),
+                width: style.borderWidth,
               ),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  if (_slideDir == _SlideDirection.none) {
-                    return FadeTransition(opacity: animation, child: child);
-                  }
-                  
-                  final isOut = child.key != ValueKey('${widget.swipeId}-${widget.greetingIndex}');
-                  final offset = _slideDir == _SlideDirection.next 
-                      ? (isOut ? const Offset(-0.1, 0) : const Offset(0.1, 0))
-                      : (isOut ? const Offset(0.1, 0) : const Offset(-0.1, 0));
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          if (_slideDir == _SlideDirection.none) {
+            return FadeTransition(opacity: animation, child: child);
+          }
 
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: offset,
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  );
-                },
-                child: KeyedSubtree(
-                  key: ValueKey('${widget.swipeId}-${widget.greetingIndex}'),
-                  child: Column(
+          final isOut = child.key != ValueKey('${widget.swipeId}-${widget.greetingIndex}');
+          final offset = _slideDir == _SlideDirection.next
+              ? (isOut ? const Offset(-0.1, 0) : const Offset(0.1, 0))
+              : (isOut ? const Offset(0.1, 0) : const Offset(-0.1, 0));
+
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: offset,
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey('${widget.swipeId}-${widget.greetingIndex}'),
+          child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -567,7 +578,12 @@ class _MessageState extends ConsumerState<Message>
             else
               GptMarkdown(
                 _highlightPhrases(hasHtmlTags(displayContent) ? htmlToMarkdown(displayContent) : displayContent),
-                style: TextStyle(color: textColor),
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: ref.watch(chatFontSizeProvider),
+                  letterSpacing: ref.watch(chatLetterSpacingProvider),
+                  fontFamily: ref.watch(chatFontFamilyProvider).valueOrNull,
+                ),
                 components: [
                   CodeBlockMd(),
                   LatexMathMultiLine(),
@@ -593,8 +609,8 @@ class _MessageState extends ConsumerState<Message>
                   ActiveMarkMd(activeKey: _activePhraseKey),
                   TableMd(),
                   StrikeMd(),
-                  BoldMd(),
-                  ItalicMd(),
+                  ColoredBoldMd(color: style.italicColor),
+                  ColoredItalicMd(color: style.italicColor),
                   UnderLineMd(),
                   LatexMath(),
                   LatexMathMultiLine(),
@@ -637,11 +653,32 @@ class _MessageState extends ConsumerState<Message>
         ),
       ),
     ),
-  ),
-),
-),
-),
-);
+    );
+
+    Widget decorated = container;
+    if (!isStandard && style.elementBlur > 0) {
+      decorated = ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: style.elementBlur, sigmaY: style.elementBlur),
+          child: container,
+        ),
+      );
+    }
+
+    Widget bubble = Align(
+      alignment: style.alignment,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: isStandard ? double.infinity : MediaQuery.of(context).size.width * 0.88),
+        child: FadeTransition(
+          opacity: _appearanceFade,
+          child: SlideTransition(
+            position: _appearanceSlide,
+            child: decorated,
+          ),
+        ),
+      ),
+    );
 
     Widget bubbleWidget = isHidden ? Opacity(opacity: 0.45, child: bubble) : bubble;
 
@@ -862,6 +899,10 @@ class _BubbleStyle {
   final Color quoteColor;
   final Color metaColor;
   final Color? italicColor;
+  final double elementOpacity;
+  final double elementBlur;
+  final double borderWidth;
+  final Color borderColor;
 
   const _BubbleStyle({
     required this.bg,
@@ -870,6 +911,10 @@ class _BubbleStyle {
     required this.quoteColor,
     required this.metaColor,
     this.italicColor,
+    this.elementOpacity = 1.0,
+    this.elementBlur = 0,
+    this.borderWidth = 0,
+    this.borderColor = Colors.transparent,
   });
 
   factory _BubbleStyle.resolve({
@@ -877,8 +922,14 @@ class _BubbleStyle {
     required bool isStandard,
     required bool isUser,
     required bool isSystem,
+    required ThemePreset preset,
   }) {
     final colors = context.colors;
+    final elOp = isStandard ? 1.0 : preset.elementOpacity;
+    final elBlur = isStandard ? 0.0 : preset.elementBlur;
+    final bw = isStandard ? 0.0 : preset.borderWidth;
+    final bc = preset.borderParsed ?? colors.border;
+
     if (isStandard) {
       return _BubbleStyle(
         bg: Colors.transparent,
@@ -897,6 +948,10 @@ class _BubbleStyle {
         quoteColor: colors.userQuote ?? colors.accent,
         metaColor: colors.userText?.withValues(alpha: 0.6) ?? colors.textSecondary,
         italicColor: colors.userItalic,
+        elementOpacity: elOp,
+        elementBlur: elBlur,
+        borderWidth: bw,
+        borderColor: bc,
       );
     }
     if (isSystem) {
@@ -907,6 +962,10 @@ class _BubbleStyle {
         quoteColor: colors.charQuote ?? colors.accent,
         metaColor: colors.charText?.withValues(alpha: 0.6) ?? colors.textSecondary,
         italicColor: colors.charItalic,
+        elementOpacity: elOp,
+        elementBlur: elBlur,
+        borderWidth: bw,
+        borderColor: bc,
       );
     }
     return _BubbleStyle(
@@ -916,6 +975,10 @@ class _BubbleStyle {
       quoteColor: colors.charQuote ?? colors.accent,
       metaColor: colors.charText?.withValues(alpha: 0.6) ?? colors.textSecondary,
       italicColor: colors.charItalic,
+      elementOpacity: elOp,
+      elementBlur: elBlur,
+      borderWidth: bw,
+      borderColor: bc,
     );
   }
 }

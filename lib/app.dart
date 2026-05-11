@@ -8,6 +8,7 @@ import 'core/services/generation_notification_service.dart';
 import 'core/state/active_selection_provider.dart';
 import 'core/state/lorebook_provider.dart';
 import 'core/services/preset_seeder.dart';
+import 'shared/theme/theme_font_provider.dart';
 import 'core/services/onboarding_service.dart';
 import 'features/character_list/character_detail_screen.dart';
 import 'features/character_list/character_editor_screen.dart';
@@ -185,10 +186,11 @@ class _GlazeAppState extends ConsumerState<GlazeApp> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeSettings = ref.watch(themeProvider);
+    final uiFont = ref.watch(uiFontFamilyProvider).valueOrNull;
     return MaterialApp.router(
       title: 'Glaze',
-      theme: AppTheme.light(themeSettings.activePreset),
-      darkTheme: AppTheme.dark(themeSettings.activePreset),
+      theme: AppTheme.light(themeSettings.activePreset, fontFamily: uiFont),
+      darkTheme: AppTheme.dark(themeSettings.activePreset, fontFamily: uiFont),
       themeMode: themeSettings.mode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
