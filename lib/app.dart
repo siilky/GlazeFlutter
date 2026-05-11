@@ -25,6 +25,7 @@ import 'features/regex/regex_list_screen.dart';
 import 'features/settings/api_settings_screen.dart';
 import 'features/cloud_sync/widgets/sync_sheet.dart';
 import 'features/settings/app_settings_screen.dart';
+import 'features/settings/theme_preset_screen.dart';
 import 'features/tools/tools_screen.dart';
 import 'shared/shell/shell_screen.dart';
 import 'shared/theme/app_theme.dart';
@@ -129,6 +130,7 @@ final routerProvider = Provider<GoRouter>(
       ),
 
       GoRoute(path: '/settings', builder: (_, __) => const AppSettingsScreen()),
+      GoRoute(path: '/themes', builder: (_, __) => const ThemePresetScreen()),
       GoRoute(path: '/sync', builder: (_, __) => const SyncSheet()),
       GoRoute(path: '/backup', builder: (_, __) => const BackupScreen()),
     ],
@@ -185,8 +187,8 @@ class _GlazeAppState extends ConsumerState<GlazeApp> with WidgetsBindingObserver
     final themeSettings = ref.watch(themeProvider);
     return MaterialApp.router(
       title: 'Glaze',
-      theme: AppTheme.light(accent: themeSettings.accentColor),
-      darkTheme: AppTheme.dark(accent: themeSettings.accentColor),
+      theme: AppTheme.light(themeSettings.activePreset),
+      darkTheme: AppTheme.dark(themeSettings.activePreset),
       themeMode: themeSettings.mode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,

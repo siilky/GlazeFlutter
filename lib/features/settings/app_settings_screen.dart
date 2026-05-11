@@ -55,7 +55,7 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
           items: [
             MenuItem(
               icon: Icons.palette_outlined,
-              label: 'Custom Theme',
+              label: 'Themes',
               trailing: Container(
                 width: 12,
                 height: 12,
@@ -64,7 +64,7 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                   shape: BoxShape.circle,
                 ),
               ),
-              onTap: () => _showAccentPicker(context, ref),
+              onTap: () => context.push('/themes'),
             ),
             MenuItem(
               icon: Icons.brightness_6_outlined,

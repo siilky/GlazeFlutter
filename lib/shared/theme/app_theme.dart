@@ -1,17 +1,36 @@
+import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import 'app_colors.dart';
+import 'theme_preset.dart';
 
 class AppTheme {
-  static ThemeData dark({Color? accent}) {
-    final a = accent ?? AppColors.accent;
-    final c = GlazeColors.dark.withAccent(a);
+  static ThemeData dark(ThemePreset preset) {
+    final accent = preset.accent;
+    final c = GlazeColors.dark.withAccent(accent);
 
-    final base = ThemeData(
-      brightness: Brightness.dark,
-      colorSchemeSeed: a,
+    final base = FlexThemeData.dark(
+      colors: FlexSchemeColor.from(
+        primary: accent,
+        secondary: accent,
+        tertiary: accent,
+      ),
       useMaterial3: true,
+      surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
+      blendLevel: 0,
+      subThemesData: const FlexSubThemesData(
+        inputDecoratorIsFilled: true,
+        inputDecoratorBorderType: FlexInputBorderType.outline,
+        cardRadius: 16,
+        dialogRadius: 16,
+      ),
+      visualDensity: VisualDensity.compact,
+      fontFamily: GoogleFonts.inter().fontFamily,
+    );
+
+    return base.copyWith(
       scaffoldBackgroundColor: c.background,
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -40,22 +59,21 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: a),
+          borderSide: BorderSide(color: accent),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: a,
+          backgroundColor: accent,
           foregroundColor: Colors.black,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(8)),
           ),
         ),
       ),
-      textTheme: TextTheme(
-        bodyLarge: TextStyle(color: c.textPrimary),
-        bodyMedium: TextStyle(color: c.textPrimary),
-        bodySmall: TextStyle(color: c.textSecondary),
+      textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
+        bodyColor: c.textPrimary,
+        displayColor: c.textPrimary,
       ),
       extensions: [
         c,
@@ -74,23 +92,32 @@ class AppTheme {
         ),
       ],
     );
-
-    return base.copyWith(
-      textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
-        bodyColor: c.textPrimary,
-        displayColor: c.textPrimary,
-      ),
-    );
   }
 
-  static ThemeData light({Color? accent}) {
-    final a = accent ?? AppColors.accent;
-    final c = GlazeColors.light.withAccent(a);
+  static ThemeData light(ThemePreset preset) {
+    final accent = preset.accent;
+    final c = GlazeColors.light.withAccent(accent);
 
-    final base = ThemeData(
-      brightness: Brightness.light,
-      colorSchemeSeed: a,
+    final base = FlexThemeData.light(
+      colors: FlexSchemeColor.from(
+        primary: accent,
+        secondary: accent,
+        tertiary: accent,
+      ),
       useMaterial3: true,
+      surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
+      blendLevel: 0,
+      subThemesData: const FlexSubThemesData(
+        inputDecoratorIsFilled: true,
+        inputDecoratorBorderType: FlexInputBorderType.outline,
+        cardRadius: 16,
+        dialogRadius: 16,
+      ),
+      visualDensity: VisualDensity.compact,
+      fontFamily: GoogleFonts.inter().fontFamily,
+    );
+
+    return base.copyWith(
       scaffoldBackgroundColor: c.background,
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -119,22 +146,21 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: a),
+          borderSide: BorderSide(color: accent),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: a,
+          backgroundColor: accent,
           foregroundColor: Colors.black,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(8)),
           ),
         ),
       ),
-      textTheme: TextTheme(
-        bodyLarge: TextStyle(color: c.textPrimary),
-        bodyMedium: TextStyle(color: c.textPrimary),
-        bodySmall: TextStyle(color: c.textSecondary),
+      textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
+        bodyColor: c.textPrimary,
+        displayColor: c.textPrimary,
       ),
       extensions: [
         c,
@@ -152,13 +178,6 @@ class AppTheme {
           h6: TextStyle(color: c.textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ],
-    );
-
-    return base.copyWith(
-      textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
-        bodyColor: c.textPrimary,
-        displayColor: c.textPrimary,
-      ),
     );
   }
 }
