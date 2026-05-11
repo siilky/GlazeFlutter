@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/settings/api_list_provider.dart';
 import '../models/character.dart';
 import '../models/lorebook.dart';
 import '../state/db_provider.dart';
@@ -272,9 +273,8 @@ final embeddingConfigProvider = StateProvider<EmbeddingConfig>((ref) {
 });
 
 Future<void> initEmbeddingConfigFromDb(WidgetRef ref) async {
-  final apiConfigs = await ref.read(apiConfigRepoProvider).getAll();
-  final chatConfig = apiConfigs.where((c) => c.mode != 'embedding').firstOrNull;
-  if (chatConfig != null) {
+  final chatConfig = ref.read(activeApiConfigProvider);
+  if (chatConfig != null && chatConfig.mode != 'embedding') {
     if (chatConfig.embeddingUseSame || chatConfig.embeddingEndpoint.isEmpty) {
       ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
         endpoint: chatConfig.endpoint,

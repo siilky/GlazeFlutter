@@ -13,6 +13,7 @@ import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../core/state/db_provider.dart';
 import '../image_gen/image_gen_provider.dart';
+import '../settings/api_list_provider.dart';
 import '../image_gen/services/image_gen_service.dart';
 import 'chat_provider.dart';
 import 'chat_state.dart';
@@ -180,9 +181,8 @@ class ChatGenerationService {
     final service = _ref.read(imageGenSettingsProvider.notifier).getService();
     if (!service.hasImageGenTags(lastMsg.content)) return;
 
-    final apiConfigs = await _ref.read(apiConfigRepoProvider).getAll();
-    if (apiConfigs.isEmpty) return;
-    final apiConfig = apiConfigs.first;
+    final apiConfig = _ref.read(activeApiConfigProvider);
+    if (apiConfig == null) return;
 
     final charRepo = _ref.read(characterRepoProvider);
     final character = await charRepo.getById(charId);

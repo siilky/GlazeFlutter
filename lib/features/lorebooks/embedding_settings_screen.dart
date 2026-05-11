@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../settings/api_list_provider.dart';
+
 import '../../../core/llm/embedding_service.dart';
 import '../../../core/llm/lorebook_vector_search.dart';
 import '../../../core/state/db_provider.dart';
@@ -54,9 +56,8 @@ class _EmbeddingSettingsScreenState
   }
 
   Future<void> _initFromDb() async {
-    final apiConfigs = await ref.read(apiConfigRepoProvider).getAll();
-    final chatConfig = apiConfigs.where((c) => c.mode != 'embedding').firstOrNull;
-    if (chatConfig != null && mounted) {
+    final chatConfig = ref.read(activeApiConfigProvider);
+    if (chatConfig != null && chatConfig.mode != 'embedding' && mounted) {
       String ep, ak, md;
       if (chatConfig.embeddingUseSame || chatConfig.embeddingEndpoint.isEmpty) {
         ep = chatConfig.endpoint;
