@@ -51,7 +51,7 @@
 
 ## Prompt Building
 
-- **Character card content injected with labels instead of raw content.** In some presets, the `char_card` block content is `""` (empty, `isStatic: true`) and `resolveBlockContent` correctly falls back to `char.description`. But Glaze JS uses a custom block (e.g. "character definitions" with `{{description}}`) that wraps content in `<scenario>`/`<info>` tags. Flutter's default seeder and fallback builder inject bare `char.description` without any formatting context. Need to investigate: (1) does `char_card` with empty content + `isStatic: true` produce "Character Name: / Character Description:" labels somewhere in the pipeline? (2) Should the default `char_card` block use a template with `{{description}}` instead of relying on the fallback? (3) Match JS behavior where marker blocks (`isStatic`) inject the raw field value without labels.
+- **~~Character card content injected with labels instead of raw content.~~** Investigated — `char_card` block correctly uses `rawContent` or falls back to `char.description` without labels. No "Character Name:"/"Character Description:" labels found in the pipeline. The only label injection is in `user_persona` which adds "User Name:"/"User Description:" — this is intentional.
 
 ## Image Generation
 
@@ -101,7 +101,7 @@
 
 - **~~`{{reasoningPrefix}}`/`{{reasoningSuffix}}` no API fallback.~~** Fixed — macro engine now falls back to `<think` / `</think` (with closing `>`) matching JS `APISettings.js` defaults, instead of empty string.
 
-- **`{{pick}}` uses match-text hash instead of counter.** JS increments `pickCount++` per pick, so two identical `{{pick::a::b}}` at different positions produce different results. Flutter hashes the macro text, so identical macros always produce the same result. JS also supports `__pick_version` session var for re-rolling all picks.
+- **~~`{{pick}}` uses match-text hash instead of counter.~~** Fixed — now uses `pickCount` counter incremented per pick within `replaceMacros()`, matching JS `pickCount++`. Also supports `__pick_version` session var for re-rolling.
 
 - **~~`_simpleHash` produces different results.~~** Fixed — changed from `& 0x7FFFFFFF` to `(hash | 0).toSigned(32)` → `.abs()` matching JS `|= 0` → `Math.abs`.
 
