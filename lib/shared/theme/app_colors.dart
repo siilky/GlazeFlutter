@@ -97,24 +97,31 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
   static GlazeColors fromPreset(ThemePreset preset, {required bool isDark}) {
     final base = isDark ? dark : light;
     final accent = preset.accent;
+    final userBubble = preset.userBubbleParsed ?? accent;
+    final charBubble = preset.charBubbleParsed ?? base.charBubble;
     return base.copyWith(
       accent: accent,
       activeTab: accent,
-      userBubble: preset.userBubbleParsed ?? accent,
-      charBubble: preset.charBubbleParsed ?? base.charBubble,
+      userBubble: userBubble,
+      charBubble: charBubble,
       border: preset.borderParsed ?? base.border,
       textPrimary: preset.uiTextParsed ?? base.textPrimary,
       textSecondary: preset.uiTextGrayParsed ?? base.textSecondary,
       surface: preset.uiColorParsed ?? base.surface,
       surfaceHigh: preset.uiColorParsed ?? base.surfaceHigh,
       background: preset.uiColorParsed ?? base.background,
-      userText: preset.userTextParsed,
-      charText: preset.charTextParsed,
+      userText: preset.userTextParsed ?? _contrastFor(userBubble),
+      charText: preset.charTextParsed ?? _contrastFor(charBubble),
       userQuote: preset.userQuoteParsed,
       charQuote: preset.charQuoteParsed,
       userItalic: preset.userItalicParsed,
       charItalic: preset.charItalicParsed,
     );
+  }
+
+  static Color _contrastFor(Color bg) {
+    final lum = bg.computeLuminance();
+    return lum > 0.4 ? const Color(0xFF1A1A1B) : const Color(0xFFE1E3E6);
   }
 
   @override
