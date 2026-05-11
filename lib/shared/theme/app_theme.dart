@@ -9,7 +9,7 @@ import 'theme_preset.dart';
 class AppTheme {
   static ThemeData dark(ThemePreset preset) {
     final accent = preset.accent;
-    final c = GlazeColors.dark.withAccent(accent);
+    final c = GlazeColors.fromPreset(preset, isDark: true);
 
     final base = FlexThemeData.dark(
       colors: FlexSchemeColor.from(
@@ -96,7 +96,7 @@ class AppTheme {
 
   static ThemeData light(ThemePreset preset) {
     final accent = preset.accent;
-    final c = GlazeColors.light.withAccent(accent);
+    final c = GlazeColors.fromPreset(preset, isDark: false);
 
     final base = FlexThemeData.light(
       colors: FlexSchemeColor.from(

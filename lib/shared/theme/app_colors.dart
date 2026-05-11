@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'theme_preset.dart';
+
 class AppColors {
   static const Color background = Color(0xFF19191A);
   static const Color surface = Color(0xFF19191A);
@@ -28,6 +30,12 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
   final Color glassBorder;
   final Color userBubble;
   final Color charBubble;
+  final Color? userText;
+  final Color? charText;
+  final Color? userQuote;
+  final Color? charQuote;
+  final Color? userItalic;
+  final Color? charItalic;
 
   const GlazeColors({
     required this.background,
@@ -42,6 +50,12 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
     required this.glassBorder,
     required this.userBubble,
     required this.charBubble,
+    this.userText,
+    this.charText,
+    this.userQuote,
+    this.charQuote,
+    this.userItalic,
+    this.charItalic,
   });
 
   static const dark = GlazeColors(
@@ -80,6 +94,29 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
         userBubble: c,
       );
 
+  static GlazeColors fromPreset(ThemePreset preset, {required bool isDark}) {
+    final base = isDark ? dark : light;
+    final accent = preset.accent;
+    return base.copyWith(
+      accent: accent,
+      activeTab: accent,
+      userBubble: preset.userBubbleParsed ?? accent,
+      charBubble: preset.charBubbleParsed ?? base.charBubble,
+      border: preset.borderParsed ?? base.border,
+      textPrimary: preset.uiTextParsed ?? base.textPrimary,
+      textSecondary: preset.uiTextGrayParsed ?? base.textSecondary,
+      surface: preset.uiColorParsed ?? base.surface,
+      surfaceHigh: preset.uiColorParsed ?? base.surfaceHigh,
+      background: preset.uiColorParsed ?? base.background,
+      userText: preset.userTextParsed,
+      charText: preset.charTextParsed,
+      userQuote: preset.userQuoteParsed,
+      charQuote: preset.charQuoteParsed,
+      userItalic: preset.userItalicParsed,
+      charItalic: preset.charItalicParsed,
+    );
+  }
+
   @override
   GlazeColors copyWith({
     Color? background,
@@ -94,6 +131,12 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
     Color? glassBorder,
     Color? userBubble,
     Color? charBubble,
+    Color? userText,
+    Color? charText,
+    Color? userQuote,
+    Color? charQuote,
+    Color? userItalic,
+    Color? charItalic,
   }) {
     return GlazeColors(
       background: background ?? this.background,
@@ -108,6 +151,12 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
       glassBorder: glassBorder ?? this.glassBorder,
       userBubble: userBubble ?? this.userBubble,
       charBubble: charBubble ?? this.charBubble,
+      userText: userText ?? this.userText,
+      charText: charText ?? this.charText,
+      userQuote: userQuote ?? this.userQuote,
+      charQuote: charQuote ?? this.charQuote,
+      userItalic: userItalic ?? this.userItalic,
+      charItalic: charItalic ?? this.charItalic,
     );
   }
 
@@ -127,6 +176,12 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
       glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
       userBubble: Color.lerp(userBubble, other.userBubble, t)!,
       charBubble: Color.lerp(charBubble, other.charBubble, t)!,
+      userText: Color.lerp(userText, other.userText, t),
+      charText: Color.lerp(charText, other.charText, t),
+      userQuote: Color.lerp(userQuote, other.userQuote, t),
+      charQuote: Color.lerp(charQuote, other.charQuote, t),
+      userItalic: Color.lerp(userItalic, other.userItalic, t),
+      charItalic: Color.lerp(charItalic, other.charItalic, t),
     );
   }
 }

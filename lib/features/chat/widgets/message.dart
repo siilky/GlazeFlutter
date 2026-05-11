@@ -880,17 +880,17 @@ class _BubbleStyle {
       return _BubbleStyle(
         bg: Colors.transparent,
         alignment: Alignment.centerLeft,
-        textColor: colors.textPrimary,
-        quoteColor: colors.accent,
+        textColor: isUser ? (colors.userText ?? colors.textPrimary) : (colors.charText ?? colors.textPrimary),
+        quoteColor: isUser ? (colors.userQuote ?? colors.accent) : (colors.charQuote ?? colors.accent),
         metaColor: colors.textSecondary,
       );
     }
     if (isUser) {
       return _BubbleStyle(
-        bg: colors.background.withValues(alpha: 0.8),
+        bg: colors.userBubble.withValues(alpha: 0.8),
         alignment: Alignment.centerRight,
-        textColor: colors.textPrimary,
-        quoteColor: colors.accent,
+        textColor: colors.userText ?? colors.textPrimary,
+        quoteColor: colors.userQuote ?? colors.accent,
         metaColor: colors.textSecondary,
       );
     }
@@ -898,16 +898,16 @@ class _BubbleStyle {
       return _BubbleStyle(
         bg: colors.charBubble.withValues(alpha: 0.8),
         alignment: Alignment.center,
-        textColor: colors.textPrimary,
-        quoteColor: colors.accent,
+        textColor: colors.charText ?? colors.textPrimary,
+        quoteColor: colors.charQuote ?? colors.accent,
         metaColor: colors.textSecondary,
       );
     }
     return _BubbleStyle(
-      bg: colors.accent.withValues(alpha: 0.8),
+      bg: colors.charBubble.withValues(alpha: 0.8),
       alignment: Alignment.centerLeft,
-      textColor: colors.textPrimary,
-      quoteColor: colors.accent,
+      textColor: colors.charText ?? colors.textPrimary,
+      quoteColor: colors.charQuote ?? colors.accent,
       metaColor: colors.textSecondary,
     );
   }
