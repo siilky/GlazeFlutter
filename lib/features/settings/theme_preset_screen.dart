@@ -137,7 +137,7 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: context.cs.primary,
+                      color: _contrastColor(context.colors.accent, context.cs.surfaceContainerHighest),
                     ),
                   ),
                 ],
@@ -150,22 +150,48 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
   }
 
   Widget _buildImportButton(BuildContext context) {
+    final btnBg = _contrastColor(context.colors.accent, context.cs.surface);
+    final btnFg = btnBg.computeLuminance() > 0.35
+        ? const Color(0xFF1A1A1B)
+        : const Color(0xFFE1E3E6);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: OutlinedButton.icon(
+      child: ElevatedButton.icon(
         onPressed: _importTheme,
-        icon: Icon(Icons.file_download_outlined, color: context.cs.primary),
+        icon: Icon(Icons.file_download_outlined, color: btnFg),
         label: Text(
           'Import Theme',
-          style: TextStyle(color: context.cs.primary),
+          style: TextStyle(color: btnFg, fontWeight: FontWeight.w600),
         ),
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: context.cs.primary.withAlpha(100)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: btnBg,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );
+  }
+
+  static Color _contrastColor(Color accent, Color surface) {
+    if (_contrastRatio(accent, surface) >= 4.5) return accent;
+    final hsl = HSLColor.fromColor(accent);
+    double l = hsl.lightness;
+    for (int i = 0; i < 20; i++) {
+      l = surface.computeLuminance() < 0.5 ? l + 0.04 : l - 0.04;
+      final c = HSLColor.fromAHSL(1.0, hsl.hue, hsl.saturation, l.clamp(0.0, 1.0)).toColor();
+      if (_contrastRatio(c, surface) >= 4.5) return c;
+    }
+    return surface.computeLuminance() < 0.5
+        ? HSLColor.fromAHSL(1.0, hsl.hue, hsl.saturation, 0.6).toColor()
+        : HSLColor.fromAHSL(1.0, hsl.hue, hsl.saturation, 0.4).toColor();
+  }
+
+  static double _contrastRatio(Color a, Color b) {
+    final l1 = a.computeLuminance();
+    final l2 = b.computeLuminance();
+    final lighter = l1 > l2 ? l1 : l2;
+    final darker = l1 > l2 ? l2 : l1;
+    return (lighter + 0.05) / (darker + 0.05);
   }
 
   Widget _buildPresetTile(BuildContext context, ThemePreset preset, bool isActive) {
@@ -206,7 +232,7 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (isActive)
-            Icon(Icons.check_circle, color: context.cs.primary, size: 20),
+            Icon(Icons.check_circle, color: _contrastColor(context.colors.accent, context.cs.surface), size: 20),
           if (!isActive)
             IconButton(
               icon: Icon(Icons.play_arrow, color: context.cs.onSurfaceVariant, size: 20),
