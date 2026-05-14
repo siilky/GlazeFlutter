@@ -456,14 +456,6 @@ class _ChatBody extends ConsumerWidget {
               ),
             ),
           ),
-        if (preset.bgNoiseOpacity > 0)
-          Positioned.fill(
-            child: NoiseOverlay(opacity: preset.bgNoiseOpacity, intensity: preset.bgNoiseIntensity),
-          ),
-        if (preset.noiseOpacity > 0)
-          Positioned.fill(
-            child: NoiseOverlay(opacity: preset.noiseOpacity, intensity: preset.noiseIntensity),
-          ),
         Positioned.fill(
           child: NotificationListener<UserScrollNotification>(
             onNotification: (notification) {

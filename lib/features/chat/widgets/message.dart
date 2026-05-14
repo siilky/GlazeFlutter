@@ -718,10 +718,7 @@ class _MessageState extends ConsumerState<Message>
     if (!isStandard && style.elementBlur > 0) {
       decorated = ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: style.elementBlur, sigmaY: style.elementBlur),
-          child: container,
-        ),
+        child: container,
       );
     }
 
