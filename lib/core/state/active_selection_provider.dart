@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../llm/lorebook_vector_search.dart';
+
 import '../models/persona.dart';
 import '../models/preset.dart';
 import 'db_provider.dart';
@@ -55,7 +55,6 @@ Future<void> loadActiveSelections(WidgetRef ref) async {
     } catch (_) {}
   }
   ref.read(memoryGlobalSettingsProvider.notifier).load();
-  await initEmbeddingConfigFromDb(ref);
 }
 
 Future<void> setActivePreset(WidgetRef ref, String? id) async {

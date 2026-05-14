@@ -3,11 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../settings/api_list_provider.dart';
-
 import '../../../core/llm/embedding_service.dart';
 import '../../../core/llm/lorebook_vector_search.dart';
-import '../../../core/state/db_provider.dart';
 import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
@@ -37,9 +34,6 @@ class _EmbeddingSettingsScreenState
   void initState() {
     super.initState();
     final config = ref.read(embeddingConfigProvider);
-    if (config.endpoint.isEmpty) {
-      _initFromDb();
-    }
     final settings = ref.read(lorebookSettingsProvider);
     _endpointCtrl = TextEditingController(text: config.endpoint);
     _apiKeyCtrl = TextEditingController(text: config.apiKey);
@@ -55,31 +49,16 @@ class _EmbeddingSettingsScreenState
     _searchType = settings.searchType;
   }
 
-  Future<void> _initFromDb() async {
-    final chatConfig = ref.read(activeApiConfigProvider);
-    if (chatConfig != null && chatConfig.mode != 'embedding' && mounted) {
-      String ep, ak, md;
-      if (chatConfig.embeddingUseSame || chatConfig.embeddingEndpoint.isEmpty) {
-        ep = chatConfig.endpoint;
-        ak = chatConfig.apiKey;
-        md = chatConfig.embeddingModel.isNotEmpty ? chatConfig.embeddingModel : chatConfig.model;
-      } else {
-        ep = chatConfig.embeddingEndpoint;
-        ak = chatConfig.embeddingApiKey;
-        md = chatConfig.embeddingModel;
-      }
-      ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
-        endpoint: ep,
-        apiKey: ak,
-        model: md,
-        maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
-      );
-      setState(() {
-        _endpointCtrl.text = ep;
-        _apiKeyCtrl.text = ak;
-        _modelCtrl.text = md;
-        _maxChunkTokensCtrl.text = chatConfig.embeddingMaxChunkTokens.toString();
-      });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Sync fields when embeddingConfigProvider updates (e.g. after API list loads)
+    final config = ref.read(embeddingConfigProvider);
+    if (config.endpoint.isNotEmpty && _endpointCtrl.text.isEmpty) {
+      _endpointCtrl.text = config.endpoint;
+      _apiKeyCtrl.text = config.apiKey;
+      _modelCtrl.text = config.model;
+      _maxChunkTokensCtrl.text = config.maxChunkTokens.toString();
     }
   }
 
@@ -96,16 +75,9 @@ class _EmbeddingSettingsScreenState
   }
 
   void _save() async {
-    final config = EmbeddingConfig(
-      endpoint: _endpointCtrl.text.trim(),
-      apiKey: _apiKeyCtrl.text.trim(),
-      model: _modelCtrl.text.trim(),
-      maxChunkTokens: int.tryParse(_maxChunkTokensCtrl.text) ?? 8192,
-    );
-    ref.read(embeddingConfigProvider.notifier).state = config;
-
+    final maxChunkTokens = int.tryParse(_maxChunkTokensCtrl.text) ?? 8192;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('gz_embedding_max_chunk_tokens', config.maxChunkTokens);
+    await prefs.setInt('gz_embedding_max_chunk_tokens', maxChunkTokens);
 
     final current = ref.read(lorebookSettingsProvider);
     ref.read(lorebookSettingsProvider.notifier).state = current.copyWith(
@@ -115,7 +87,7 @@ class _EmbeddingSettingsScreenState
       scanDepth: int.tryParse(_scanDepthCtrl.text) ?? 10,
     );
 
-    GlazeToast.show(context, 'Saved');
+    if (mounted) GlazeToast.show(context, 'Saved');
   }
 
   Future<void> _testConnection() async {
