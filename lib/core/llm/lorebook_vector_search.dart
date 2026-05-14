@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/settings/api_list_provider.dart';
@@ -269,32 +267,29 @@ class ChatMessageForSearch {
   const ChatMessageForSearch({required this.role, required this.content});
 }
 
-final embeddingConfigProvider = StateProvider<EmbeddingConfig>((ref) {
-  return const EmbeddingConfig(endpoint: '', model: '');
-});
-
-Future<void> initEmbeddingConfigFromDb(WidgetRef ref) async {
-  final chatConfig = ref.read(activeApiConfigProvider);
-  if (chatConfig != null && chatConfig.mode != 'embedding') {
-    if (chatConfig.embeddingUseSame || chatConfig.embeddingEndpoint.isEmpty) {
-      ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
-        endpoint: chatConfig.endpoint,
-        apiKey: chatConfig.apiKey,
-        model: chatConfig.embeddingModel.isNotEmpty
-            ? chatConfig.embeddingModel
-            : chatConfig.model,
-        maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
-      );
-    } else {
-      ref.read(embeddingConfigProvider.notifier).state = EmbeddingConfig(
-        endpoint: chatConfig.embeddingEndpoint,
-        apiKey: chatConfig.embeddingApiKey,
-        model: chatConfig.embeddingModel,
-        maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
-      );
-    }
+final embeddingConfigProvider = Provider<EmbeddingConfig>((ref) {
+  final chatConfig = ref.watch(activeApiConfigProvider);
+  if (chatConfig == null || chatConfig.mode == 'embedding') {
+    return const EmbeddingConfig(endpoint: '', model: '');
   }
-}
+  if (chatConfig.embeddingUseSame || chatConfig.embeddingEndpoint.isEmpty) {
+    return EmbeddingConfig(
+      endpoint: chatConfig.endpoint,
+      apiKey: chatConfig.apiKey,
+      model: chatConfig.embeddingModel.isNotEmpty
+          ? chatConfig.embeddingModel
+          : chatConfig.model,
+      maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
+    );
+  } else {
+    return EmbeddingConfig(
+      endpoint: chatConfig.embeddingEndpoint,
+      apiKey: chatConfig.embeddingApiKey,
+      model: chatConfig.embeddingModel,
+      maxChunkTokens: chatConfig.embeddingMaxChunkTokens,
+    );
+  }
+});
 
 final lorebookVectorSearchProvider = Provider<LorebookVectorSearch>((ref) {
   return LorebookVectorSearch(
