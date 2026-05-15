@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/lorebook.dart';
 import '../../core/llm/embedding_error_labels.dart';
-import '../../core/llm/lorebook_vector_search.dart';
+import '../../core/llm/lorebook_providers.dart';
 import '../../core/state/db_provider.dart';
 import '../../features/settings/api_list_provider.dart';
 import '../../core/state/lorebook_provider.dart';

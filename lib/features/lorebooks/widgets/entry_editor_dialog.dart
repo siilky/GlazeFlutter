@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/llm/lorebook_vector_search.dart';
+import '../../../core/llm/lorebook_providers.dart';
 import '../../../core/models/lorebook.dart';
 import '../../../features/settings/api_list_provider.dart';
 import '../../../core/utils/id_generator.dart';

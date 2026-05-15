@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/llm/lorebook_vector_search.dart';
+import '../../../core/llm/lorebook_providers.dart';
 import '../../../core/llm/memory_embedding_service.dart';
 import '../../../features/settings/api_list_provider.dart';
 import '../../../core/llm/memory_injection_service.dart';
