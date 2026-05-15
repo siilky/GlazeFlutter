@@ -345,7 +345,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _NumberField extends StatelessWidget {
+class _NumberField extends StatefulWidget {
   final String label;
   final int value;
   final int min;
@@ -363,19 +363,66 @@ class _NumberField extends StatelessWidget {
   });
 
   @override
+  State<_NumberField> createState() => _NumberFieldState();
+}
+
+class _NumberFieldState extends State<_NumberField> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(
+      text: widget.value == 0 && widget.hint != null ? '' : widget.value.toString(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_NumberField old) {
+    super.didUpdateWidget(old);
+    if (old.value != widget.value) {
+      final newText = widget.value == 0 && widget.hint != null ? '' : widget.value.toString();
+      if (_ctrl.text != newText) {
+        _ctrl.text = newText;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final text = _ctrl.text;
+    if (text.isEmpty) {
+      widget.onChanged(0);
+      return;
+    }
+    final n = int.tryParse(text);
+    if (n != null && n >= widget.min && n <= widget.max) {
+      widget.onChanged(n);
+    } else {
+      // Reset to last valid value
+      _ctrl.text = widget.value == 0 && widget.hint != null ? '' : widget.value.toString();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
           child: Text(
-            label,
+            widget.label,
             style: TextStyle(color: context.cs.onSurfaceVariant, fontSize: 14),
           ),
         ),
         SizedBox(
           width: 80,
-          child: TextFormField(
-            initialValue: value == 0 && hint != null ? '' : value.toString(),
+          child: TextField(
+            controller: _ctrl,
             keyboardType: TextInputType.number,
             style: TextStyle(color: context.cs.onSurface, fontSize: 14),
             textAlign: TextAlign.center,
@@ -385,16 +432,14 @@ class _NumberField extends StatelessWidget {
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.05),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              hintText: hint,
+              hintText: widget.hint,
               hintStyle: TextStyle(fontSize: 10, color: context.cs.onSurfaceVariant.withValues(alpha: 0.4)),
             ),
-            onFieldSubmitted: (v) {
-              if (v.isEmpty) {
-                onChanged(0);
-                return;
-              }
-              final n = int.tryParse(v);
-              if (n != null && n >= min && n <= max) onChanged(n);
+            onSubmitted: (_) => _commit(),
+            onEditingComplete: _commit,
+            onTapOutside: (_) {
+              FocusScope.of(context).unfocus();
+              _commit();
             },
           ),
         ),
