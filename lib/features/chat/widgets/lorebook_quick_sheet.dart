@@ -472,6 +472,7 @@ class _GlobalSettingsPanel extends ConsumerWidget {
 
   void _update(WidgetRef ref, LorebookGlobalSettings s) {
     ref.read(lorebookSettingsProvider.notifier).state = s;
+    saveLorebookSettings(s);
   }
 
   @override
