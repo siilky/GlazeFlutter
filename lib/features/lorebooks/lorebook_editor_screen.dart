@@ -310,6 +310,23 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     GlazeToast.show(context, 'Entry settings reset to global defaults');
   }
 
+  void _enableVectorForAll() {
+    final alreadyAll = _entries.every((e) => e.vectorSearch || e.constant);
+    setState(() {
+      for (int i = 0; i < _entries.length; i++) {
+        if (!_entries[i].constant) {
+          _entries[i] = _entries[i].copyWith(vectorSearch: !alreadyAll);
+        }
+      }
+    });
+    _save();
+    _loadEmbeddingStatuses();
+    GlazeToast.show(
+      context,
+      alreadyAll ? 'Vector search disabled for all entries' : 'Vector search enabled for all entries',
+    );
+  }
+
   void _showTestDialog() {
     final testCtrl = TextEditingController();
     showDialog(
@@ -475,6 +492,18 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                         icon: const Icon(Icons.restore, size: 20),
                         tooltip: 'Reset Entry Settings to Global',
                         onPressed: _resetEntriesToGlobal,
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _entries.every((e) => e.vectorSearch || e.constant)
+                              ? Icons.hub
+                              : Icons.hub_outlined,
+                          size: 20,
+                        ),
+                        tooltip: _entries.every((e) => e.vectorSearch || e.constant)
+                            ? 'Disable Vector Search for All'
+                            : 'Enable Vector Search for All',
+                        onPressed: _entries.isEmpty ? null : _enableVectorForAll,
                       ),
                       if (_isIndexing || _rateLimitCooldown > 0)
                         Padding(
