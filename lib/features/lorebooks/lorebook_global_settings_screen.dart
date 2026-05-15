@@ -103,7 +103,7 @@ class _LorebookGlobalSettingsScreenState extends ConsumerState<LorebookGlobalSet
                   label: settings.reserveMode == 'percent' ? 'Reserve %' : 'Reserve Tokens',
                   value: settings.reserveValue,
                   min: 0,
-                  max: settings.reserveMode == 'percent' ? 100 : 10000,
+                  max: settings.reserveMode == 'percent' ? 100 : 2147483647,
                   onChanged: (v) => _update(settings.copyWith(reserveValue: v)),
                 ),
                 const SizedBox(height: 24),
@@ -192,7 +192,7 @@ class _NumberField extends StatefulWidget {
   final int max;
   final ValueChanged<int> onChanged;
 
-  const _NumberField({required this.label, required this.value, this.min = 0, this.max = 99999, required this.onChanged});
+  const _NumberField({required this.label, required this.value, this.min = 0, this.max = 2147483647, required this.onChanged});
 
   @override
   State<_NumberField> createState() => _NumberFieldState();
