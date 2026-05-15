@@ -153,6 +153,11 @@ class JsApiConfigImporter with BackupHelpers {
         }
 
         final merged = <String, dynamic>{};
+        for (final e in p.entries) {
+          if (e.value != null && e.value != '') {
+            merged[e.key] = e.value;
+          }
+        }
         if (pid == llmProfileId && connPreset != null) {
           merged.addAll(connPreset);
           if (connPreset['key'] != null && connPreset['apiKey'] == null) {
@@ -160,15 +165,10 @@ class JsApiConfigImporter with BackupHelpers {
           }
           merged.remove('key');
         } else {
-          merged['max_tokens'] = ls['api-max-tokens'] ?? kv['api-max-tokens'];
-          merged['context'] = ls['api-context'] ?? kv['api-context'];
-          merged['temp'] = ls['gz_api_temp'] ?? kv['gz_api_temp'];
-          merged['topp'] = ls['gz_api_topp'] ?? kv['gz_api_topp'];
-        }
-        for (final e in p.entries) {
-          if (e.value != null && e.value != '') {
-            merged[e.key] = e.value;
-          }
+          merged['max_tokens'] = ls['api-max-tokens'] ?? kv['api-max-tokens'] ?? merged['max_tokens'];
+          merged['context'] = ls['api-context'] ?? kv['api-context'] ?? merged['context'];
+          merged['temp'] = ls['gz_api_temp'] ?? kv['gz_api_temp'] ?? merged['temp'];
+          merged['topp'] = ls['gz_api_topp'] ?? kv['gz_api_topp'] ?? merged['topp'];
         }
 
         await insertApiConfig(merged, 'chat',
