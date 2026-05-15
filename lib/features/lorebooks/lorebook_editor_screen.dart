@@ -306,6 +306,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         _entries[i] = _entries[i].copyWith(
           caseSensitive: null,
           matchWholeWords: null,
+          position: 'matchGlobal',
         );
       }
     });
