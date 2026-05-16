@@ -86,6 +86,8 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
             searchHistory, lastUserMsg, lorebooks, settings, embeddingConfig,
             charWorld: character?.world,
             character: character,
+            activations: activations,
+            chatId: session.id,
           );
           final entryMap = <String, LorebookEntry>{};
           for (final lb in lorebooks) {
@@ -97,8 +99,14 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
               .where((r) => entryMap.containsKey(r.entryId))
               .map((r) => entryMap[r.entryId]!)
               .toList();
-        } catch (_) {}
+        } catch (e, st) {
+          debugPrint('COVERAGE: vector search error: $e\n$st');
+        }
       }
+    }
+    debugPrint('COVERAGE: searchType=${settings.searchType} vectorEntries=${vectorEntries.length} keyword lorebooks=${lorebooks.length}');
+    for (final e in vectorEntries) {
+      debugPrint('COVERAGE:   vector hit: "${e.comment}" id=${e.id}');
     }
 
     final result = computeLorebookCoverage(
