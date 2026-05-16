@@ -217,13 +217,18 @@ class PromptPayloadBuilder {
         chatId: chatId,
       );
 
+      // Key by "lorebookId_entryId" to avoid collisions between lorebooks
+      // whose entries share the same numeric id.
       final entryMap = <String, LorebookEntry>{};
       for (final lb in lorebooks) {
         for (final entry in lb.entries) {
-          entryMap[entry.id] = entry;
+          entryMap['${lb.id}_${entry.id}'] = entry;
         }
       }
-      return results.where((r) => entryMap.containsKey(r.entryId)).map((r) => entryMap[r.entryId]!.copyWith()).toList();
+      return results
+          .where((r) => entryMap.containsKey('${r.lorebookId}_${r.entryId}'))
+          .map((r) => entryMap['${r.lorebookId}_${r.entryId}']!.copyWith())
+          .toList();
     } catch (e, st) {
       debugPrint('VECTOR SEARCH: failed: $e\n$st');
       return [];

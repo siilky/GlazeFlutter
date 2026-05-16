@@ -41,6 +41,7 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
   CoverageResult? _result;
   bool _loading = true;
   _FilterMode _filter = _FilterMode.activated;
+  Map<String, String> _vectorEntryLorebookIds = {};
 
   @override
   void initState() {
@@ -90,24 +91,26 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
             chatId: session.id,
           );
           final entryMap = <String, LorebookEntry>{};
+          final entryToLbId = <String, String>{};
           for (final lb in lorebooks) {
             for (final entry in lb.entries) {
-              entryMap[entry.id] = entry;
+              entryMap['${lb.id}_${entry.id}'] = entry;
             }
           }
           vectorEntries = results
-              .where((r) => entryMap.containsKey(r.entryId))
-              .map((r) => entryMap[r.entryId]!)
+              .where((r) => entryMap.containsKey('${r.lorebookId}_${r.entryId}'))
+              .map((r) {
+                entryToLbId[r.entryId] = r.lorebookId;
+                return entryMap['${r.lorebookId}_${r.entryId}']!;
+              })
               .toList();
+          _vectorEntryLorebookIds = entryToLbId;
         } catch (e, st) {
           debugPrint('COVERAGE: vector search error: $e\n$st');
         }
       }
     }
-    debugPrint('COVERAGE: searchType=${settings.searchType} vectorEntries=${vectorEntries.length} keyword lorebooks=${lorebooks.length}');
-    for (final e in vectorEntries) {
-      debugPrint('COVERAGE:   vector hit: "${e.comment}" id=${e.id}');
-    }
+
 
     final result = computeLorebookCoverage(
       history: session.messages,
@@ -118,6 +121,7 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
       globalSettings: settings,
       activations: activations,
       vectorEntries: vectorEntries,
+      vectorEntryLorebookIds: _vectorEntryLorebookIds,
     );
 
     if (mounted)

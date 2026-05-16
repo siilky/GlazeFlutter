@@ -58,14 +58,22 @@ CoverageResult computeLorebookCoverage({
   required LorebookGlobalSettings globalSettings,
   required LorebookActivations activations,
   List<LorebookEntry> vectorEntries = const [],
+  // Maps entry.id → lorebookId for correct lorebook lookup without id collisions.
+  Map<String, String> vectorEntryLorebookIds = const {},
 }) {
+  Lorebook? _lbForEntry(String entryId) {
+    final lbId = vectorEntryLorebookIds[entryId];
+    if (lbId != null) return lorebooks.where((l) => l.id == lbId).firstOrNull;
+    return lorebooks.where((l) => l.entries.any((en) => en.id == entryId)).firstOrNull;
+  }
+
   // In vector-only mode, show only vector results (keyword scan is skipped).
   if (globalSettings.searchType == 'vector') {
     if (vectorEntries.isEmpty) {
       return const CoverageResult(entries: [], totalCandidates: 0, activatedCount: 0, cutOffCount: 0);
     }
     final entries = vectorEntries.map((e) {
-      final lb = lorebooks.where((l) => l.entries.any((en) => en.id == e.id)).firstOrNull;
+      final lb = _lbForEntry(e.id);
       return CoverageEntry(
         id: e.id,
         comment: e.comment,
@@ -249,7 +257,7 @@ CoverageResult computeLorebookCoverage({
       .map((c) => c.entry.id)
       .toSet();
   final vectorOnlyEntries = vectorEntries.where((e) => !keywordActivatedIds.contains(e.id)).map((e) {
-    final lb = lorebooks.where((l) => l.entries.any((en) => en.id == e.id)).firstOrNull;
+    final lb = _lbForEntry(e.id);
     return CoverageEntry(
       id: e.id,
       comment: e.comment,
