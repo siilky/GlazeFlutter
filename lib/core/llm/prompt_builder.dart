@@ -53,6 +53,7 @@ class PromptPayload {
   final Map<String, dynamic> memoryCoverage;
   final List<PresetRegex> globalRegexes;
   final List<ScannedEntry>? preScannedEntries;
+  final List<TriggeredEntry> triggeredMemories;
 
   const PromptPayload({
     required this.character,
@@ -79,6 +80,7 @@ class PromptPayload {
     this.memoryCoverage = const {},
     this.globalRegexes = const [],
     this.preScannedEntries,
+    this.triggeredMemories = const [],
   });
 }
 
@@ -87,12 +89,16 @@ class PromptResult {
   final TokenBreakdown breakdown;
   final Map<String, String> sessionVars;
   final Map<String, String> globalVars;
+  final List<TriggeredEntry> triggeredLorebooks;
+  final List<TriggeredEntry> triggeredMemories;
 
   const PromptResult({
     required this.messages,
     required this.breakdown,
     required this.sessionVars,
     required this.globalVars,
+    this.triggeredLorebooks = const [],
+    this.triggeredMemories = const [],
   });
 }
 
@@ -161,6 +167,38 @@ PromptResult buildPrompt(PromptPayload payload) {
     vectorEntries: payload.vectorEntries,
     settings: payload.lorebookSettings,
   );
+
+  final keywordIdToEntry = <String, ScannedEntry>{};
+  for (final e in loreEntries) {
+    keywordIdToEntry[e.id] = e;
+  }
+  final vectorIdToEntry = <String, LorebookEntry>{};
+  for (final e in payload.vectorEntries) {
+    vectorIdToEntry[e.id] = e;
+  }
+
+  final triggeredLorebooks = <TriggeredEntry>[];
+  for (final merged in mergedEntries) {
+    final kw = keywordIdToEntry[merged.id];
+    if (kw != null) {
+      triggeredLorebooks.add(TriggeredEntry(
+        id: kw.id,
+        name: kw.comment.isNotEmpty ? kw.comment : kw.id,
+        lorebookName: kw.lorebookName,
+        lorebookId: kw.lorebookId,
+        source: 'keyword',
+      ));
+      continue;
+    }
+    final vec = vectorIdToEntry[merged.id];
+    if (vec != null) {
+      triggeredLorebooks.add(TriggeredEntry(
+        id: vec.id,
+        name: vec.comment.isNotEmpty ? vec.comment : vec.id,
+        source: 'vector',
+      ));
+    }
+  }
 
   final (loreBefore, loreAfter, loreMacroBuffer) = _classifyLorebooks(mergedEntries, currentMacroCtx, payload.lorebookSettings);
   final macroLoreContent = loreMacroBuffer.join('\n\n');
@@ -246,6 +284,8 @@ PromptResult buildPrompt(PromptPayload payload) {
     payload: payload,
     char: char,
     persona: persona,
+    triggeredLorebooks: triggeredLorebooks,
+    triggeredMemories: payload.triggeredMemories,
   );
 }
 
@@ -297,6 +337,8 @@ PromptResult _assembleMessages({
   required PromptPayload payload,
   required Character char,
   Persona? persona,
+  List<TriggeredEntry> triggeredLorebooks = const [],
+  List<TriggeredEntry> triggeredMemories = const [],
 }) {
   final messages = <PromptMessage>[];
   final attributionBlocks = <StaticBlock>[];
@@ -478,7 +520,7 @@ PromptResult _assembleMessages({
     }
   }
 
-  return PromptResult(messages: finalMessages, breakdown: breakdown, sessionVars: currentSessionVars, globalVars: currentGlobalVars);
+  return PromptResult(messages: finalMessages, breakdown: breakdown, sessionVars: currentSessionVars, globalVars: currentGlobalVars, triggeredLorebooks: triggeredLorebooks, triggeredMemories: triggeredMemories);
 }
 
 void _injectMemoryBlock(List<PromptMessage> messages, List<StaticBlock> attributionBlocks, String content) {

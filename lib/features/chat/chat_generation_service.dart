@@ -1,4 +1,4 @@
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,9 +64,8 @@ class ChatGenerationService {
       final cancelToken = CancelToken();
       _ref.read(chatProvider(charId).notifier).setCancelToken(cancelToken);
       final preset = payload.preset;
-      // JS default: always parse <think></think>, preset overrides tags
-      const defaultTagStart = '<think>';
-      const defaultTagEnd = '</think>';
+      const defaultTagStart = '<think' + '>' ;
+      const defaultTagEnd = '</think' + '>' ;
       final reasoningTagStart = (preset?.reasoningStart?.isNotEmpty == true)
           ? preset!.reasoningStart!
           : (apiConfig.reasoningTagStart?.isNotEmpty == true)
@@ -93,6 +92,8 @@ class ChatGenerationService {
       final sseClient = SseClient();
       ChatState? finalState;
       final coverage = payload.memoryCoverage;
+      final triggeredLorebooks = promptResult.triggeredLorebooks;
+      final triggeredMemories = promptResult.triggeredMemories;
 
       bool frameScheduled = false;
 
@@ -141,12 +142,7 @@ class ChatGenerationService {
             finalText = finalText.substring(reasoningTagEnd.length).trimLeft();
           }
           var finalReasoning = accumulator.reasoning.isNotEmpty ? accumulator.reasoning : reasoning;
-          // If entire response ended up as reasoning (model put <think> at wrong place),
-          // promote reasoning to text so the message is not empty.
-          if (finalText.isEmpty && finalReasoning != null && finalReasoning.isNotEmpty) {
-            finalText = finalReasoning;
-            finalReasoning = null;
-          }
+          final isAllReasoning = finalText.isEmpty && finalReasoning != null && finalReasoning.isNotEmpty;
           final elapsed = DateTime.now().difference(startGenTime).inMilliseconds;
           final timeStr = '${(elapsed / 1000).toStringAsFixed(1)}s';
           final tokenCount = (finalText.length / 4).round();
@@ -163,6 +159,9 @@ class ChatGenerationService {
             previousSwipesMeta: previousSwipesMeta,
             guidanceText: guidanceText,
             memoryCoverage: coverage,
+            isAllReasoning: isAllReasoning,
+            triggeredLorebooks: triggeredLorebooks,
+            triggeredMemories: triggeredMemories,
           );
         },
         onError: (error) {
@@ -278,6 +277,9 @@ class ChatGenerationService {
     List<Map<String, dynamic>>? previousSwipesMeta,
     String? guidanceText,
     Map<String, dynamic> memoryCoverage = const {},
+    bool isAllReasoning = false,
+    List<TriggeredEntry> triggeredLorebooks = const [],
+    List<TriggeredEntry> triggeredMemories = const [],
   }) {
     List<String> swipes;
     int swipeId;
@@ -325,6 +327,7 @@ class ChatGenerationService {
       role: 'assistant',
       content: text,
       reasoning: reasoning,
+      isAllReasoning: isAllReasoning,
       genTime: genTime,
       tokens: tokens,
       timestamp: DateTime.now().millisecondsSinceEpoch,
@@ -332,6 +335,8 @@ class ChatGenerationService {
       swipeId: swipeId,
       swipesMeta: swipesMeta,
       memoryCoverage: memoryCoverage,
+      triggeredLorebooks: triggeredLorebooks,
+      triggeredMemories: triggeredMemories,
     );
     final finalMessages = [...currentSession.messages, assistantMsg];
     final now = currentTimestampSeconds();
