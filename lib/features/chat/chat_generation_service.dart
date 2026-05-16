@@ -159,15 +159,14 @@ class ChatGenerationService {
           );
         },
         onError: (error) {
-          final partialText = accumulator.text;
-          if (partialText.isNotEmpty) {
-            finalState = _saveAssistantMessage(partialText, null, session, pendingSessionVars: pendingSessionVars);
+          final isCancelled = error is DioException && error.type == DioExceptionType.cancel;
+          if (isCancelled) {
+            // User aborted — discard partial text, restore prior state.
+            finalState = ChatState(session: session, isGenerating: false);
           } else {
-            if (error is DioException && error.type == DioExceptionType.cancel) {
-              finalState = ChatState(session: session, isGenerating: false);
-            } else {
-              finalState = _saveErrorMessage(error.toString(), session, pendingSessionVars: pendingSessionVars);
-            }
+            // Server dropped connection (499, network error, etc.) —
+            // do not save partial text as a real message.
+            finalState = _saveErrorMessage(error.toString(), session, pendingSessionVars: pendingSessionVars);
           }
         },
       );
