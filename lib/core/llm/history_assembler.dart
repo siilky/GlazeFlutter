@@ -17,9 +17,10 @@ class HistoryAssembler {
       final msg = history[i];
       if (msg.isHidden || msg.isTyping) continue;
       final macroResult = replaceMacros(msg.content, macroCtx);
+      final normalized = _normalizeUnderscoreEmphasis(macroResult.text);
       messages.add(PromptMessage(
         role: msg.role,
-        content: macroResult.text,
+        content: normalized,
         isHistory: true,
       ));
     }
@@ -63,9 +64,6 @@ class PromptMessage {
   final bool isHistory;
   final bool isDepth;
   final bool isLorebook;
-  /// True for messages that carry summary content (dedicated summary block or
-  /// any preset block whose content contained {{summary}}). Used by memory
-  /// injection in summary_macro mode to locate the right message.
   final bool isSummary;
   final String? blockName;
 
@@ -82,4 +80,17 @@ class PromptMessage {
   });
 
   Map<String, String> toApiMap() => {'role': role, 'content': content};
+}
+
+String _normalizeUnderscoreEmphasis(String text) {
+  var result = text;
+  result = result.replaceAllMapped(
+    RegExp(r'(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)'),
+    (m) => '**${m[1]}**',
+  );
+  result = result.replaceAllMapped(
+    RegExp(r'(?<!\w|_)_(?!\s)(.+?)(?<!\s)_(?!\w|_)'),
+    (m) => '*${m[1]}*',
+  );
+  return result;
 }
