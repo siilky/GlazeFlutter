@@ -171,7 +171,12 @@ class SseClient {
     // If the client cancelled cleanly, onError handles it via DioException.cancel.
     // If text accumulated, we throw so onError can decide what to save.
     if (cancelToken != null && cancelToken.isCancelled) return;
-    // Server dropped the connection mid-stream without [DONE].
+    // Server dropped connection without [DONE] — treat as normal completion
+    // if any text was accumulated (provider returned 200 but omitted [DONE]).
+    if (fullText.isNotEmpty || fullReasoning.isNotEmpty) {
+      onComplete?.call(fullText, fullReasoning.isNotEmpty ? fullReasoning : null);
+      return;
+    }
     throw DioException(
       requestOptions: RequestOptions(path: url),
       message: 'Stream ended without [DONE] (server dropped connection)',

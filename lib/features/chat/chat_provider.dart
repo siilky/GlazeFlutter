@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -96,6 +97,10 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final lastMsg = current.messages[lastIdx];
     ChatMessage? prevAssistant;
     List<ChatMessage> baseMessages;
+
+    debugPrint('[regen] lastMsg.role=${lastMsg.role} isError=${lastMsg.isError} '
+        'swipes=${lastMsg.swipes.length} swipeId=${lastMsg.swipeId} '
+        'totalMessages=${current.messages.length}');
 
     if (lastMsg.role == 'assistant') {
       prevAssistant = lastMsg;
@@ -324,7 +329,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     if (current != null && current.isGenerating) {
       final restoration = _restorationMessage;
       if (restoration != null) {
-        final restoredMessages = [...(current.session?.messages ?? []), restoration];
+        final restoredMessages = <ChatMessage>[...(current.session?.messages ?? const <ChatMessage>[]), restoration];
         final restoredSession = current.session?.copyWith(
           messages: restoredMessages,
           updatedAt: currentTimestampSeconds(),
@@ -375,6 +380,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final genId = ++_activeGenId;
     final completer = Completer<void>();
     _activeGenCompleter = completer;
+    _clearStreaming();
 
     final notifService = GenerationNotificationService.instance;
     await notifService.onGenerationStarted();
