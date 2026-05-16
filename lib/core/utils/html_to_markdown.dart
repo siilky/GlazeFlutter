@@ -18,6 +18,7 @@ String htmlToMarkdown(String html) {
 
   result = _convertColoredSpan(result);
   result = _convertColoredFont(result);
+  result = _convertBackgroundImages(result);
 
   result = result.replaceAllMapped(
     RegExp(r'<h([1-6])[^>]*>(.*?)</h\1>', caseSensitive: false, dotAll: true),
@@ -122,7 +123,18 @@ String _convertInlineKeep(String html, String tag) {
 
 final _cssColorRegex = RegExp(r'(?:(?:color|background-color)\s*:\s*)(#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\([^)]+\)|[a-zA-Z]+)');
 
+final _textShadowColorRegex = RegExp(r'text-shadow\s*:[^;]*?(#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\([^)]+\)|[a-zA-Z]+)');
+
+final _gradientColorRegex = RegExp(r'linear-gradient\s*\([^)]*?(?:,|^)\s*(#[0-9a-fA-F]{3,8})');
+
 String _extractColor(String styleAttr) {
+  var color = _extractColorFromCss(styleAttr);
+  if (color.isEmpty) color = _extractColorFromTextShadow(styleAttr);
+  if (color.isEmpty) color = _extractColorFromGradient(styleAttr);
+  return color;
+}
+
+String _extractColorFromCss(String styleAttr) {
   final match = _cssColorRegex.firstMatch(styleAttr);
   if (match == null) return '';
   var color = match[1]!.trim();
@@ -138,6 +150,30 @@ String _extractColor(String styleAttr) {
   }
   if (!color.startsWith('#')) return '';
   return color;
+}
+
+String _extractColorFromTextShadow(String styleAttr) {
+  final match = _textShadowColorRegex.firstMatch(styleAttr);
+  if (match == null) return '';
+  var color = match[1]!.trim();
+  if (color.startsWith('rgb')) color = _rgbToHex(color);
+  if (color.startsWith('hsl')) color = _hslToHex(color);
+  if (RegExp(r'^[a-zA-Z]+$').hasMatch(color)) {
+    final hex = _namedColorToHex(color.toLowerCase());
+    if (hex != null) color = hex;
+  }
+  if (!color.startsWith('#')) return '';
+  return color;
+}
+
+String _extractColorFromGradient(String styleAttr) {
+  final matches = _gradientColorRegex.allMatches(styleAttr);
+  final colors = <String>[];
+  for (final m in matches) {
+    var color = m[1]!.trim();
+    if (color.startsWith('#')) colors.add(color);
+  }
+  return colors.isNotEmpty ? colors.first : '';
 }
 
 String _convertInlineTags(String html) {
@@ -166,18 +202,23 @@ String _wrapColored(String color, String content) {
 
 String _convertColoredSpan(String html) {
   return html.replaceAllMapped(
-    RegExp(r'''<span\s+[^>]*style=(["'])([^"']*?)\1[^>]*>(.*?)</span>''', caseSensitive: false, dotAll: true),
+    RegExp(r'''<span\s+[^>]*style=(["'])(.*?)\1[^>]*>(.*?)</span>''', caseSensitive: false, dotAll: true),
     (m) {
       final color = _extractColor(m[2]!);
-      if (color.isEmpty) return _inline(m[3]!);
-      return _wrapColored(color, m[3]!);
+      if (color.isNotEmpty) return _wrapColored(color, m[3]!);
+      final isItalic = RegExp(r'font-style\s*:\s*italic', caseSensitive: false).hasMatch(m[2]!);
+      if (isItalic) {
+        final text = _convertInlineTags(m[3]!).replaceAll(RegExp(r'<[^>]+>'), '').trim();
+        return '*$text*';
+      }
+      return _inline(m[3]!);
     },
   );
 }
 
 String _convertColoredFont(String html) {
-  return html.replaceAllMapped(
-    RegExp(r'''<font\s+[^>]*color=(["'])([^"']*?)\1[^>]*>(.*?)</font>''', caseSensitive: false, dotAll: true),
+  var result = html.replaceAllMapped(
+    RegExp(r'''<font\s+[^>]*color=(["'])(.*?)\1[^>]*>(.*?)</font>''', caseSensitive: false, dotAll: true),
     (m) {
       var color = m[2]!.trim();
       if (RegExp(r'^[a-zA-Z]+$').hasMatch(color)) {
@@ -185,6 +226,32 @@ String _convertColoredFont(String html) {
         if (hex != null) color = hex;
       }
       return _wrapColored(color, m[3]!);
+    },
+  );
+
+  result = result.replaceAllMapped(
+    RegExp(r'''<font\s+[^>]*style=(["'])(.*?)\1[^>]*>(.*?)</font>''', caseSensitive: false, dotAll: true),
+    (m) {
+      final color = _extractColor(m[2]!);
+      if (color.isNotEmpty) return _wrapColored(color, m[3]!);
+      return _convertInlineTags(m[3]!).replaceAll(RegExp(r'<[^>]+>'), '').trim();
+    },
+  );
+
+  return result;
+}
+
+final _bgImageUrlRegex = RegExp(r"""background[^:]*:\s*[^;]*?url\(\s*['"]?([^'")\s]+)['"]?\s*\)""", caseSensitive: true);
+
+String _convertBackgroundImages(String html) {
+  return html.replaceAllMapped(
+    RegExp(r'<((?:div|span|section|article)\s[^>]*?)style=(["\x27])(.*?)\2([^>]*>)', caseSensitive: false, dotAll: true),
+    (m) {
+      final urlMatch = _bgImageUrlRegex.firstMatch(m[3]!);
+      if (urlMatch != null) {
+        return '\n![](${urlMatch[1]!})\n';
+      }
+      return '<${m[1]}style=${m[2]}${m[3]}${m[2]}${m[4]}';
     },
   );
 }
