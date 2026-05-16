@@ -6,6 +6,7 @@ import '../../../shared/theme/theme_preset.dart';
 import '../../../shared/theme/theme_preset_storage.dart';
 import '../../../shared/theme/theme_provider.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
 import 'theme_editor_screen.dart';
 
@@ -28,27 +29,34 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
     return GlazeScaffold(
       title: 'Themes',
       onBack: () => Navigator.pop(context),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+      body: Stack(
         children: [
-          _buildActivePreview(context, theme.activePreset),
-          const SizedBox(height: 16),
-          _buildImportButton(context),
-          const SizedBox(height: 16),
-          _buildFontToggle(context),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'All Themes',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: context.cs.onSurfaceVariant,
+          ListView(
+            padding: const EdgeInsets.only(top: 12, bottom: 96),
+            children: [
+              _buildActivePreview(context, theme.activePreset),
+              const SizedBox(height: 16),
+              _buildFontToggle(context),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'All Themes',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: context.cs.onSurfaceVariant,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              ...presets.map((p) => _buildPresetTile(context, p, p.id == activeId)),
+            ],
           ),
-          const SizedBox(height: 8),
-          ...presets.map((p) => _buildPresetTile(context, p, p.id == activeId)),
+          Positioned(
+            right: 16,
+            bottom: 16 + MediaQuery.of(context).padding.bottom,
+            child: _ThemeFab(onTap: () => _showAddSheet(context)),
+          ),
         ],
       ),
     );
@@ -183,26 +191,28 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
     );
   }
 
-  Widget _buildImportButton(BuildContext context) {
-    final btnBg = _contrastColor(context.colors.accent, context.cs.surface);
-    final btnFg = btnBg.computeLuminance() > 0.35
-        ? const Color(0xFF1A1A1B)
-        : const Color(0xFFE1E3E6);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ElevatedButton.icon(
-        onPressed: _importTheme,
-        icon: Icon(Icons.file_download_outlined, color: btnFg),
-        label: Text(
-          'Import Theme',
-          style: TextStyle(color: btnFg, fontWeight: FontWeight.w600),
+  void _showAddSheet(BuildContext context) {
+    GlazeBottomSheet.show<void>(
+      context,
+      title: 'Add Theme',
+      items: [
+        BottomSheetItem(
+          icon: Icons.add_rounded,
+          label: 'New Theme',
+          onTap: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            _createNewTheme();
+          },
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: btnBg,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        BottomSheetItem(
+          icon: Icons.file_download_outlined,
+          label: 'Import from File',
+          onTap: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            _importTheme();
+          },
         ),
-      ),
+      ],
     );
   }
 
@@ -296,6 +306,20 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
     );
   }
 
+  Future<void> _createNewTheme() async {
+    final preset = ThemePreset(
+      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+      name: 'New Theme',
+    );
+    await ref.read(themeProvider.notifier).importPreset(preset);
+    await ref.read(themeProvider.notifier).applyPreset(preset);
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ThemeEditorScreen()),
+    );
+  }
+
   Future<void> _importTheme() async {
     try {
       final result = await FilePicker.pickFiles(
@@ -351,5 +375,47 @@ class _ThemePresetScreenState extends ConsumerState<ThemePresetScreen> {
     if (confirmed == true) {
       await ref.read(themeProvider.notifier).deletePreset(id);
     }
+  }
+}
+
+class _ThemeFab extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ThemeFab({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: context.cs.primary,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_rounded, color: Colors.white, size: 24),
+            SizedBox(width: 8),
+            Text(
+              'Add',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -364,7 +364,7 @@ class _SwitchField extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: TextStyle(color: context.cs.onSurfaceVariant, fontSize: 14)),
-        Switch(value: value, onChanged: onChanged, activeThumbColor: context.cs.primary),
+        Switch(value: value, onChanged: onChanged),
       ],
     );
   }

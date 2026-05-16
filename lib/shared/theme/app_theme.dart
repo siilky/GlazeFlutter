@@ -226,6 +226,14 @@ class AppTheme {
           foregroundColor: colorScheme.onSurface,
         ),
       ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.all(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return colorScheme.primary;
+          return colorScheme.onSurface.withValues(alpha: 0.3);
+        }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+      ),
       iconTheme: IconThemeData(color: colorScheme.onSurface),
       textTheme: _applySafe(
         GoogleFonts.interTextTheme(base.textTheme),
@@ -331,6 +339,14 @@ class AppTheme {
         style: TextButton.styleFrom(
           foregroundColor: colorScheme.onSurface,
         ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.all(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return colorScheme.primary;
+          return colorScheme.onSurface.withValues(alpha: 0.3);
+        }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
       ),
       iconTheme: IconThemeData(color: colorScheme.onSurface),
       textTheme: _applySafe(

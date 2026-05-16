@@ -16,7 +16,7 @@ class ChatHeader extends ConsumerWidget {
     super.key,
     required this.character,
     required this.sessionName,
-    this.currentSessionIndex = 0,
+    this.currentSessionIndex = 1,
   });
 
   @override

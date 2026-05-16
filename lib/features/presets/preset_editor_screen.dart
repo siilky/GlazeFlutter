@@ -915,7 +915,7 @@ class _SettingsToggle extends StatelessWidget {
             ],
           ),
         ),
-        Switch(value: value, onChanged: onChanged, activeThumbColor: context.cs.primary),
+        Switch(value: value, onChanged: onChanged),
       ],
     );
   }

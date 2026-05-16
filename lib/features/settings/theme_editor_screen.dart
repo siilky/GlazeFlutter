@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/theme/theme_preset.dart';
 import '../../shared/theme/theme_provider.dart';
 import '../../shared/theme/app_colors.dart';
+import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 
 // ─── Palette (mirrors Glaze JS PRESET_COLORS / PRESET_UI_COLORS) ──────────────
@@ -724,9 +725,24 @@ class _FontModeRow extends StatelessWidget {
             child: Text(label, style: TextStyle(fontSize: 14, color: context.cs.onSurface)),
           ),
           const Spacer(),
-          PopupMenuButton<String>(
-            initialValue: mode,
-            onSelected: onChanged,
+          GestureDetector(
+            onTap: () {
+              GlazeBottomSheet.show(
+                context,
+                title: label,
+                items: List.generate(
+                  modes.length,
+                  (i) => BottomSheetItem(
+                    label: modeLabels[i],
+                    icon: modes[i] == mode ? Icons.check : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (modes[i] != mode) onChanged(modes[i]);
+                    },
+                  ),
+                ),
+              );
+            },
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -736,10 +752,6 @@ class _FontModeRow extends StatelessWidget {
                 ),
                 Icon(Icons.arrow_drop_down, color: context.cs.primary),
               ],
-            ),
-            itemBuilder: (_) => List.generate(
-              modes.length,
-              (i) => PopupMenuItem(value: modes[i], child: Text(modeLabels[i])),
             ),
           ),
         ],

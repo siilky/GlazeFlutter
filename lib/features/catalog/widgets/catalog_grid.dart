@@ -203,7 +203,7 @@ class CatalogGrid extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      useSafeArea: true,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (_) => CatalogDetailLauncher(item: item, provider: provider),
     );

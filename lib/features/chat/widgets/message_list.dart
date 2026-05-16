@@ -153,6 +153,7 @@ class _MessageListState extends State<MessageList> {
       isSearchMatch: isMatch,
       searchQuery: widget.searchQuery,
       activeMatchIndex: activeMatchIndex,
+      time: msg.time,
     );
   }
 

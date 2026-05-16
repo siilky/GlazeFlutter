@@ -28,24 +28,22 @@ class _ImportUrlDialogState extends ConsumerState<ImportUrlDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: context.cs.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Text(
-        'Import by URL',
-        style: TextStyle(color: context.cs.onSurface),
-      ),
-      content: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Paste a JanitorAI, Saucepan.ai, or Chub.ai character URL',
-            style: TextStyle(color: context.cs.onSurfaceVariant, fontSize: 13),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Text(
+              'Paste a JanitorAI, Saucepan.ai, or Chub.ai character URL',
+              style: TextStyle(color: context.cs.onSurfaceVariant, fontSize: 14),
+            ),
           ),
-          const SizedBox(height: 12),
           TextField(
             controller: _controller,
+            autofocus: true,
             style: TextStyle(fontSize: 14, color: context.cs.onSurface),
             decoration: InputDecoration(
               hintText: 'https://...',
@@ -98,37 +96,27 @@ class _ImportUrlDialogState extends ConsumerState<ImportUrlDialog> {
             const SizedBox(height: 12),
             Text(
               _error!,
-              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
             ),
           ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _startExtraction,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.cs.primary,
+                foregroundColor: context.cs.onPrimary,
+              ),
+              child: Text(
+                _loading ? 'Importing...' : 'Import',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
         ],
       ),
-      actions: [
-        if (!_loading)
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.cs.onSurfaceVariant),
-            ),
-          ),
-        if (!_loading)
-          TextButton(
-            onPressed: _startExtraction,
-            child: Text(
-              'Import',
-              style: TextStyle(color: context.cs.primary),
-            ),
-          ),
-        if (_loading)
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.cs.onSurfaceVariant),
-            ),
-          ),
-      ],
     );
   }
 

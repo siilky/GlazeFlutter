@@ -217,7 +217,7 @@ class _ToggleRow extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-      Switch(value: value, onChanged: onChanged, activeThumbColor: context.cs.primary),
+      Switch(value: value, onChanged: onChanged),
     ],
   );
 }

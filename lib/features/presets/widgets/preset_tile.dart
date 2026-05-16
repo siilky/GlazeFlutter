@@ -40,26 +40,52 @@ class PresetTile extends ConsumerWidget {
             child: Text(isActive ? 'Active' : 'Set Active', style: const TextStyle(fontSize: 12)),
           ),
           IconButton(icon: const Icon(Icons.upload_file, size: 20), tooltip: 'Export', onPressed: () => _exportPreset(ref, context, preset)),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'edit') {
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => PresetEditorScreen(preset: preset)));
-              } else if (value == 'duplicate') {
-                final dup = preset.copyWith(id: generateId(), name: '${preset.name} (copy)');
-                ref.read(presetListProvider.notifier).add(dup);
-              } else if (value == 'export') {
-                _exportPreset(ref, context, preset);
-              } else if (value == 'delete') {
-                if (isActive) setActivePreset(ref, null);
-                ref.read(presetListProvider.notifier).remove(preset.id);
-              }
+          IconButton(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: 'More options',
+            onPressed: () {
+              GlazeBottomSheet.show(
+                context,
+                title: 'Preset Options',
+                items: [
+                  BottomSheetItem(
+                    label: 'Edit',
+                    icon: Icons.edit,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => PresetEditorScreen(preset: preset)));
+                    },
+                  ),
+                  BottomSheetItem(
+                    label: 'Duplicate',
+                    icon: Icons.copy,
+                    onTap: () {
+                      Navigator.pop(context);
+                      final dup = preset.copyWith(id: generateId(), name: '${preset.name} (copy)');
+                      ref.read(presetListProvider.notifier).add(dup);
+                    },
+                  ),
+                  BottomSheetItem(
+                    label: 'Export',
+                    icon: Icons.upload_file,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _exportPreset(ref, context, preset);
+                    },
+                  ),
+                  BottomSheetItem(
+                    label: 'Delete',
+                    icon: Icons.delete,
+                    isDestructive: true,
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (isActive) setActivePreset(ref, null);
+                      ref.read(presetListProvider.notifier).remove(preset.id);
+                    },
+                  ),
+                ],
+              );
             },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-              const PopupMenuItem(value: 'export', child: Text('Export')),
-              const PopupMenuItem(value: 'delete', child: Text('Delete')),
-            ],
           ),
         ],
       ),

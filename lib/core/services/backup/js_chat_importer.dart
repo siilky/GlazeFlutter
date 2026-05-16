@@ -53,7 +53,7 @@ class JsChatImporter with BackupHelpers {
         : null;
 
     for (final sessionEntry in sessions.entries) {
-      final sessionIdx = int.tryParse(sessionEntry.key) ?? 0;
+      final sessionIdx = int.tryParse(sessionEntry.key) ?? 1;
       final rawMessages = sessionEntry.value;
       if (rawMessages is! List) continue;
 
@@ -188,7 +188,7 @@ class JsChatImporter with BackupHelpers {
     if (memoryBooksRaw is Map) {
       await _importMemoryBooksFromMap(charId, memoryBooksRaw);
     } else if (memoryBooksRaw is List) {
-      final sessionId = '${charId}_0';
+      final sessionId = '${charId}_1';
       await _importMemoryBookEntries(charId, sessionId, memoryBooksRaw, {}, null);
     }
 

@@ -77,10 +77,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   late final AnimationController _drawerAnimController;
   late final Animation<double> _drawerAnim;
 
-  /// True while _toggleDrawer is intentionally switching keyboard → drawer.
-  /// Suppresses the focus-change and keyboard-dismiss guards that would
-  /// otherwise undo the drawer open.
-  bool _intentionalToggle = false;
+  /// True while switching from keyboard to drawer. Keeps the input bar up.
+  bool _switchingToDrawer = false;
 
   @override
   void initState() {
@@ -133,7 +131,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _onFocusChanged() {
-    if (_intentionalToggle) return;
     if (_inputFocus.hasFocus && _drawerOpen) {
       setState(() {
         _drawerOpen = false;
@@ -148,15 +145,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       setState(() => _drawerOpen = false);
       _drawerAnimController.reverse();
     } else {
-      _intentionalToggle = true;
-      _inputFocus.unfocus();
       HapticFeedback.selectionClick();
       _activeDrawerHeight = _lastKeyboardHeight;
-      setState(() => _drawerOpen = true);
-      _drawerAnimController.forward();
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (mounted) _intentionalToggle = false;
-      });
+      
+      final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+      if (keyboardHeight > 0 || _inputFocus.hasFocus) {
+        setState(() => _switchingToDrawer = true);
+        _inputFocus.unfocus();
+      } else {
+        setState(() => _drawerOpen = true);
+        _drawerAnimController.forward();
+      }
     }
   }
 
@@ -196,7 +195,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final sessionName = chatState?.session != null
         ? 'Session #${chatState!.session!.sessionIndex}'
         : 'Loading...';
-    final sessionIndex = chatState?.session?.sessionIndex ?? 0;
+    final sessionIndex = chatState?.session?.sessionIndex ?? 1;
     
     final appSettings = ref.watch(appSettingsProvider).valueOrNull;
     final virtualKeyboardSend = appSettings?.virtualKeyboardSend ?? false;
@@ -223,33 +222,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _tempMaxHeight = 0;
     }
 
-    // If the system keyboard appears while the drawer is open (e.g. external
-    // keyboard, IME race), hide the drawer.
-    if (keyboardHeight > 0 && _drawerOpen && !_intentionalToggle) {
+    if (_switchingToDrawer && keyboardHeight == 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _drawerOpen && !_intentionalToggle) _closeDrawer();
+        if (mounted && _switchingToDrawer) {
+          setState(() {
+            _switchingToDrawer = false;
+            _drawerOpen = true;
+          });
+          _drawerAnimController.forward();
+        }
+      });
+    }
+
+    if (keyboardHeight > 0 && _drawerOpen && !_switchingToDrawer) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _drawerOpen && !_switchingToDrawer) _closeDrawer();
       });
     }
 
     // Safe area bottom padding is only needed when no panel (keyboard/drawer) 
     // is active. When active, they sit at the very bottom above the system nav bar.
     final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final isIdle = keyboardHeight == 0 && !_drawerOpen && _drawerAnimController.value == 0;
+    final isIdle = keyboardHeight == 0 && !_drawerOpen && !_switchingToDrawer && _drawerAnimController.value == 0;
     final bottomPadding = isIdle ? safeBottom : 0.0;
 
     // Final (post-animation) inset for layout-only consumers (MessageList).
     // Animated visual positioning of the input + drawer is driven by
     // _drawerAnim inside _ChatBody so list paddings don't churn each frame.
-    final targetDrawerInset = _drawerOpen ? _activeDrawerHeight : 0.0;
+    final targetDrawerInset = (_drawerOpen || _switchingToDrawer) ? _activeDrawerHeight : 0.0;
     final targetBottomPanelInset = math.max(targetDrawerInset, keyboardHeight) + bottomPadding;
 
     return SessionLifecycleTracker(
       charId: charId,
-      child: GlazeScaffold(
-        extendBodyBehindHeader: true,
-        resizeToAvoidBottomInset: false,
-        hideHeader: _isHeaderHidden,
-        title: title,
+      child: PopScope(
+        canPop: !_drawerOpen && !_showSearch && !_inputFocus.hasFocus,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          if (_inputFocus.hasFocus) {
+            _inputFocus.unfocus();
+            return;
+          }
+          if (_drawerOpen) {
+            _closeDrawer();
+            return;
+          }
+          if (_showSearch) {
+            _searchController.clear();
+            setState(() {
+              _showSearch = false;
+              _searchQuery = '';
+              _searchMatches = [];
+              _searchCurrentIndex = 0;
+            });
+            return;
+          }
+        },
+        child: GlazeScaffold(
+          extendBodyBehindHeader: true,
+          resizeToAvoidBottomInset: false,
+          hideHeader: _isHeaderHidden,
+          title: title,
         titleWidget: _showSearch
             ? TextField(
                 controller: _searchController,
@@ -344,6 +376,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             state: state,
             inputFocus: _inputFocus,
             drawerOpen: _drawerOpen,
+            isSwitchingToDrawer: _switchingToDrawer,
             drawerHeight: _activeDrawerHeight,
             keyboardHeight: keyboardHeight,
             targetBottomPanelInset: targetBottomPanelInset,
@@ -366,15 +399,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
-class _ChatBody extends ConsumerWidget {
+class _ChatBody extends ConsumerStatefulWidget {
   final String charId;
   final ChatState state;
   final FocusNode inputFocus;
   final bool drawerOpen;
+  final bool isSwitchingToDrawer;
   final double drawerHeight;
   final double keyboardHeight;
 
@@ -403,6 +438,7 @@ class _ChatBody extends ConsumerWidget {
     required this.state,
     required this.inputFocus,
     required this.drawerOpen,
+    required this.isSwitchingToDrawer,
     required this.drawerHeight,
     required this.keyboardHeight,
     required this.targetBottomPanelInset,
@@ -420,56 +456,84 @@ class _ChatBody extends ConsumerWidget {
     this.enterToSend = true,
   });
 
-  static const double _inputBarApproxHeight = 130;
+  @override
+  ConsumerState<_ChatBody> createState() => _ChatBodyState();
+}
+
+class _ChatBodyState extends ConsumerState<_ChatBody> {
+  double _inputBarHeight = 130.0;
+  final GlobalKey _inputBarKey = GlobalKey();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkHeight());
+  }
+
+  void _checkHeight() {
+    if (!mounted) return;
+    final ctx = _inputBarKey.currentContext;
+    if (ctx != null) {
+      final size = ctx.size;
+      if (size != null && size.height != _inputBarHeight && size.height > 0) {
+        setState(() {
+          _inputBarHeight = size.height;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preset = ref.watch(themeProvider).activePreset;
     // Reserve space below the message list for: input bar + (keyboard or
     // drawer) + the bottom safe area. We pass the FINAL inset so the list's
     // padding doesn't churn per animation frame.
     final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final targetDrawerInset = drawerOpen ? drawerHeight : 0.0;
-    final panelHeight = math.max(targetDrawerInset, keyboardHeight);
-    final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
-    final effectiveBottomInset = panelHeight + (safeBottom * (1 - factor));
-    final messageListBottom = _inputBarApproxHeight + effectiveBottomInset;
+            // ...
+            final targetDrawerInset = widget.drawerOpen ? widget.drawerHeight : 0.0;
+            final panelHeight = math.max(targetDrawerInset, widget.keyboardHeight);
+            final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
+            final effectiveBottomInset = panelHeight + (safeBottom * (1 - factor));
+            final messageListBottom = _inputBarHeight + effectiveBottomInset;
 
-    final preset = ref.watch(themeProvider).activePreset;
+            final bgBlur = preset.bgBlur > 0 ? preset.bgBlur : 0.0;
+            final bgOpacity = preset.bgOpacity.clamp(0.0, 1.0);
 
-    return Stack(
-      children: [
-        if (ref.watch(bgImageProvider).valueOrNull case final path?)
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: _BgImage(
-                path: path,
-                blur: preset.bgBlur > 0 ? preset.bgBlur : 0.0,
-                opacity: preset.bgOpacity.clamp(0.0, 1.0),
-              ),
-            ),
-          ),
-        Positioned.fill(
-          child: NotificationListener<UserScrollNotification>(
-            onNotification: (notification) {
-              if (onScrollDirection != null) {
-                onScrollDirection!(notification.direction);
-              }
-              return false;
-            },
-            child: RepaintBoundary(
-              child: MessageList(
-              messages: state.messages,
-              isGenerating: state.isGenerating,
-              generationStartTime: state.generationStartTime,
-              charId: charId,
-              bottomInset: messageListBottom,
-              searchQuery: searchQuery,
-              searchMatches: searchMatches,
-              searchCurrentIndex: searchCurrentIndex,
-            ),
-            ),
-          ),
-        ),
+            return Stack(
+              children: [
+                if (ref.watch(bgImageProvider).valueOrNull case final path?)
+                  Positioned.fill(
+                    child: RepaintBoundary(
+                      child: _BgImage(
+                        path: path,
+                        blur: bgBlur,
+                        opacity: bgOpacity,
+                      ),
+                    ),
+                  ),
+                Positioned.fill(
+                  child: NotificationListener<UserScrollNotification>(
+                    onNotification: (notification) {
+                      if (widget.onScrollDirection != null) {
+                        widget.onScrollDirection!(notification.direction);
+                      }
+                      return false;
+                    },
+                    child: RepaintBoundary(
+                      child: MessageList(
+                      messages: widget.state.messages,
+                      isGenerating: widget.state.isGenerating,
+                      generationStartTime: widget.state.generationStartTime,
+                      charId: widget.charId,
+                      bottomInset: messageListBottom,
+                      searchQuery: widget.searchQuery,
+                      searchMatches: widget.searchMatches,
+                      searchCurrentIndex: widget.searchCurrentIndex,
+                    ),
+                    ),
+                  ),
+                ),
         // Top gradient for fade effect under the header
         Positioned(
           top: 0,
@@ -510,83 +574,111 @@ class _ChatBody extends ConsumerWidget {
         // Animated bottom region: drawer slides up from below, the input
         // bar tracks the same reveal so they move as one piece.
         AnimatedBuilder(
-          animation: drawerAnim,
+          animation: widget.drawerAnim,
           builder: (context, _) {
-            final progress = drawerAnim.value;
-            final animatedDrawerInset = drawerHeight * progress;
-            final panelHeight = math.max(animatedDrawerInset, keyboardHeight);
-            
-            // Smoothly transition from safe area to panel height.
-            // This prevents a 24px jump when the animation starts.
-            final safeBottom = MediaQuery.paddingOf(context).bottom;
-            final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
-            final animatedBottomPanelInset = panelHeight + (safeBottom * (1 - factor));
+            final progress = widget.drawerAnim.value;
+            final bool drawerActive = widget.drawerOpen || widget.isSwitchingToDrawer;
+            final double targetPanelInset = drawerActive ? widget.drawerHeight : 0.0;
+            final int durationMs = widget.isSwitchingToDrawer ? 0 : 260;
 
-            // Keep the panel mounted while the close animation runs out.
-            final renderDrawer = drawerOpen || progress > 0.001;
+            return TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: targetPanelInset, end: targetPanelInset),
+              duration: Duration(milliseconds: durationMs),
+              curve: Curves.easeOutCubic,
+              builder: (context, animatedInset, _) {
+                final panelHeight = math.max(animatedInset, widget.keyboardHeight);
+                
+                // Smoothly transition from safe area to panel height.
+                // This prevents a 24px jump when the animation starts.
+                final safeBottom = MediaQuery.paddingOf(context).bottom;
+                final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
+                final animatedBottomPanelInset = panelHeight + (safeBottom * (1 - factor));
 
-            return Stack(
-              children: [
-                if (renderDrawer)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: -drawerHeight * (1 - progress),
-                    height: drawerHeight,
-                    child: MagicDrawerPanel(
-                      charId: charId,
-                      onClose: onCloseDrawer,
-                    ),
-                  ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: animatedBottomPanelInset,
-                  child: Column(
+                // Keep the panel mounted while the close animation runs out.
+                final renderDrawer = widget.drawerOpen || progress > 0.001;
+
+                return Stack(
+                  children: [
+                    if (renderDrawer)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: -widget.drawerHeight * (1 - progress),
+                        height: widget.drawerHeight,
+                        child: MagicDrawerPanel(
+                          charId: widget.charId,
+                          onClose: widget.onCloseDrawer,
+                        ),
+                      ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: animatedBottomPanelInset,
+                      child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ChatInputBar(
-                        focusNode: inputFocus,
-                        showSearchControls: showSearchControls,
-                        searchQuery: searchQuery,
-                        searchMatchCount: searchMatches.length,
-                        searchCurrentIndex: searchCurrentIndex,
-                        onSearchNext: onSearchNext,
-                        onSearchPrev: onSearchPrev,
-                        isDrawerOpen: drawerOpen,
-                        virtualKeyboardSend: virtualKeyboardSend,
-                        enterToSend: enterToSend,
-                        onSend: (text) {
-                          if (text.trim().isEmpty) return;
-                          ref
-                              .read(chatProvider(charId).notifier)
-                              .sendMessage(text);
+                      NotificationListener<SizeChangedLayoutNotification>(
+                        onNotification: (n) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) => _checkHeight());
+                          return true;
                         },
-                        onSendWithGuidance: (text, guidance) {
-                          if (text.trim().isEmpty) return;
-                          ref
-                              .read(chatProvider(charId).notifier)
-                              .sendMessage(text, guidanceText: guidance);
-                        },
-                        isGenerating: state.isGenerating,
-                        onStop: state.isGenerating
-                            ? () => ref
-                                  .read(chatProvider(charId).notifier)
-                                  .abortGeneration()
-                            : null,
-                        onMagicDrawer: onToggleDrawer,
-                        onImageGen: () => GlazeBottomSheet.show(
-                          context,
-                          child: const ImageGenSheet(),
+                        child: SizeChangedLayoutNotifier(
+                          child: Container(
+                            key: _inputBarKey,
+                            child: ChatInputBar(
+                              focusNode: widget.inputFocus,
+                              initialDraft: widget.state.session?.draft ?? '',
+                              onDraftChanged: (text) {
+                                ref.read(chatProvider(widget.charId).notifier).saveDraft(text);
+                              },
+                              showSearchControls: widget.showSearchControls,
+                              searchQuery: widget.searchQuery,
+                              searchMatchCount: widget.searchMatches.length,
+                              searchCurrentIndex: widget.searchCurrentIndex,
+                              onSearchNext: widget.onSearchNext,
+                              onSearchPrev: widget.onSearchPrev,
+                              isDrawerOpen: widget.drawerOpen || widget.isSwitchingToDrawer,
+                              virtualKeyboardSend: widget.virtualKeyboardSend,
+                              enterToSend: widget.enterToSend,
+                              onSend: (text) {
+                                if (text.trim().isEmpty) return;
+                                ref
+                                    .read(chatProvider(widget.charId).notifier)
+                                    .sendMessage(text);
+                              },
+                              onSendWithGuidance: (text, guidance) {
+                                if (text.trim().isEmpty) return;
+                                ref
+                                    .read(chatProvider(widget.charId).notifier)
+                                    .sendMessage(text, guidanceText: guidance);
+                              },
+                              isGenerating: widget.state.isGenerating,
+                              onStop: widget.state.isGenerating
+                                  ? () => ref
+                                        .read(chatProvider(widget.charId).notifier)
+                                        .abortGeneration()
+                                  : null,
+                              onMagicDrawer: widget.onToggleDrawer,
+                              onImageGen: () => GlazeBottomSheet.show(
+                                context,
+                                child: const ImageGenSheet(),
+                              ),
+                              onContinue: () => ref
+                                  .read(chatProvider(widget.charId).notifier)
+                                  .continueMessage(),
+                              onImpersonate: () => ref
+                                  .read(chatProvider(widget.charId).notifier)
+                                  .regenerateLastAssistant(),
+                            ),
+                          ),
                         ),
-                        onContinue: () => ref
-                            .read(chatProvider(charId).notifier)
-                            .continueMessage(),
                       ),
                     ],
                   ),
                 ),
               ],
+            );
+              },
             );
           },
         ),

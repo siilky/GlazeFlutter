@@ -93,6 +93,9 @@ class _SheetViewState extends State<SheetView>
   /// fullscreen page: no drag handle, no resize, no drag-down dismiss.
   bool _inModalSheet = true;
 
+  bool _keyboardOpen = false;
+  bool _wasExpandedBeforeKeyboard = false;
+
   late AnimationController _ctrl;
   Animation<double>? _anim;
 
@@ -109,7 +112,7 @@ class _SheetViewState extends State<SheetView>
     if (!_inModalSheet) return h;
     final f = widget.collapsedFraction;
     if (f != null) return h * f.clamp(0.0, 1.0);
-    return math.min(h * 0.55, 500.0);
+    return h * 0.85;
   }
 
   double _full(BuildContext ctx) => MediaQuery.of(ctx).size.height;
@@ -245,6 +248,29 @@ class _SheetViewState extends State<SheetView>
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final isKeyboardOpen = bottomInset > 0;
+
+    if (isKeyboardOpen != _keyboardOpen) {
+      _keyboardOpen = isKeyboardOpen;
+      if (isKeyboardOpen) {
+        if (!_expanded) {
+          _wasExpandedBeforeKeyboard = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_expanded) _animateTo(_full(context), expanding: true);
+          });
+        } else {
+          _wasExpandedBeforeKeyboard = true;
+        }
+      } else {
+        if (!_wasExpandedBeforeKeyboard) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _expanded) _animateTo(_collapsed(context), expanding: false);
+          });
+        }
+      }
+    }
+
     if (!_inModalSheet) {
       if (_hasHeader) {
         _measureHeader();
@@ -252,6 +278,7 @@ class _SheetViewState extends State<SheetView>
 
       return Scaffold(
         backgroundColor: context.cs.surface,
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             Positioned.fill(
@@ -263,7 +290,10 @@ class _SheetViewState extends State<SheetView>
                   
                   final innerChild = Padding(
                     padding: widget.bodyPadding ?? EdgeInsets.zero,
-                    child: widget.body,
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: isKeyboardOpen ? bottomInset + 10 : 0),
+                      child: widget.body,
+                    ),
                   );
 
                   return MediaQuery(
@@ -342,7 +372,7 @@ class _SheetViewState extends State<SheetView>
             if (widget.floatingActionButton != null)
               Positioned(
                 right: 16,
-                bottom: 16 + MediaQuery.of(context).padding.bottom,
+                bottom: 16 + MediaQuery.of(context).padding.bottom + bottomInset,
                 child: widget.floatingActionButton!,
               ),
           ],
@@ -356,7 +386,8 @@ class _SheetViewState extends State<SheetView>
         ? ((_currentHeight - collapsed) / (full - collapsed)).clamp(0.0, 1.0)
         : 0.0;
     final radius = 20.0 * (1.0 - t);
-    final topPad = MediaQuery.of(context).padding.top * t;
+    final realTopPadding = MediaQueryData.fromView(View.of(context)).padding.top;
+    final topPad = realTopPadding * t;
 
     if (_hasHeader) {
       _measureHeader();
@@ -387,7 +418,10 @@ class _SheetViewState extends State<SheetView>
 
                         final innerChild = Padding(
                           padding: widget.bodyPadding ?? EdgeInsets.zero,
-                          child: widget.body,
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: isKeyboardOpen ? bottomInset + 10 : 0),
+                            child: widget.body,
+                          ),
                         );
 
                         return MediaQuery(
@@ -472,7 +506,7 @@ class _SheetViewState extends State<SheetView>
                 if (widget.floatingActionButton != null)
                   Positioned(
                     right: 16,
-                    bottom: 16 + MediaQuery.of(context).padding.bottom,
+                    bottom: 16 + MediaQuery.of(context).padding.bottom + bottomInset,
                     child: widget.floatingActionButton!,
                   ),
               ],
@@ -663,7 +697,7 @@ class _HeaderIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = foregroundColor ?? context.cs.primary;
     final button = Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: Colors.transparent,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),

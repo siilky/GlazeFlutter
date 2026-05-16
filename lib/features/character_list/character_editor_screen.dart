@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../core/models/character.dart';
 import '../../core/state/db_provider.dart';
+import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../core/state/lorebook_provider.dart';
 import '../../shared/theme/app_colors.dart';
@@ -18,7 +19,8 @@ import '../../shared/widgets/generic_editor.dart';
 
 class CharacterEditorScreen extends ConsumerStatefulWidget {
   final String charId;
-  const CharacterEditorScreen({super.key, required this.charId});
+  final bool isNew;
+  const CharacterEditorScreen({super.key, required this.charId, this.isNew = false});
 
   @override
   ConsumerState<CharacterEditorScreen> createState() =>
@@ -31,11 +33,36 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
   Map<String, dynamic> _item = {};
   List<String> _lorebookNames = [];
   late final _repo = ref.read(characterRepoProvider);
+  late final String _effectiveId = widget.isNew ? generateId() : widget.charId;
 
   @override
   void initState() {
     super.initState();
-    _loadCharacter();
+    if (widget.isNew) {
+      _item = {
+        'name': '',
+        'description': '',
+        'personality': '',
+        'scenario': '',
+        'first_mes': '',
+        'alternate_greetings': <String>[],
+        'mes_example': '',
+        'system_prompt': '',
+        'post_history_instructions': '',
+        'creator': '',
+        'creator_notes': '',
+        'tags': <String>[],
+        'avatarPath': null,
+        'depth_prompt': '',
+        'depth_prompt_depth': 4,
+        'depth_prompt_role': 'system',
+        'world': null,
+        'talkativeness': 1.0,
+      };
+      _loading = false;
+    } else {
+      _loadCharacter();
+    }
   }
 
   Future<void> _loadLorebookNames() async {
@@ -86,6 +113,15 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
     }
   }
 
+  void _saveAndClose() {
+    if ((_item['name'] as String?)?.trim().isEmpty ?? true) {
+      GlazeToast.show(context, 'Enter a character name first');
+      return;
+    }
+    _save(_item);
+    _goBack();
+  }
+
   Future<void> _pickAvatar() async {
     final result = await FilePicker.pickFiles(type: FileType.image);
     if (result == null || result.files.isEmpty) return;
@@ -95,7 +131,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
 
     final bytes = await File(filePath).readAsBytes();
     final storage = await ref.read(imageStorageProvider.future);
-    final savedPath = await storage.saveAvatar(widget.charId, bytes);
+    final savedPath = await storage.saveAvatar(_effectiveId, bytes);
     await FileImage(File(savedPath)).evict();
     if (mounted) {
       setState(() {
@@ -122,7 +158,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
           [];
 
       final updated = Character(
-        id: widget.charId,
+        id: _effectiveId,
         name: (item['name'] as String).trim(),
         avatarPath: item['avatarPath'] as String?,
         description: (item['description'] as String?)?.trim().isEmpty ?? true
@@ -351,9 +387,18 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
     ];
 
     return SheetView(
-      title: 'Edit Character',
+      title: widget.isNew ? 'New Character' : 'Edit Character',
       showBack: true,
       onBack: _goBack,
+      actions: widget.isNew
+          ? [
+              SheetViewAction(
+                icon: const Icon(Icons.check_rounded, size: 20),
+                tooltip: 'Save',
+                onPressed: _saveAndClose,
+              ),
+            ]
+          : const [],
       body: GenericEditor(
         item: _item,
         config: config,
@@ -365,7 +410,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
         onChanged: (values) {
           _item = values;
         },
-        onSave: _save,
+        onSave: widget.isNew ? null : _save,
         onOpenFsEditor: _onOpenFsEditor,
       ),
     );

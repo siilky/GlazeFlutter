@@ -7,6 +7,7 @@ import '../../shared/shell/nav_height_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart' show GlazeAppBar;
 import '../../shared/widgets/menu_group.dart';
+import '../backup/backup_screen.dart';
 import 'about_overlay.dart';
 
 class MenuScreen extends ConsumerWidget {
@@ -45,7 +46,15 @@ class MenuScreen extends ConsumerWidget {
                     MenuItem(
                       icon: Icons.backup_outlined,
                       label: 'Backups',
-                      onTap: () => context.go('/backup'),
+                      onTap: () => showModalBottomSheet(
+                        context: context,
+                        useRootNavigator: true,
+                        useSafeArea: true,
+                        backgroundColor: Colors.transparent,
+                        barrierColor: Colors.black54,
+                        isScrollControlled: true,
+                        builder: (_) => const BackupScreen(),
+                      ),
                     ),
                     MenuItem(
                       icon: Icons.sync_rounded,

@@ -101,6 +101,7 @@ class CatalogControls extends StatelessWidget {
           onTap: () => showModalBottomSheet(
             context: context,
             isScrollControlled: true,
+            useRootNavigator: true,
             useSafeArea: true,
             backgroundColor: Colors.transparent,
             builder: (_) => CatalogFilterSheet(

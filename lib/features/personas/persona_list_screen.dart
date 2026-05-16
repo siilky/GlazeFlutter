@@ -11,6 +11,8 @@ import '../../core/state/db_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../shared/theme/app_colors.dart';
+import '../../shared/widgets/generic_editor.dart';
+import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/sheet_view.dart';
 import 'persona_connections_sheet.dart';
@@ -57,7 +59,7 @@ class PersonaListScreen extends ConsumerWidget {
               )
             : Builder(
                 builder: (context) => ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24).add(
+                  padding: EdgeInsets.fromLTRB(16, startExpanded ? 16 : 0, 16, 24).add(
                     EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
                   ),
                   itemCount: list.length,
@@ -139,22 +141,38 @@ class _PersonaTile extends ConsumerWidget {
               tooltip: 'Connections',
               onPressed: () => showPersonaConnections(context, persona.id),
             ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'edit') {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _PersonaEditorScreen(existing: persona),
+            IconButton(
+              icon: const Icon(Icons.more_vert, size: 20),
+              tooltip: 'More options',
+              onPressed: () {
+                GlazeBottomSheet.show(
+                  context,
+                  title: 'Persona Options',
+                  items: [
+                    BottomSheetItem(
+                      label: 'Edit',
+                      icon: Icons.edit,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _PersonaEditorScreen(existing: persona),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                } else if (value == 'delete') {
-                  ref.read(personaListProvider.notifier).remove(persona.id);
-                }
+                    BottomSheetItem(
+                      label: 'Delete',
+                      icon: Icons.delete,
+                      isDestructive: true,
+                      onTap: () {
+                        Navigator.pop(context);
+                        ref.read(personaListProvider.notifier).remove(persona.id);
+                      },
+                    ),
+                  ],
+                );
               },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
             ),
           ],
         ),
@@ -173,25 +191,39 @@ class _PersonaEditorScreen extends ConsumerStatefulWidget {
 }
 
 class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
-  late final _nameCtrl = TextEditingController(
-    text: widget.existing?.name ?? '',
-  );
-  late final _promptCtrl = TextEditingController(
-    text: widget.existing?.prompt ?? '',
-  );
-  String? _avatarPath;
+  late Map<String, dynamic> _item;
+  late final String _personaId;
+  late final int _createdAt;
+
+  static const _config = [
+    GenericEditorSection(
+      fields: [
+        GenericEditorField(
+          key: 'name',
+          label: 'Name',
+          placeholder: 'Your persona name',
+        ),
+        GenericEditorField(
+          key: 'prompt',
+          label: 'Persona Prompt',
+          type: 'textarea',
+          rows: 12,
+          placeholder: 'Describe your persona — this gets injected into the prompt',
+        ),
+      ],
+    ),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _avatarPath = widget.existing?.avatarPath;
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _promptCtrl.dispose();
-    super.dispose();
+    _personaId = widget.existing?.id ?? generateId();
+    _createdAt = widget.existing?.createdAt ?? currentTimestampSeconds();
+    _item = {
+      'name': widget.existing?.name ?? '',
+      'prompt': widget.existing?.prompt ?? '',
+      'avatarPath': widget.existing?.avatarPath,
+    };
   }
 
   Future<void> _pickAvatar() async {
@@ -204,11 +236,31 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
     final filePath = result.files.first.path;
     if (filePath == null) return;
 
-    final id = widget.existing?.id ?? generateId();
     final imageStorage = await ref.read(imageStorageProvider.future);
     final bytes = await File(filePath).readAsBytes();
-    final savedPath = await imageStorage.saveAvatar('persona_$id', bytes);
-    if (mounted) setState(() => _avatarPath = savedPath);
+    final savedPath = await imageStorage.saveAvatar('persona_$_personaId', bytes);
+    
+    setState(() {
+      _item['avatarPath'] = savedPath;
+    });
+    _save(_item);
+  }
+
+  void _save(Map<String, dynamic> values) {
+    final name = (values['name'] as String?)?.trim() ?? '';
+    final promptStr = (values['prompt'] as String?)?.trim() ?? '';
+
+    final persona = Persona(
+      id: _personaId,
+      name: name.isEmpty ? 'Unnamed' : name,
+      prompt: promptStr.isEmpty ? null : promptStr,
+      avatarPath: values['avatarPath'] as String?,
+      createdAt: _createdAt,
+    );
+
+    ref.read(personaRepoProvider).put(persona).then((_) {
+      ref.invalidate(personaListProvider);
+    });
   }
 
   @override
@@ -216,98 +268,19 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
     return GlazeScaffold(
       title: widget.existing != null ? 'Edit Persona' : 'New Persona',
       onBack: () => Navigator.of(context).pop(),
-      actions: [
-        TextButton(
-          onPressed: _save,
-          child: const Text('Save', style: TextStyle(color: Colors.white)),
-        ),
-      ],
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Center(
-            child: GestureDetector(
-              onTap: _pickAvatar,
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 48,
-                    backgroundColor: context.cs.primary.withValues(alpha: 0.15),
-                    backgroundImage: _avatarPath != null
-                        ? FileImage(File(_avatarPath!))
-                        : null,
-                    child: _avatarPath == null
-                        ? Icon(
-                            Icons.person,
-                            size: 40,
-                            color: context.cs.primary.withValues(alpha: 0.5),
-                          )
-                        : null,
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: context.cs.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: context.cs.surface,
-                          width: 2,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.camera_alt,
-                        size: 14,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Name',
-              hintText: 'Your persona name',
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _promptCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Persona Prompt',
-              hintText:
-                  'Describe your persona — this gets injected into the prompt',
-              alignLabelWithHint: true,
-            ),
-            maxLines: 12,
-            minLines: 4,
-          ),
-        ],
+      body: GenericEditor(
+        item: _item,
+        config: _config,
+        showAvatar: true,
+        avatarHint: 'Tap to change avatar',
+        onAvatarTap: _pickAvatar,
+        onChanged: (values) {
+          _item = values;
+        },
+        onSave: (values) {
+          _save(values);
+        },
       ),
     );
-  }
-
-  Future<void> _save() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-
-    final persona = Persona(
-      id: widget.existing?.id ?? generateId(),
-      name: name,
-      prompt: _promptCtrl.text.trim().isEmpty ? null : _promptCtrl.text.trim(),
-      avatarPath: _avatarPath,
-      createdAt: widget.existing?.createdAt ?? currentTimestampSeconds(),
-    );
-
-    await ref.read(personaRepoProvider).put(persona);
-    ref.invalidate(personaListProvider);
-
-    if (mounted) Navigator.of(context).pop();
   }
 }

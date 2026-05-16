@@ -12,9 +12,9 @@ import 'shared/theme/theme_font_provider.dart';
 import 'core/services/onboarding_service.dart';
 import 'features/character_list/character_detail_screen.dart';
 import 'features/character_list/character_editor_screen.dart';
+import 'core/utils/id_generator.dart';
 import 'features/character_list/character_list_screen.dart';
 import 'features/character_gallery/gallery_screen.dart';
-import 'features/backup/backup_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/chat_history/chat_history_screen.dart';
 import 'features/lorebooks/lorebook_list_screen.dart';
@@ -115,6 +115,13 @@ final routerProvider = Provider<GoRouter>(
         },
       ),
       GoRoute(
+        path: '/character/create',
+        builder: (_, _) => CharacterEditorScreen(
+          charId: generateId(),
+          isNew: true,
+        ),
+      ),
+      GoRoute(
         path: '/character/:charId',
         builder: (_, state) => CharacterDetailSheetLauncher(
             charId: state.pathParameters['charId']!),
@@ -133,7 +140,6 @@ final routerProvider = Provider<GoRouter>(
       GoRoute(path: '/settings', builder: (_, __) => const AppSettingsScreen()),
       GoRoute(path: '/themes', builder: (_, __) => const ThemePresetScreen()),
       GoRoute(path: '/sync', builder: (_, __) => const SyncSheet()),
-      GoRoute(path: '/backup', builder: (_, __) => const BackupScreen()),
     ],
   ),
 );

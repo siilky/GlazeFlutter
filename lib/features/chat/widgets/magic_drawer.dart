@@ -283,7 +283,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
     }
     setState(() {
       final item = _itemIds.removeAt(from);
-      if (from < to) to -= 1;
       _itemIds.insert(to, item);
       _hoverIndex = null;
     });
@@ -361,7 +360,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           showModalBottomSheet(
             context: context,
             useRootNavigator: true,
-            useSafeArea: true,
             backgroundColor: Colors.transparent,
             barrierColor: Colors.black54,
             isScrollControlled: true,
@@ -375,7 +373,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           showModalBottomSheet(
             context: context,
             useRootNavigator: true,
-            useSafeArea: true,
             backgroundColor: Colors.transparent,
             barrierColor: Colors.black54,
             isScrollControlled: true,
@@ -389,7 +386,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           showModalBottomSheet(
             context: context,
             useRootNavigator: true,
-            useSafeArea: true,
             backgroundColor: Colors.transparent,
             barrierColor: Colors.black54,
             isScrollControlled: true,
@@ -409,7 +405,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           showModalBottomSheet(
             context: context,
             useRootNavigator: true,
-            useSafeArea: true,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
             builder: (_) => const PersonaListScreen(),
@@ -663,19 +658,14 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
                                     _draggingIndex != index,
                                 onTap: () => _handleTap(item.def),
                                 onDelete: () => _removeItem(item.def.id),
-                                onLongPress: () {
-                                  if (!_editing) {
-                                    HapticFeedback.mediumImpact();
-                                    setState(() => _editing = true);
-                                  }
-                                },
                               );
+
                               return SizedBox(
                                 width: itemWidth,
                                 child: DragTarget<int>(
                                   onWillAcceptWithDetails: (details) {
                                     setState(() => _hoverIndex = index);
-                                    return _editing && details.data != index;
+                                    return details.data != index;
                                   },
                                   onLeave: (_) {
                                     if (_hoverIndex == index) {
@@ -686,12 +676,15 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
                                     _moveItem(details.data, index);
                                   },
                                   builder: (context, _, _) {
-                                    if (!_editing) return card;
                                     return LongPressDraggable<int>(
                                       data: index,
+                                      delay: const Duration(milliseconds: 300),
                                       onDragStarted: () {
                                         HapticFeedback.mediumImpact();
-                                        setState(() => _draggingIndex = index);
+                                        setState(() {
+                                          if (!_editing) _editing = true;
+                                          _draggingIndex = index;
+                                        });
                                       },
                                       onDragEnd: (_) {
                                         setState(() {

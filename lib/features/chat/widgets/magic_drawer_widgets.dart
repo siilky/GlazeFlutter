@@ -81,7 +81,7 @@ class MagicCard extends StatefulWidget {
   final bool hovered;
   final VoidCallback onTap;
   final VoidCallback onDelete;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
 
   const MagicCard({
     super.key,
@@ -90,7 +90,7 @@ class MagicCard extends StatefulWidget {
     required this.hovered,
     required this.onTap,
     required this.onDelete,
-    required this.onLongPress,
+    this.onLongPress,
   });
 
   @override

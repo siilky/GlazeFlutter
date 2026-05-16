@@ -145,7 +145,6 @@ void showAuthorsNoteSheet(BuildContext context, String charId) {
   showModalBottomSheet(
     context: context,
     useRootNavigator: true,
-    useSafeArea: true,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => AuthorsNoteSheet(charId: charId),

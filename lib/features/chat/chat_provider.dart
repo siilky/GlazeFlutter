@@ -237,6 +237,21 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     state = AsyncData(ChatState(session: updated));
   }
 
+  Future<void> saveDraft(String draftText) async {
+    final current = state.value;
+    if (current == null || current.session == null) return;
+    if (current.session!.draft == draftText) return;
+    
+    final updatedSession = current.session!.copyWith(draft: draftText);
+    await ref.read(chatRepoProvider).put(updatedSession);
+    state = AsyncData(ChatState(
+      session: updatedSession,
+      isGenerating: current.isGenerating,
+      generationStartTime: current.generationStartTime,
+      error: current.error,
+    ));
+  }
+
   void setSwipe(int messageIndex, int swipeId) {
     final current = state.value;
     if (current == null || current.session == null) return;

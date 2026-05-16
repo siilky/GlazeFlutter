@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:ui';
@@ -205,6 +205,7 @@ class Message extends ConsumerStatefulWidget {
   /// Callback fired when a left-swipe on the last variant of the last message
   /// should trigger regeneration (mirrors Vue's swipe-to-regenerate).
   final VoidCallback? onSwipeRegenerate;
+  final String? time;
 
   const Message({
     super.key,
@@ -235,6 +236,7 @@ class Message extends ConsumerStatefulWidget {
     this.searchQuery = '',
     this.activeMatchIndex = -1,
     this.onSwipeRegenerate,
+    this.time,
   });
 
   @override
@@ -541,6 +543,7 @@ class _MessageState extends ConsumerState<Message>
     final isLast = widget.isLast;
     final isGenerating = widget.isGenerating;
     final charId = widget.charId;
+    final time = widget.time;
     final memoryEntryIds = widget.memoryCoverage['entryIds'];
     final memoryEntryCount = memoryEntryIds is List ? memoryEntryIds.length : 0;
 
@@ -685,6 +688,13 @@ class _MessageState extends ConsumerState<Message>
                       const SizedBox(width: 6),
                       Text('#${messageIndex + 1}', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withValues(alpha: 0.55))),
                     ],
+                    const Spacer(),
+                    if (isHidden) ...[
+                      Icon(Icons.visibility_off, size: 14, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                      const SizedBox(width: 4),
+                    ],
+                    if (time != null)
+                      Text(time, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.55))),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -707,6 +717,13 @@ class _MessageState extends ConsumerState<Message>
                     ),
                     const SizedBox(width: 6),
                     Text(displayName, style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12, color: style.metaColor)),
+                    const Spacer(),
+                    if (isHidden) ...[
+                      Icon(Icons.visibility_off, size: 12, color: style.metaColor.withValues(alpha: 0.7)),
+                      const SizedBox(width: 4),
+                    ],
+                    if (time != null)
+                      Text(time, style: TextStyle(fontSize: 11, color: style.metaColor.withValues(alpha: 0.8))),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -1340,28 +1357,52 @@ class _TypingIndicator extends StatelessWidget {
   }
 }
 
-class _EditTextarea extends StatelessWidget {
+class _EditTextarea extends StatefulWidget {
   final TextEditingController controller;
   final ColorScheme scheme;
   const _EditTextarea({required this.controller, required this.scheme});
+
+  @override
+  State<_EditTextarea> createState() => _EditTextareaState();
+}
+
+class _EditTextareaState extends State<_EditTextarea> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: scheme.surface,
-        border: Border.all(color: scheme.outlineVariant),
+        color: widget.scheme.surface,
+        border: Border.all(color: widget.scheme.outlineVariant),
         borderRadius: BorderRadius.circular(8),
       ),
       child: TextField(
-        controller: controller,
+        controller: widget.controller,
+        focusNode: _focusNode,
         autofocus: true,
         maxLines: null,
         minLines: 1,
         keyboardType: TextInputType.multiline,
         textInputAction: TextInputAction.newline,
-        style: TextStyle(color: scheme.onSurface, fontSize: 14),
+        style: TextStyle(color: widget.scheme.onSurface, fontSize: 14),
         decoration: InputDecoration(
           isDense: true,
           contentPadding: const EdgeInsets.all(8),

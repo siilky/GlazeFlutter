@@ -65,6 +65,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
   final _scrollController = ScrollController();
   Timer? _saveTimer;
   bool _loading = false;
+  bool _hasPromptedForCreation = false;
 
   List<TextEditingController> get _ctrls => [
     _nameCtrl,
@@ -218,6 +219,14 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
     }
 
     final list = asyncList.valueOrNull ?? [];
+    
+    if (asyncList.hasValue && list.isEmpty && !_hasPromptedForCreation) {
+      _hasPromptedForCreation = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _createNewPreset([]);
+      });
+    }
+    
     final activeName = _activeName(activeConfig, list);
 
     return SheetView(
@@ -320,7 +329,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.api_rounded, size: 64, color: context.cs.onSurfaceVariant),
+          Icon(Icons.cloud, size: 64, color: context.cs.onSurfaceVariant),
           const SizedBox(height: 16),
           Text(
             'No API configs yet',
@@ -656,6 +665,17 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
             : config.model.isNotEmpty
             ? config.model
             : 'Unnamed';
+        
+        String? faviconUrl;
+        if (config.endpoint.isNotEmpty) {
+          try {
+            final uri = Uri.parse(config.endpoint);
+            if (uri.host.isNotEmpty && !uri.host.contains('127.0.0.1') && !uri.host.contains('localhost')) {
+              faviconUrl = 'https://www.google.com/s2/favicons?domain=${uri.host}&sz=128';
+            }
+          } catch (_) {}
+        }
+
         return BottomSheetCardItem(
           label: name,
           sublabel: config.endpoint.isNotEmpty
@@ -667,6 +687,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
           icon: isActive
               ? Icons.radio_button_checked_rounded
               : Icons.radio_button_unchecked_rounded,
+          faviconUrl: faviconUrl,
           isActive: isActive,
           actions: [
             if (list.length > 1)

@@ -383,6 +383,19 @@ class _SessionTile extends ConsumerWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
+                    info.sessionName?.isNotEmpty == true
+                        ? info.sessionName!
+                        : 'Session #${info.sessionIndex}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: context.cs.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
                     stripHtml(info.lastMessage).replaceAll('\n', ' '),
                     style: TextStyle(
                       fontSize: 13,

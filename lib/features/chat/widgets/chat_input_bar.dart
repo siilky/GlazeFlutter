@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onMagicDrawer;
   final VoidCallback? onImageGen;
   final VoidCallback? onContinue;
+  final VoidCallback? onImpersonate;
   final bool virtualKeyboardSend;
   final bool enterToSend;
 
@@ -23,6 +25,9 @@ class ChatInputBar extends StatefulWidget {
   /// Optional focus node from the host so it can mediate keyboard ↔ drawer
   /// transitions (Telegram-style: keyboard and drawer replace each other).
   final FocusNode? focusNode;
+
+  final String initialDraft;
+  final ValueChanged<String>? onDraftChanged;
 
   final bool showSearchControls;
   final String searchQuery;
@@ -40,10 +45,13 @@ class ChatInputBar extends StatefulWidget {
     this.onMagicDrawer,
     this.onImageGen,
     this.onContinue,
+    this.onImpersonate,
     this.virtualKeyboardSend = false,
     this.enterToSend = true,
     this.isDrawerOpen = false,
     this.focusNode,
+    this.initialDraft = '',
+    this.onDraftChanged,
     this.showSearchControls = false,
     this.searchQuery = '',
     this.searchMatchCount = 0,
@@ -57,14 +65,26 @@ class ChatInputBar extends StatefulWidget {
 }
 
 class _ChatInputBarState extends State<ChatInputBar> {
-  final _controller = TextEditingController();
+  late final TextEditingController _controller;
   final _guidanceController = TextEditingController();
   bool _guidanceMode = false;
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
+    _controller = TextEditingController(text: widget.initialDraft);
+    _controller.addListener(_onTextChanged);
     _updateFocusNodeHandler();
+  }
+
+  void _onTextChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        widget.onDraftChanged?.call(_controller.text);
+      }
+    });
   }
 
   @override
@@ -91,6 +111,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     _guidanceController.dispose();
     super.dispose();
@@ -106,6 +127,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     }
     _controller.clear();
     _guidanceController.clear();
+    widget.onDraftChanged?.call('');
   }
 
   @override
@@ -296,36 +318,66 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ],
               ),
-              GestureDetector(
-                onTap: widget.isGenerating ? widget.onStop : _handleSend,
-                child: Container(
-                  height: 40,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: context.cs.primary,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.isGenerating ? 'Stop' : 'Send',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w600,
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _controller,
+                builder: (context, value, child) {
+                  final hasText = value.text.trim().isNotEmpty || (_guidanceMode && _guidanceController.text.trim().isNotEmpty);
+                  final isGenerating = widget.isGenerating;
+                  
+                  IconData icon;
+                  if (isGenerating) {
+                    icon = Icons.stop_rounded;
+                  } else if (hasText) {
+                    icon = (_guidanceMode && value.text.trim().isEmpty) ? Icons.check_rounded : Icons.send_rounded;
+                  } else {
+                    icon = Icons.account_circle_rounded;
+                  }
+
+                  return GestureDetector(
+                    onTap: () {
+                      if (isGenerating) {
+                        widget.onStop?.call();
+                      } else if (hasText) {
+                        _handleSend();
+                      } else {
+                        widget.onImpersonate?.call();
+                      }
+                    },
+                    child: Container(
+                      height: 40,
+                      width: 40,
+                      decoration: BoxDecoration(
+                        color: context.cs.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: ScaleTransition(
+                                scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+                                  CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOut,
+                                  ),
+                                ),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Icon(
+                            icon,
+                            key: ValueKey(icon),
+                            color: Colors.black,
+                            size: 20,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        widget.isGenerating
-                            ? Icons.stop_rounded
-                            : Icons.send_rounded,
-                        color: Colors.black,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
             ],
           ),

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../core/models/character.dart';
 import '../../core/services/character_book_converter.dart';
 import '../../core/services/character_importer.dart';
@@ -187,7 +189,15 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
       items: [
         BottomSheetItem(
           icon: Icons.add_rounded,
-          label: 'Add new',
+          label: 'Add New',
+          onTap: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            context.push('/character/create');
+          },
+        ),
+        BottomSheetItem(
+          icon: Icons.file_open_outlined,
+          label: 'Import from File',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
             _importCharacter(context, ref);
@@ -198,9 +208,10 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
           label: 'Import from URL',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
-            showDialog(
-              context: context,
-              builder: (_) => const ImportUrlDialog(),
+            GlazeBottomSheet.show(
+              context,
+              title: 'Import by URL',
+              child: const ImportUrlDialog(),
             );
           },
         ),

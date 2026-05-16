@@ -75,7 +75,13 @@ class GlazeScaffold extends StatelessWidget {
           : Column(
               children: [
                 animatedHeader,
-                Expanded(child: body),
+                Expanded(
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    child: body,
+                  ),
+                ),
               ],
             ),
     );

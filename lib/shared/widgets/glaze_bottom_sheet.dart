@@ -64,6 +64,7 @@ class BottomSheetCardItem {
   final String label;
   final String? sublabel;
   final IconData? icon;
+  final String? faviconUrl;
   final String? imageUrl;
   final String? badge;
   final bool isFeatured;
@@ -76,6 +77,7 @@ class BottomSheetCardItem {
     required this.label,
     this.sublabel,
     this.icon,
+    this.faviconUrl,
     this.imageUrl,
     this.badge,
     this.isFeatured = false,
@@ -451,11 +453,11 @@ class _ItemRowState extends State<_ItemRow> {
     final item = widget.item;
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) {
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: () {
         setState(() => _pressed = false);
         item.onTap();
       },
-      onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         color: _pressed
@@ -548,11 +550,11 @@ class _ItemCardRowState extends State<_ItemCardRow> {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) {
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: () {
           setState(() => _pressed = false);
           item.onTap();
         },
-        onTapCancel: () => setState(() => _pressed = false),
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
@@ -891,7 +893,7 @@ class _CardRowState extends State<_CardRow> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  if (item.icon != null && !hasImage) ...[
+                  if ((item.icon != null || item.faviconUrl != null) && !hasImage) ...[
                     Container(
                       width: 40,
                       height: 40,
@@ -899,7 +901,15 @@ class _CardRowState extends State<_CardRow> {
                         color: context.cs.primary.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(item.icon, size: 20, color: context.cs.primary),
+                      clipBehavior: Clip.antiAlias,
+                      child: item.faviconUrl != null
+                          ? Image.network(
+                              item.faviconUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(item.icon ?? Icons.api_rounded, size: 20, color: context.cs.primary),
+                            )
+                          : Icon(item.icon, size: 20, color: context.cs.primary),
                     ),
                     const SizedBox(width: 12),
                   ],

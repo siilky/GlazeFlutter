@@ -372,9 +372,9 @@ class _CharacterCardState extends ConsumerState<CharacterCard> {
           label: 'Delete',
           isDestructive: true,
           centered: true,
-          onTap: () {
-            Navigator.pop(context);
-            ref.read(charactersProvider.notifier).remove(character.id);
+          onTap: () async {
+            Navigator.of(context, rootNavigator: true).pop();
+            await ref.read(charactersProvider.notifier).remove(character.id);
           },
         ),
         BottomSheetItem(

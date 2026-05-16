@@ -4,8 +4,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 
 import '../../core/models/character.dart';
+import '../../core/utils/html_to_markdown.dart';
 import '../../core/state/character_provider.dart';
 import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
@@ -72,14 +74,19 @@ class _CharacterDetailSheetLauncherState
     } catch (_) {}
     if (!mounted) return;
     if (navTarget != null && navTarget.isNotEmpty) {
-      context.go(navTarget);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go(navTarget!);
+      });
       return;
     }
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/characters');
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/characters');
+      }
+    });
   }
 
   @override
@@ -134,8 +141,12 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
   /// so the caller (launcher / card / drawer) can navigate safely.
   void _closeSheetAndNavigate(String route) {
     final nav = Navigator.of(context, rootNavigator: true);
-    nav.pop();            // pop the GlazeBottomSheet
-    nav.pop<String>(route); // pop CharacterDetailScreen modal with result
+    nav.pop(); // pop the top-most sheet
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        nav.pop<String>(route); // pop CharacterDetailScreen modal
+      }
+    });
   }
 
   void _openActionsMenu() {
@@ -193,8 +204,9 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
           label: 'Delete',
           isDestructive: true,
           centered: true,
-          onTap: () {
-            ref.read(charactersProvider.notifier).remove(char.id);
+          onTap: () async {
+            await ref.read(charactersProvider.notifier).remove(char.id);
+            if (!context.mounted) return;
             _closeSheetAndNavigate('/characters');
           },
         ),
@@ -241,7 +253,6 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
       builder: (context, snap) {
         final char = snap.data;
         return SheetView(
-          collapsedFraction: 0.78,
           showBack: true,
           actions: (char == null || widget.isPreview)
               ? const []
@@ -579,8 +590,8 @@ class _InfoTab extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SelectableText(
-              notes,
+            child: GptMarkdown(
+              hasHtmlTags(notes) ? htmlToMarkdown(notes) : notes,
               style: const TextStyle(
                 fontSize: 13.5,
                 height: 1.55,

@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../widgets/glass_nav_bar.dart';
 import '../widgets/glaze_background.dart';
+import '../widgets/glaze_toast.dart';
+import 'package:flutter/services.dart';
 
 class ShellScreen extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -17,6 +19,7 @@ class _ShellScreenState extends State<ShellScreen>
   late AnimationController _controller;
   late Animation<double> _fade;
   int _currentIndex = 0;
+  int _lastBackPress = 0;
 
   @override
   void initState() {
@@ -48,9 +51,21 @@ class _ShellScreenState extends State<ShellScreen>
   @override
   Widget build(BuildContext context) {
     return GlazeBackground(
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: Colors.transparent,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (now - _lastBackPress < 2000) {
+            SystemNavigator.pop();
+          } else {
+            _lastBackPress = now;
+            GlazeToast.show(context, 'Press again to exit');
+          }
+        },
+        child: Scaffold(
+          extendBody: true,
+          backgroundColor: Colors.transparent,
         body: FadeTransition(
           opacity: _fade,
           child: widget.navigationShell,
@@ -63,6 +78,7 @@ class _ShellScreenState extends State<ShellScreen>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

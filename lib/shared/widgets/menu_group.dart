@@ -153,8 +153,6 @@ class MenuSwitchItem extends StatelessWidget {
             Switch(
               value: value,
               onChanged: onChanged,
-              activeThumbColor: context.cs.primary,
-              activeTrackColor: context.cs.primary.withValues(alpha: 0.5),
             ),
           ],
         ),

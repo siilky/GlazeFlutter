@@ -3,11 +3,10 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-
 import '../../core/services/file_export_service.dart';
-import '../../shared/widgets/glaze_scaffold.dart';
+import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_toast.dart';
+import '../../shared/widgets/sheet_view.dart';
 import 'backup_provider.dart';
 
 class BackupScreen extends ConsumerStatefulWidget {
@@ -18,106 +17,55 @@ class BackupScreen extends ConsumerStatefulWidget {
 }
 
 class _BackupScreenState extends ConsumerState<BackupScreen> {
-  bool _exporting = false;
-  bool _importing = false;
+  static const int _totalStages = 5;
+
+  bool _isExporting = false;
+  bool _isImporting = false;
+  bool _importComplete = false;
+  int _importStage = 0;
+  String _importProgressText = '';
 
   @override
   Widget build(BuildContext context) {
-    return GlazeScaffold(
-      title: 'Backup',
-      onBack: () => context.go('/menu'),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Export Backup',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Create a .glz backup of all your data: characters, chats, personas, presets, lorebooks, gallery images, and settings.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _exporting ? null : _exportBackup,
-                        icon: _exporting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.upload_file),
-                        label: Text(_exporting ? 'Exporting...' : 'Export .glz'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Import Backup',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Restore from a .glz backup file. This will replace all current data. Also supports Glaze JS backups.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _importing ? null : _importBackup,
-                        icon: _importing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.file_download),
-                        label: Text(_importing ? 'Importing...' : 'Import .glz'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Warning: Importing a backup will completely replace all your current data. Make sure to export first if you want to keep your current state.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-            ),
-          ],
-        ),
+    return SheetView(
+      title: 'Backups',
+      showBack: true,
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        child: _buildContent(context),
       ),
     );
   }
 
-  void _restartApp() {
-    final ctx = context;
-    Navigator.of(ctx).pushNamedAndRemoveUntil('/', (_) => false);
+  Widget _buildContent(BuildContext context) {
+    if (_isImporting && !_importComplete) {
+      return _ProgressView(
+        key: const ValueKey('progress'),
+        title: 'Importing Data',
+        subtitle: _importProgressText,
+        progress: _importStage / _totalStages,
+      );
+    }
+    if (_importComplete) {
+      return _SuccessView(
+        key: const ValueKey('complete'),
+        title: 'Restore Complete',
+        subtitle:
+            'Restore successful! The app will now reload to apply changes.',
+        buttonText: 'Reload App',
+        onPressed: _reloadApp,
+      );
+    }
+    return _NormalView(
+      key: const ValueKey('normal'),
+      isExporting: _isExporting,
+      onExport: _performExport,
+      onImport: _triggerImport,
+    );
   }
 
-  Future<void> _exportBackup() async {
-    setState(() => _exporting = true);
+  Future<void> _performExport() async {
+    setState(() => _isExporting = true);
     try {
       final service = await ref.read(backupServiceProvider.future);
       final json = await service.exportBackup();
@@ -143,17 +91,28 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         GlazeToast.error(context, 'Export failed: ', e);
       }
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) setState(() => _isExporting = false);
     }
   }
 
-  Future<void> _importBackup() async {
+  Future<void> _triggerImport() async {
+    final result = await FilePicker.pickFiles(
+      type: Platform.isIOS ? FileType.any : FileType.custom,
+      allowMultiple: false,
+      allowedExtensions: Platform.isIOS ? null : ['glz', 'json'],
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final path = result.files.single.path;
+    if (path == null) return;
+
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Replace all data?'),
         content: const Text(
-            'Importing a backup will completely replace all your current data. This cannot be undone.'),
+            'This will overwrite current data. This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -161,63 +120,426 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Import'),
+            child: const Text('Continue'),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
 
-    setState(() => _importing = true);
+    final ext = path.split('.').last.toLowerCase();
+
+    setState(() {
+      _isImporting = true;
+      _importComplete = false;
+      _importStage = 0;
+      _importProgressText = 'Preparing import...';
+    });
+
     try {
-      final result = await FilePicker.pickFiles(
-        type: Platform.isIOS ? FileType.any : FileType.custom,
-        allowMultiple: false,
-        allowedExtensions: Platform.isIOS ? null : ['glz', 'json'],
-      );
-      if (result == null || result.files.isEmpty) {
-        setState(() => _importing = false);
-        return;
+      if (ext == 'glz' || ext == 'json') {
+        setState(() {
+          _importStage = 3;
+          _importProgressText = 'Importing Glaze data...';
+        });
+        final file = File(path);
+        final jsonString = await file.readAsString();
+        final service = await ref.read(backupServiceProvider.future);
+        await service.importBackup(jsonString);
+        if (!mounted) return;
+        setState(() {
+          _importStage = _totalStages;
+          _importComplete = true;
+        });
+      } else {
+        throw FormatException('Unsupported file format: .$ext');
       }
+    } catch (e, st) {
+      if (!mounted) return;
+      setState(() {
+        _isImporting = false;
+        _importComplete = false;
+      });
+      GlazeToast.errorWithCopy(context, 'Restore failed: ', '$e\n\n$st');
+    }
+  }
 
-      final path = result.files.single.path;
-      if (path == null) {
-        setState(() => _importing = false);
-        return;
-      }
+  void _reloadApp() {
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
+  }
+}
 
-      final file = File(path);
-      final jsonString = await file.readAsString();
+class _NormalView extends StatelessWidget {
+  final bool isExporting;
+  final VoidCallback onExport;
+  final VoidCallback onImport;
 
-      final service = await ref.read(backupServiceProvider.future);
-      await service.importBackup(jsonString);
+  const _NormalView({
+    super.key,
+    required this.isExporting,
+    required this.onExport,
+    required this.onImport,
+  });
 
-      if (mounted) {
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Backup Restored'),
-            content: const Text(
-                'All data has been replaced. Restart the app to apply all changes.'),
-            actions: [
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _restartApp();
-                },
-                child: const Text('Restart'),
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Section(
+            title: 'Import',
+            children: [
+              _BsButton(
+                onPressed: onImport,
+                icon: Icons.file_upload_outlined,
+                label: 'Import Backup',
+                primary: true,
+              ),
+              const SizedBox(height: 4),
+              const _Hint(
+                lines: [
+                  _HintLine(bold: 'Tavo (.tbk): ', text: 'characters, presets, chats'),
+                  _HintLine(
+                    bold: 'SillyTavern (.zip): ',
+                    text: 'characters, lorebooks, presets, chats, personas',
+                  ),
+                  _HintLine(
+                    bold: 'Glaze (.glz): ',
+                    text: 'full application state',
+                  ),
+                ],
               ),
             ],
           ),
-        );
-      }
-    } catch (e, st) {
-      if (mounted) {
-        GlazeToast.errorWithCopy(context, 'Import failed: ', '$e\n\n$st');
-      }
-    } finally {
-      if (mounted) setState(() => _importing = false);
-    }
+          const _Separator(),
+          _Section(
+            title: 'Export',
+            children: [
+              _BsButton(
+                onPressed: isExporting ? null : onExport,
+                icon: Icons.file_download_outlined,
+                label: isExporting ? 'Exporting...' : 'Export Data (.glz)',
+                primary: false,
+                loading: isExporting,
+              ),
+              const _Hint(
+                lines: [
+                  _HintLine(
+                    text: 'Create a full backup of your current application state.',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const _Section({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: context.cs.onSurfaceVariant,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        ...children.expand((w) => [w, const SizedBox(height: 8)]).toList()
+          ..removeLast(),
+      ],
+    );
+  }
+}
+
+class _BsButton extends StatelessWidget {
+  final VoidCallback? onPressed;
+  final IconData icon;
+  final String label;
+  final bool primary;
+  final bool loading;
+
+  const _BsButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+    required this.primary,
+    this.loading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.cs.primary;
+    final bg = primary ? accent : accent.withValues(alpha: 0.1);
+    final fg = primary ? Colors.white : accent;
+    final disabled = onPressed == null;
+
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onPressed,
+        child: Opacity(
+          opacity: disabled ? 0.7 : 1.0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (loading)
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(fg),
+                    ),
+                  )
+                else
+                  Icon(icon, size: 22, color: fg),
+                const SizedBox(width: 10),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: fg,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HintLine {
+  final String? bold;
+  final String text;
+  const _HintLine({this.bold, required this.text});
+}
+
+class _Hint extends StatelessWidget {
+  final List<_HintLine> lines;
+  const _Hint({required this.lines});
+
+  @override
+  Widget build(BuildContext context) {
+    final baseStyle = TextStyle(
+      fontSize: 13,
+      height: 1.5,
+      color: context.cs.onSurfaceVariant.withValues(alpha: 0.9),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: lines
+            .map(
+              (l) => RichText(
+                text: TextSpan(
+                  style: baseStyle,
+                  children: [
+                    if (l.bold != null)
+                      TextSpan(
+                        text: l.bold,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    TextSpan(text: l.text),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _Separator extends StatelessWidget {
+  const _Separator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Container(
+        height: 1,
+        color: Colors.white.withValues(alpha: 0.1),
+      ),
+    );
+  }
+}
+
+class _ProgressView extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final double progress;
+
+  const _ProgressView({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.progress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.cs.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(accent),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: context.cs.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.5,
+              color: context.cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 32),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              height: 8,
+              color: Colors.white.withValues(alpha: 0.1),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  tween: Tween(begin: 0, end: progress.clamp(0.0, 1.0)),
+                  builder: (_, value, _) => FractionallySizedBox(
+                    widthFactor: value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuccessView extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String buttonText;
+  final VoidCallback onPressed;
+
+  const _SuccessView({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.buttonText,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.cs.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.check, size: 32, color: accent),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: context.cs.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.5,
+              color: context.cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _BsButton(
+            onPressed: onPressed,
+            icon: Icons.refresh,
+            label: buttonText,
+            primary: true,
+          ),
+        ],
+      ),
+    );
   }
 }
