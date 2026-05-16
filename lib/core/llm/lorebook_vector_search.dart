@@ -34,11 +34,18 @@ class LorebookVectorSearch {
     EmbeddingConfig config, {
     String? charWorld,
     Character? character,
+    LorebookActivations? activations,
+    String? chatId,
   }) async {
     if (settings.searchType == 'keyword') return [];
 
+    final charId = character?.id;
     final activeLorebooks = lorebooks.where((lb) {
       if (lb.enabled) return true;
+      if (charId != null && activations?.character[charId]?.contains(lb.id) == true) return true;
+      if (chatId != null && activations?.chat[chatId]?.contains(lb.id) == true) return true;
+      if (charId != null && lb.activationScope == 'character' && lb.activationTargetId == charId) return true;
+      if (chatId != null && lb.activationScope == 'chat' && lb.activationTargetId == chatId) return true;
       if (charWorld != null && charWorld.isNotEmpty && lb.name == charWorld) return true;
       return false;
     }).toList();
@@ -75,6 +82,7 @@ class LorebookVectorSearch {
     if (vectorEntries.isEmpty) return [];
 
     final embeddingRows = await _repo.getBySourceType('lorebook_entry');
+
     final embeddingMap = <String, EmbeddingRow>{};
     for (final row in embeddingRows) {
       embeddingMap[row.entryId] = row;

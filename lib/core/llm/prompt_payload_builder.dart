@@ -104,7 +104,7 @@ class PromptPayloadBuilder {
       }
 
       if (!skipVectorSearch) {
-        vectorEntries = await _runVectorSearch(session.messages, session.messages.lastOrNull?.content ?? '', character.world, character);
+        vectorEntries = await _runVectorSearch(session.messages, session.messages.lastOrNull?.content ?? '', character.world, character, chatId: session.id);
       }
     }
 
@@ -191,8 +191,9 @@ class PromptPayloadBuilder {
     List<ChatMessage> history,
     String currentText,
     String? charWorld,
-    Character? character,
-  ) async {
+    Character? character, {
+    String? chatId,
+  }) async {
     final settings = _ref.read(lorebookSettingsProvider);
     if (settings.searchType == 'keyword') return [];
 
@@ -207,7 +208,14 @@ class PromptPayloadBuilder {
       final searchHistory = history
           .map((m) => ChatMessageForSearch(role: m.role, content: m.content))
           .toList();
-      final results = await searchService.search(searchHistory, currentText, lorebooks, settings, config, charWorld: charWorld, character: character);
+      final activations = _ref.read(lorebookActivationsProvider);
+      final results = await searchService.search(
+        searchHistory, currentText, lorebooks, settings, config,
+        charWorld: charWorld,
+        character: character,
+        activations: activations,
+        chatId: chatId,
+      );
 
       final entryMap = <String, LorebookEntry>{};
       for (final lb in lorebooks) {
@@ -216,8 +224,8 @@ class PromptPayloadBuilder {
         }
       }
       return results.where((r) => entryMap.containsKey(r.entryId)).map((r) => entryMap[r.entryId]!.copyWith()).toList();
-    } catch (e) {
-      debugPrint('VECTOR SEARCH: failed: $e');
+    } catch (e, st) {
+      debugPrint('VECTOR SEARCH: failed: $e\n$st');
       return [];
     }
   }
