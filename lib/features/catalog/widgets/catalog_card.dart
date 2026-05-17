@@ -42,7 +42,7 @@ class _CatalogCardState extends State<CatalogCard> {
           decoration: BoxDecoration(
             color: context.cs.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(

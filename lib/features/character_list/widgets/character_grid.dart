@@ -168,9 +168,11 @@ class _AnimatedCharacterGrid extends StatelessWidget {
                   top: 0,
                   width: cellW,
                   height: cellH,
-                  child: _OurPicksCard(
-                    onTap: onOurPicksTap,
-                    onHide: onOurPicksHide,
+                  child: RepaintBoundary(
+                    child: _OurPicksCard(
+                      onTap: onOurPicksTap,
+                      onHide: onOurPicksHide,
+                    ),
                   ),
                 ),
               for (int i = 0; i < characters.length; i++)
@@ -184,7 +186,12 @@ class _AnimatedCharacterGrid extends StatelessWidget {
                     top: (gridIndex ~/ _crossAxisCount) * (cellH + _spacing),
                     width: cellW,
                     height: cellH,
-                    child: CharacterCard(character: characters[i]),
+                    child: RepaintBoundary(
+                      child: CharacterCard(
+                        character: characters[i],
+                        entryDelay: Duration(milliseconds: 50 * i),
+                      ),
+                    ),
                   );
                 })(),
             ],
@@ -205,9 +212,32 @@ class _OurPicksCard extends StatefulWidget {
   State<_OurPicksCard> createState() => _OurPicksCardState();
 }
 
-class _OurPicksCardState extends State<_OurPicksCard> {
+class _OurPicksCardState extends State<_OurPicksCard>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
   bool _hovered = false;
+  late final AnimationController _entryCtrl;
+  late final Animation<double> _fadeAnim;
+  late final Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    final curve = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
+    _fadeAnim = curve;
+    _scaleAnim = Tween<double>(begin: 0.9, end: 1.0).animate(curve);
+    _entryCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,17 +246,10 @@ class _OurPicksCardState extends State<_OurPicksCard> {
     final shadowAlpha = _hovered ? 0.3 : 0.1;
     final shadowColor = Colors.black.withValues(alpha: shadowAlpha);
 
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-      builder: (_, t, child) => Opacity(
-        opacity: t,
-        child: Transform.scale(
-          scale: 0.9 + 0.1 * t,
-          child: child,
-        ),
-      ),
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: ScaleTransition(
+        scale: _scaleAnim,
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -324,7 +347,7 @@ class _OurPicksCardState extends State<_OurPicksCard> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.05),
+                            color: Colors.white.withValues(alpha: 0.15),
                             width: 2,
                           ),
                         ),
@@ -336,6 +359,7 @@ class _OurPicksCardState extends State<_OurPicksCard> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

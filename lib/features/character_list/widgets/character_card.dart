@@ -16,20 +16,71 @@ import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/widgets/glaze_toast.dart';
 import '../character_detail_screen.dart';
+import '../../../core/llm/tokenizer.dart' as tok;
 
 class CharacterCard extends ConsumerStatefulWidget {
   final Character character;
-  const CharacterCard({super.key, required this.character});
+  final Duration entryDelay;
+  const CharacterCard({super.key, required this.character, this.entryDelay = Duration.zero});
 
   @override
   ConsumerState<CharacterCard> createState() => _CharacterCardState();
 }
 
-class _CharacterCardState extends ConsumerState<CharacterCard> {
+class _CharacterCardState extends ConsumerState<CharacterCard>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
   bool _hovered = false;
+  int _tokenCount = 0;
+  late final AnimationController _entryCtrl;
+  late final Animation<double> _fadeAnim;
+  late final Animation<double> _scaleAnim;
 
   Character get character => widget.character;
+
+  @override
+  void initState() {
+    super.initState();
+    _tokenCount = _getCharTokens(widget.character);
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    final curve = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
+    _fadeAnim = curve;
+    _scaleAnim = Tween<double>(begin: 0.9, end: 1.0).animate(curve);
+    if (widget.entryDelay > Duration.zero) {
+      Future.delayed(widget.entryDelay, () {
+        if (mounted) _entryCtrl.forward();
+      });
+    } else {
+      _entryCtrl.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(CharacterCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.character != widget.character) {
+      _tokenCount = _getCharTokens(widget.character);
+    }
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
+  }
+
+  int _getCharTokens(Character char) {
+    var text = char.name;
+    if (char.description != null) text += '\n${char.description}';
+    if (char.personality != null) text += '\n${char.personality}';
+    if (char.scenario != null) text += '\n${char.scenario}';
+    if (char.firstMes != null) text += '\n${char.firstMes}';
+    if (char.mesExample != null) text += '\n${char.mesExample}';
+    return tok.estimateTokens(text);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,17 +94,10 @@ class _CharacterCardState extends ConsumerState<CharacterCard> {
         ? const Color(0xFFFF6B6B).withValues(alpha: shadowAlpha)
         : Colors.black.withValues(alpha: shadowAlpha);
 
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-      builder: (_, t, child) => Opacity(
-        opacity: t,
-        child: Transform.scale(
-          scale: 0.9 + 0.1 * t,
-          child: child,
-        ),
-      ),
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: ScaleTransition(
+        scale: _scaleAnim,
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -112,6 +156,43 @@ class _CharacterCardState extends ConsumerState<CharacterCard> {
                       onTap: () => _showActions(context, ref),
                     ),
                   ),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withValues(
+                            alpha: _hovered ? 0.4 : 0.15,
+                          ),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.description_rounded,
+                            size: 12,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$_tokenCount',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   Positioned.fill(
                     child: IgnorePointer(
                       child: AnimatedContainer(
@@ -121,7 +202,7 @@ class _CharacterCardState extends ConsumerState<CharacterCard> {
                           border: Border.all(
                             color: isFav
                                 ? const Color(0xFFFF6B6B)
-                                : Colors.white.withValues(alpha: 0.05),
+                                : Colors.white.withValues(alpha: 0.15),
                             width: 2,
                           ),
                         ),
@@ -133,6 +214,7 @@ class _CharacterCardState extends ConsumerState<CharacterCard> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

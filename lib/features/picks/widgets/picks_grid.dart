@@ -65,6 +65,30 @@ class PicksGrid extends ConsumerWidget {
   }
 }
 
+class _FolderItem {
+  final PicksFolder folder;
+  final List<String> path;
+  final VoidCallback onTap;
+  final String? curatorName;
+
+  const _FolderItem({
+    required this.folder,
+    required this.path,
+    required this.onTap,
+    this.curatorName,
+  });
+}
+
+class _CharacterItem {
+  final PicksCharacter character;
+  final List<String> path;
+
+  const _CharacterItem({
+    required this.character,
+    required this.path,
+  });
+}
+
 class _PicksFolderView extends StatefulWidget {
   final List<PicksFolder> folders;
   final double topPadding;
@@ -87,36 +111,15 @@ class _PicksFolderView extends StatefulWidget {
 class _PicksFolderViewState extends State<_PicksFolderView> {
   List<String> _path = [];
 
-  List<PicksFolder> get _currentFolders {
-    List<PicksFolder> current = widget.folders;
-    for (final segment in _path) {
-      final match = current.firstWhere((f) => f.id == segment);
-      if (match.subfolders.isNotEmpty) {
-        current = match.subfolders;
-      } else {
-        return [];
-      }
-    }
-    return current;
-  }
-
   PicksFolder? get _currentFolder {
     if (_path.isEmpty) return null;
     PicksFolder? folder;
     List<PicksFolder> current = widget.folders;
     for (final segment in _path) {
-      folder = current.firstWhere((f) => f.id == segment);
+      folder = current.firstWhere((f) => f.id == segment, orElse: () => folder!);
       current = folder.subfolders;
     }
     return folder;
-  }
-
-  bool get _hasSubfolders => _currentFolders.isNotEmpty;
-
-  List<PicksCharacter> get _currentCharacters {
-    final folder = _currentFolder;
-    if (folder == null) return [];
-    return folder.characters;
   }
 
   @override
@@ -149,10 +152,10 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
 
   bool _isBackTransition = false;
 
-  void _navigateInto(String folderId) {
+  void _navigateInto(List<String> targetPath) {
     setState(() {
       _isBackTransition = false;
-      _path = [..._path, folderId];
+      _path = targetPath;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _notifyFolderChanged());
   }
@@ -161,13 +164,71 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
     if (_path.isEmpty) return;
     setState(() {
       _isBackTransition = true;
-      _path = _path.sublist(0, _path.length - 1);
+      if (_path.length <= 2) {
+        _path = [];
+      } else {
+        _path = _path.sublist(0, _path.length - 1);
+      }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _notifyFolderChanged());
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isRoot = _path.isEmpty;
+
+    final List<_FolderItem> foldersToDisplay = [];
+    if (isRoot) {
+      for (final curator in widget.folders) {
+        for (final sub in curator.subfolders) {
+          foldersToDisplay.add(_FolderItem(
+            folder: sub,
+            path: [curator.id],
+            onTap: () => _navigateInto([curator.id, sub.id]),
+            curatorName: curator.name,
+          ));
+        }
+      }
+    } else {
+      final current = _currentFolder;
+      final curatorId = _path.isNotEmpty ? _path.first : null;
+      final curator = curatorId != null
+          ? widget.folders.firstWhere((f) => f.id == curatorId)
+          : null;
+      if (current != null) {
+        for (final sub in current.subfolders) {
+          foldersToDisplay.add(_FolderItem(
+            folder: sub,
+            path: _path,
+            onTap: () => _navigateInto([..._path, sub.id]),
+            curatorName: curator?.name,
+          ));
+        }
+      }
+    }
+
+    final List<_CharacterItem> charactersToDisplay = [];
+    if (isRoot) {
+      for (final curator in widget.folders) {
+        for (final char in curator.characters) {
+          charactersToDisplay.add(_CharacterItem(
+            character: char,
+            path: [curator.id],
+          ));
+        }
+      }
+    } else {
+      final current = _currentFolder;
+      if (current != null) {
+        for (final char in current.characters) {
+          charactersToDisplay.add(_CharacterItem(
+            character: char,
+            path: _path,
+          ));
+        }
+      }
+    }
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 320),
       reverseDuration: const Duration(milliseconds: 280),
@@ -216,7 +277,7 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
                 ),
               ),
             ),
-          if (_hasSubfolders)
+          if (foldersToDisplay.isNotEmpty)
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
                 16,
@@ -233,22 +294,23 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final folder = _currentFolders[index];
+                    final item = foldersToDisplay[index];
                     return _FolderCard(
-                      folder: folder,
-                      path: _path,
-                      onTap: () => _navigateInto(folder.id),
+                      folder: item.folder,
+                      path: item.path,
+                      onTap: item.onTap,
+                      curatorName: item.curatorName,
                     );
                   },
-                  childCount: _currentFolders.length,
+                  childCount: foldersToDisplay.length,
                 ),
               ),
             ),
-          if (_currentCharacters.isNotEmpty)
+          if (charactersToDisplay.isNotEmpty)
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
                 16,
-                _hasSubfolders ? 8 : 12,
+                foldersToDisplay.isNotEmpty ? 8 : 12,
                 16,
                 widget.bottomPadding,
               ),
@@ -261,18 +323,18 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final char = _currentCharacters[index];
+                    final item = charactersToDisplay[index];
                     return _PicksCharacterCard(
-                      character: char,
-                      path: _path,
+                      character: item.character,
+                      path: item.path,
                     );
                   },
-                  childCount: _currentCharacters.length,
+                  childCount: charactersToDisplay.length,
                 ),
               ),
             ),
-          if (_currentCharacters.isEmpty &&
-              !_hasSubfolders &&
+          if (charactersToDisplay.isEmpty &&
+              foldersToDisplay.isEmpty &&
               _path.isNotEmpty)
             SliverFillRemaining(
               child: Center(
@@ -292,8 +354,14 @@ class _FolderCard extends StatefulWidget {
   final PicksFolder folder;
   final List<String> path;
   final VoidCallback onTap;
+  final String? curatorName;
 
-  const _FolderCard({required this.folder, required this.path, required this.onTap});
+  const _FolderCard({
+    required this.folder,
+    required this.path,
+    required this.onTap,
+    this.curatorName,
+  });
 
   @override
   State<_FolderCard> createState() => _FolderCardState();
@@ -384,7 +452,10 @@ class _FolderCardState extends State<_FolderCard> {
                     bottom: 0,
                     left: 0,
                     right: 0,
-                    child: _FolderCardInfo(folder: widget.folder),
+                    child: _FolderCardInfo(
+                      folder: widget.folder,
+                      curatorName: widget.curatorName,
+                    ),
                   ),
                   Positioned.fill(
                     child: IgnorePointer(
@@ -424,22 +495,71 @@ class _FolderCardState extends State<_FolderCard> {
       );
     }
 
-    return Row(
-      children: previews.asMap().entries.map((entry) {
-        final i = entry.key;
-        final c = entry.value;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(left: i > 0 ? 2 : 0),
+    if (previews.length == 2) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
             child: CachedNetworkImage(
-              imageUrl: _charImageUrl(c),
+              imageUrl: _charImageUrl(previews[0]),
               fit: BoxFit.cover,
               placeholder: (_, _) => _folderGradient(context),
               errorWidget: (_, _, _) => _folderGradient(context),
             ),
           ),
-        );
-      }).toList(),
+          const SizedBox(width: 2),
+          Expanded(
+            child: CachedNetworkImage(
+              imageUrl: _charImageUrl(previews[1]),
+              fit: BoxFit.cover,
+              placeholder: (_, _) => _folderGradient(context),
+              errorWidget: (_, _, _) => _folderGradient(context),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 3 characters: collage (left big, right two small stacked)
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 2,
+          child: CachedNetworkImage(
+            imageUrl: _charImageUrl(previews[0]),
+            fit: BoxFit.cover,
+            placeholder: (_, _) => _folderGradient(context),
+            errorWidget: (_, _, _) => _folderGradient(context),
+          ),
+        ),
+        const SizedBox(width: 2),
+        Expanded(
+          flex: 1,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: CachedNetworkImage(
+                  imageUrl: _charImageUrl(previews[1]),
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => _folderGradient(context),
+                  errorWidget: (_, _, _) => _folderGradient(context),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: CachedNetworkImage(
+                  imageUrl: _charImageUrl(previews[2]),
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => _folderGradient(context),
+                  errorWidget: (_, _, _) => _folderGradient(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -696,8 +816,9 @@ class _PicksBottomGradient extends StatelessWidget {
 
 class _FolderCardInfo extends StatelessWidget {
   final PicksFolder folder;
+  final String? curatorName;
 
-  const _FolderCardInfo({required this.folder});
+  const _FolderCardInfo({required this.folder, this.curatorName});
 
   @override
   Widget build(BuildContext context) {
@@ -743,6 +864,18 @@ class _FolderCardInfo extends StatelessWidget {
               ),
             ],
           ),
+          if (curatorName != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'by $curatorName',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: context.cs.primary,
+                shadows: const [Shadow(blurRadius: 4, color: Colors.black54)],
+              ),
+            ),
+          ],
           const SizedBox(height: 3),
           Text(
             desc ?? '$count character${count == 1 ? '' : 's'}',

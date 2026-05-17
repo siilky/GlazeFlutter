@@ -9,7 +9,6 @@ import '../../shared/widgets/glaze_scaffold.dart' show GlazeAppBar;
 import '../../shared/widgets/menu_group.dart';
 import '../backup/backup_screen.dart';
 import '../cloud_sync/widgets/sync_sheet.dart';
-import 'about_overlay.dart';
 
 class MenuScreen extends ConsumerWidget {
   const MenuScreen({super.key});
@@ -78,7 +77,7 @@ class MenuScreen extends ConsumerWidget {
                     MenuItem(
                       icon: Icons.info_outline_rounded,
                       label: 'About',
-                      onTap: () => showGlazeAbout(context),
+                      onTap: () => context.push('/about'),
                     ),
                   ],
                 ),

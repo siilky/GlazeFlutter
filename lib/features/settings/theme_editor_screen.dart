@@ -76,51 +76,18 @@ class _ThemeEditorScreenState extends ConsumerState<ThemeEditorScreen> {
   Widget build(BuildContext context) {
     final preset = ref.watch(themeProvider).activePreset;
     final isDefault = preset.id == 'default';
+    final topPad = MediaQuery.of(context).padding.top + 74.0;
+    final tabHeight = 68.0;
+    final warningHeight = isDefault ? 62.0 : 0.0;
+    final totalTopPadding = topPad + warningHeight + tabHeight;
 
     return GlazeScaffold(
       title: preset.name,
+      extendBodyBehindHeader: true,
       onBack: () => Navigator.pop(context),
-      body: Column(
+      body: Stack(
         children: [
-          if (isDefault)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: context.cs.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.cs.outlineVariant),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline,
-                        size: 16, color: context.cs.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Default theme cannot be edited. Import or create a new theme to customise.',
-                        style: TextStyle(
-                            fontSize: 12, color: context.cs.onSurfaceVariant),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: GlazeTabBar(
-              tabs: const [
-                GlazeTabItem(label: 'General', icon: Icons.tune),
-                GlazeTabItem(
-                    label: 'Chat', icon: Icons.chat_bubble_outline),
-              ],
-              activeIndex: _activeTab,
-              onChanged: (i) => setState(() => _activeTab = i),
-            ),
-          ),
-          Expanded(
+          Positioned.fill(
             child: AbsorbPointer(
               absorbing: isDefault,
               child: Opacity(
@@ -128,11 +95,68 @@ class _ThemeEditorScreenState extends ConsumerState<ThemeEditorScreen> {
                 child: IndexedStack(
                   index: _activeTab,
                   children: [
-                    _GeneralTab(preset: preset, onUpdate: _update),
-                    _ChatTab(preset: preset, onUpdate: _update),
+                    _GeneralTab(
+                      preset: preset,
+                      onUpdate: _update,
+                      topPadding: totalTopPadding,
+                    ),
+                    _ChatTab(
+                      preset: preset,
+                      onUpdate: _update,
+                      topPadding: totalTopPadding,
+                    ),
                   ],
                 ),
               ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(height: topPad),
+                if (isDefault)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: context.cs.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: context.cs.outlineVariant),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16, color: context.cs.onSurfaceVariant),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Default theme cannot be edited. Import or create a new theme to customise.',
+                              style: TextStyle(
+                                  fontSize: 12, color: context.cs.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: GlazeTabBar(
+                    tabs: const [
+                      GlazeTabItem(label: 'General', icon: Icons.tune),
+                      GlazeTabItem(
+                          label: 'Chat', icon: Icons.chat_bubble_outline),
+                    ],
+                    activeIndex: _activeTab,
+                    onChanged: (i) => setState(() => _activeTab = i),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -146,13 +170,18 @@ class _ThemeEditorScreenState extends ConsumerState<ThemeEditorScreen> {
 class _GeneralTab extends StatelessWidget {
   final ThemePreset preset;
   final void Function(ThemePreset Function(ThemePreset)) onUpdate;
+  final double topPadding;
 
-  const _GeneralTab({required this.preset, required this.onUpdate});
+  const _GeneralTab({
+    required this.preset,
+    required this.onUpdate,
+    required this.topPadding,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.fromLTRB(0, topPadding + 8, 0, 8),
       children: [
         MenuGroup(
           header: 'Accent Color',
@@ -365,8 +394,13 @@ class _GeneralTab extends StatelessWidget {
 class _ChatTab extends StatefulWidget {
   final ThemePreset preset;
   final void Function(ThemePreset Function(ThemePreset)) onUpdate;
+  final double topPadding;
 
-  const _ChatTab({required this.preset, required this.onUpdate});
+  const _ChatTab({
+    required this.preset,
+    required this.onUpdate,
+    required this.topPadding,
+  });
 
   @override
   State<_ChatTab> createState() => _ChatTabState();
@@ -379,6 +413,7 @@ class _ChatTabState extends State<_ChatTab> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        SizedBox(height: widget.topPadding),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: ThemeChatPreview(

@@ -19,6 +19,7 @@ import 'features/chat/chat_screen.dart';
 import 'features/chat_history/chat_history_screen.dart';
 import 'features/lorebooks/lorebook_list_screen.dart';
 import 'features/lorebooks/embedding_settings_screen.dart';
+import 'features/menu/about_screen.dart';
 import 'features/menu/menu_screen.dart';
 import 'features/personas/persona_list_screen.dart';
 import 'features/presets/preset_list_screen.dart';
@@ -140,6 +141,7 @@ final routerProvider = Provider<GoRouter>(
       GoRoute(path: '/settings', builder: (_, __) => const AppSettingsScreen()),
       GoRoute(path: '/themes', builder: (_, __) => const ThemePresetScreen()),
       GoRoute(path: '/sync', builder: (_, __) => const SyncSheet()),
+      GoRoute(path: '/about', builder: (_, __) => const AboutScreen()),
     ],
   ),
 );
