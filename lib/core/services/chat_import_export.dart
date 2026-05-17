@@ -119,62 +119,71 @@ ChatImportResult importChatFromJsonlString(String content) {
 }
 
 ChatMessage? _convertStMessage(Map<String, dynamic> obj, int index) {
-  final isUser = obj['is_user'] as bool? ?? false;
-  final isSystem = obj['is_system'] as bool? ?? false;
-  final text = (obj['mes'] as String?) ?? '';
-  final sendDate = obj['send_date'] as String?;
+  try {
+    final isUser = _parseBool(obj['is_user']) ?? false;
+    final isSystem = _parseBool(obj['is_system']) ?? false;
+    final text = (obj['mes'] as String?) ?? '';
+    final sendDate = obj['send_date'] as String?;
 
-  String role;
-  if (isSystem) {
-    role = 'system';
-  } else if (isUser) {
-    role = 'user';
-  } else {
-    role = 'assistant';
+    String role;
+    if (isSystem) {
+      role = 'system';
+    } else if (isUser) {
+      role = 'user';
+    } else {
+      role = 'assistant';
+    }
+
+    if (text.trim().isEmpty) return null;
+
+    final timestamp = _parseSTDate(sendDate);
+
+    final swipesRaw = obj['swipes'];
+    final swipes = swipesRaw is List
+        ? swipesRaw.map((s) => s.toString()).toList()
+        : <String>[];
+    final swipeId = _parseInt(obj['swipe_id']) ?? 0;
+
+    String? reasoning;
+    final extra = obj['extra'];
+    if (extra is Map<String, dynamic>) {
+      reasoning = extra['reasoning'] as String?;
+    }
+
+    return ChatMessage(
+      id: (extra is Map ? extra['glazeMessageId'] as String? : null) ??
+          'imp_${DateTime.now().millisecondsSinceEpoch}_$index',
+      role: role,
+      content: text,
+      timestamp: timestamp,
+      swipes: swipes,
+      swipeId: swipeId,
+      reasoning: reasoning,
+    );
+  } catch (_) {
+    return null;
   }
+}
 
-  if (text.trim().isEmpty) return null;
+bool? _parseBool(dynamic value) {
+  if (value is bool) return value;
+  if (value is String) return value.toLowerCase() == 'true';
+  if (value is int) return value != 0;
+  return null;
+}
 
-  final timestamp = _parseSTDate(sendDate);
-
-  final swipes = (obj['swipes'] as List<dynamic>?)
-          ?.map((s) => s.toString())
-          .toList() ??
-      [];
-  final swipeId = obj['swipe_id'] as int? ?? 0;
-
-  String? reasoning;
-  final extra = obj['extra'] as Map<String, dynamic>?;
-  if (extra != null) {
-    reasoning = extra['reasoning'] as String?;
-  }
-
-  return ChatMessage(
-    id: (obj['extra']?['glazeMessageId'] as String?) ?? 'imp_${DateTime.now().millisecondsSinceEpoch}_$index',
-    role: role,
-    content: text,
-    timestamp: timestamp,
-    swipes: swipes,
-    swipeId: swipeId,
-    reasoning: reasoning,
-  );
+int? _parseInt(dynamic value) {
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value);
+  if (value is double) return value.toInt();
+  return null;
 }
 
 int _parseSTDate(String? dateStr) {
   if (dateStr == null) return DateTime.now().millisecondsSinceEpoch;
   try {
-    final parts = dateStr.split(RegExp(r'[\s/:T]'));
-    if (parts.length >= 6) {
-      final dt = DateTime(
-        int.parse(parts[0]),
-        int.parse(parts[1]),
-        int.parse(parts[2]),
-        int.parse(parts[3]),
-        int.parse(parts[4]),
-        int.parse(parts[5]),
-      );
-      return dt.millisecondsSinceEpoch;
-    }
+    final parsed = DateTime.tryParse(dateStr);
+    if (parsed != null) return parsed.millisecondsSinceEpoch;
   } catch (_) {}
   return DateTime.now().millisecondsSinceEpoch;
 }
