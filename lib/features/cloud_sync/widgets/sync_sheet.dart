@@ -20,6 +20,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(syncServiceProvider);
     final status = ref.watch(syncStatusProvider);
     final provider = ref.watch(syncProviderProvider);
     final connected = ref.watch(syncConnectedProvider);
