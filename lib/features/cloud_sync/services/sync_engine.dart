@@ -16,6 +16,7 @@ import '../../../core/db/repositories/lorebook_repo.dart';
 import '../../../core/db/repositories/embedding_repo.dart';
 import '../../../core/services/image_storage_service.dart';
 import '../../../core/models/character.dart';
+import '../../../core/models/gallery_entry.dart';
 import '../../../core/models/persona.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/lorebook.dart';
@@ -208,6 +209,7 @@ class SyncEngine {
 
     if (entry.type == 'character') {
       await _pushCharacterAvatar(entry.id);
+      await _pushCharacterGallery(entry.id);
     }
   }
 
@@ -224,6 +226,7 @@ class SyncEngine {
 
     if (entry.type == 'character') {
       await _pullCharacterAvatar(entry.id);
+      await _pullCharacterGallery(entry.id);
     }
   }
 
@@ -336,7 +339,7 @@ class SyncEngine {
       for (final ext in ['png', 'jpg', 'webp', 'gif']) {
         try {
           final imgCloudPath = galleryCloudPath(charId, 'avatar', ext);
-            final bytes = await _adapter.downloadBinary(imgCloudPath);
+          final bytes = await _adapter.downloadBinary(imgCloudPath);
           if (bytes.isNotEmpty) {
             final relativePath = await _imageStorage.saveBytes(
               bytes, 'avatars', charId, ext,
@@ -347,5 +350,70 @@ class SyncEngine {
         } catch (_) {}
       }
     } catch (_) {}
+  }
+
+  Future<void> _pushCharacterGallery(String charId) async {
+    try {
+      final c = await _characterRepo.getById(charId);
+      if (c == null) return;
+      await _adapter.ensureFolder('$cloudBase/gallery/$charId');
+      for (final entry in c.gallery) {
+        final absPath = _imageStorage.absolutePath(entry.imagePath);
+        if (absPath == null) continue;
+        final file = File(absPath);
+        if (!await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        final ext = entry.imagePath.split('.').last;
+        await _adapter.uploadBinary(
+          galleryCloudPath(charId, entry.id, ext),
+          bytes,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pullCharacterGallery(String charId) async {
+    try {
+      final c = await _characterRepo.getById(charId);
+      if (c == null) return;
+
+      final updatedGallery = <GalleryEntry>[];
+      for (final entry in c.gallery) {
+        var pulled = false;
+        for (final ext in ['png', 'jpg', 'webp', 'gif']) {
+          try {
+            final imgCloudPath = galleryCloudPath(charId, entry.id, ext);
+            final bytes = await _adapter.downloadBinary(imgCloudPath);
+            if (bytes.isNotEmpty) {
+              final destPath = await _imageStorage.saveBytes(
+                bytes, 'gallery/$charId', entry.id, ext,
+              );
+              updatedGallery.add(entry.copyWith(imagePath: destPath));
+              pulled = true;
+              break;
+            }
+          } catch (_) {}
+        }
+        if (!pulled) {
+          final absPath = _imageStorage.absolutePath(entry.imagePath);
+          if (absPath != null && await File(absPath).exists()) {
+            updatedGallery.add(entry);
+          }
+        }
+      }
+
+      if (updatedGallery.length != c.gallery.length ||
+          !_galleriesEqual(updatedGallery, c.gallery)) {
+        await _characterRepo.put(c.copyWith(gallery: updatedGallery));
+      }
+    } catch (_) {}
+  }
+
+  bool _galleriesEqual(List<GalleryEntry> a, List<GalleryEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id || a[i].imagePath != b[i].imagePath) return false;
+    }
+    return true;
   }
 }

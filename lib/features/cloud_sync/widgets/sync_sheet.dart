@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../shared/widgets/glaze_toast.dart';
 import '../sync_provider.dart';
@@ -31,7 +32,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
         title: const Text('Cloud Sync'),
-        leading: BackButton(onPressed: () => Navigator.of(context).pop()),
+        leading: BackButton(onPressed: () => context.go('/')),
         backgroundColor: const Color(0xFF16213E),
         foregroundColor: Colors.white,
       ),
@@ -57,6 +58,11 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
               status: status,
               onPush: () => _doSync('push'),
               onPull: () => _doSync('pull'),
+            ),
+            const SizedBox(height: 8),
+            _ClearCloudButton(
+              status: status,
+              onClear: _clearCloud,
             ),
           ],
           if (progress != null) ...[
@@ -146,6 +152,45 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
     if (service.conflicts.isEmpty) {
       ref.read(syncStatusProvider.notifier).state = SyncStatus.idle;
     }
+  }
+
+  Future<void> _clearCloud() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text('Clear Cloud Data?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'This will delete ALL synced data from the cloud. Local data will not be affected.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Clear', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final service = ref.read(syncServiceProvider).valueOrNull;
+    if (service == null) return;
+    ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
+    try {
+      await service.wipeCloud(
+        onProgress: (p) => ref.read(syncProgressProvider.notifier).state = p,
+      );
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.idle;
+    } catch (e) {
+      ref.read(syncLastErrorProvider.notifier).state = e.toString();
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
+    }
+    ref.read(syncProgressProvider.notifier).state = null;
   }
 }
 
@@ -305,6 +350,28 @@ class _SyncActions extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ClearCloudButton extends StatelessWidget {
+  final SyncStatus status;
+  final VoidCallback onClear;
+
+  const _ClearCloudButton({required this.status, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    final syncing = status == SyncStatus.syncing;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: syncing ? null : onClear,
+        icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 18),
+        label: const Text('Clear Cloud Data',
+            style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+        style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0x60FF5252))),
       ),
     );
   }
