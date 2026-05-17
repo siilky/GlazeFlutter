@@ -16,6 +16,7 @@ import '../../../core/db/repositories/lorebook_repo.dart';
 import '../../../core/db/repositories/embedding_repo.dart';
 import '../../../core/services/image_storage_service.dart';
 import '../../../core/models/character.dart';
+import '../../../core/models/gallery_entry.dart';
 import '../../../core/models/persona.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/lorebook.dart';
@@ -63,7 +64,6 @@ class SyncEngine {
     await _adapter.ensureFolder('$cloudBase/characters');
     await _adapter.ensureFolder('$cloudBase/personas');
     await _adapter.ensureFolder('$cloudBase/chats');
-    await _adapter.ensureFolder('$cloudBase/galleries');
 
     final localManifest = await _manifestBuilder.buildLocalManifest();
     SyncManifest? cloudManifest;
@@ -73,21 +73,26 @@ class SyncEngine {
     } catch (_) {}
 
     final entries = localManifest.entries.values.toList();
+
+    final galleryDirs = <String>{};
+    for (final entry in entries) {
+      if (entry.type == 'character' && !entry.deleted) {
+        galleryDirs.add('$cloudBase/gallery/${entry.id}');
+      }
+    }
+    for (final dir in galleryDirs) {
+      await _adapter.ensureFolder(dir);
+    }
+
+    final tasks = <Future<void> Function()>[];
     var processed = 0;
 
     for (final entry in entries) {
-      processed++;
-      onProgress(SyncProgress(
-        current: processed,
-        total: entries.length,
-        message: 'Pushing ${entry.type}:${entry.id}',
-      ));
-
       final cloudEntry = cloudManifest?.entries[entry.key];
 
       if (entry.deleted) {
         if (cloudEntry != null && !cloudEntry.deleted) {
-          await SyncSerialization.deleteCloudFileIfExists(_adapter, entry);
+          tasks.add(() => SyncSerialization.deleteCloudFileIfExists(_adapter, entry));
         }
         continue;
       }
@@ -96,7 +101,21 @@ class SyncEngine {
         continue;
       }
 
-      await _queue.enqueue(() => _pushEntry(entry));
+      tasks.add(() async {
+        processed++;
+        onProgress(SyncProgress(
+          current: processed,
+          total: entries.length,
+          message: 'Pushing ${entry.type}:${entry.id}',
+        ));
+        await _pushEntry(entry);
+      });
+    }
+
+    List<Object>? taskErrors;
+    if (tasks.isNotEmpty) {
+      final result = await _queue.enqueueAll(tasks, concurrency: 3, delayMs: 300);
+      taskErrors = result.errors;
     }
 
     final cleanedEntries = Map<String, SyncManifestEntry>.from(localManifest.entries)
@@ -112,6 +131,10 @@ class SyncEngine {
     );
     await _manifestBuilder.writeLocalManifest(updatedManifest);
     await _manifestBuilder.clearDeleted();
+
+    if (taskErrors != null && taskErrors.isNotEmpty) {
+      throw SyncQueueAggregateError(taskErrors);
+    }
   }
 
   Future<void> pullEntities({
@@ -123,16 +146,10 @@ class SyncEngine {
     final localManifest = await _manifestBuilder.buildLocalManifest();
 
     final entries = cloudManifest.entries.values.toList();
+    final tasks = <Future<void> Function()>[];
     var processed = 0;
 
     for (final cloudEntry in entries) {
-      processed++;
-      onProgress(SyncProgress(
-        current: processed,
-        total: entries.length,
-        message: 'Pulling ${cloudEntry.type}:${cloudEntry.id}',
-      ));
-
       final localEntry = localManifest.entries[cloudEntry.key];
 
       if (cloudEntry.hash == localEntry?.hash && cloudEntry.deleted == localEntry?.deleted) {
@@ -154,7 +171,21 @@ class SyncEngine {
         continue;
       }
 
-      await _queue.enqueue(() => _pullEntry(cloudEntry));
+      tasks.add(() async {
+        processed++;
+        onProgress(SyncProgress(
+          current: processed,
+          total: entries.length,
+          message: 'Pulling ${cloudEntry.type}:${cloudEntry.id}',
+        ));
+        await _pullEntry(cloudEntry);
+      });
+    }
+
+    List<Object>? taskErrors;
+    if (tasks.isNotEmpty) {
+      final result = await _queue.enqueueAll(tasks, concurrency: 3, delayMs: 300);
+      taskErrors = result.errors;
     }
 
     final cloudKeys = cloudManifest.entries.keys.toSet();
@@ -172,6 +203,10 @@ class SyncEngine {
       lastSync: DateTime.now().millisecondsSinceEpoch,
     ));
     await _manifestBuilder.clearDeleted();
+
+    if (taskErrors != null && taskErrors.isNotEmpty) {
+      throw SyncQueueAggregateError(taskErrors);
+    }
   }
 
   Future<void> resolveConflict(SyncConflict conflict, String choice) async {
@@ -192,9 +227,32 @@ class SyncEngine {
   Future<void> wipeCloudData({
     required void Function(SyncProgress) onProgress,
   }) async {
-    await _adapter.deleteFolder(cloudBase);
+    onProgress(const SyncProgress(message: 'Deleting cloud data...'));
+    try {
+      await _adapter.deleteFolder(cloudBase);
+    } catch (e) {
+      final msg = e.toString();
+      if (!msg.contains('not_found') && !msg.contains('path_not_found')) {
+        rethrow;
+      }
+    }
+
+    onProgress(const SyncProgress(message: 'Waiting for cloud to finalize...'));
+    for (var i = 0; i < 10; i++) {
+      await Future.delayed(const Duration(seconds: 2));
+      try {
+        final files = await _adapter.listFolder(cloudBase);
+        if (files == null || files.isEmpty) break;
+      } catch (_) {
+        break;
+      }
+    }
+
+    onProgress(const SyncProgress(message: 'Recreating cloud folder...'));
     await _adapter.invalidateFolderCache();
-    await _adapter.ensureFolder(cloudBase);
+    try {
+      await _adapter.ensureFolder(cloudBase);
+    } catch (_) {}
   }
 
   Future<void> _pushEntry(SyncManifestEntry entry) async {
@@ -208,6 +266,7 @@ class SyncEngine {
 
     if (entry.type == 'character') {
       await _pushCharacterAvatar(entry.id);
+      await _pushCharacterGallery(entry.id);
     }
   }
 
@@ -224,6 +283,7 @@ class SyncEngine {
 
     if (entry.type == 'character') {
       await _pullCharacterAvatar(entry.id);
+      await _pullCharacterGallery(entry.id);
     }
   }
 
@@ -336,7 +396,7 @@ class SyncEngine {
       for (final ext in ['png', 'jpg', 'webp', 'gif']) {
         try {
           final imgCloudPath = galleryCloudPath(charId, 'avatar', ext);
-            final bytes = await _adapter.downloadBinary(imgCloudPath);
+          final bytes = await _adapter.downloadBinary(imgCloudPath);
           if (bytes.isNotEmpty) {
             final relativePath = await _imageStorage.saveBytes(
               bytes, 'avatars', charId, ext,
@@ -347,5 +407,70 @@ class SyncEngine {
         } catch (_) {}
       }
     } catch (_) {}
+  }
+
+  Future<void> _pushCharacterGallery(String charId) async {
+    try {
+      final c = await _characterRepo.getById(charId);
+      if (c == null) return;
+      await _adapter.ensureFolder('$cloudBase/gallery/$charId');
+      for (final entry in c.gallery) {
+        final absPath = _imageStorage.absolutePath(entry.imagePath);
+        if (absPath == null) continue;
+        final file = File(absPath);
+        if (!await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        final ext = entry.imagePath.split('.').last;
+        await _adapter.uploadBinary(
+          galleryCloudPath(charId, entry.id, ext),
+          bytes,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pullCharacterGallery(String charId) async {
+    try {
+      final c = await _characterRepo.getById(charId);
+      if (c == null) return;
+
+      final updatedGallery = <GalleryEntry>[];
+      for (final entry in c.gallery) {
+        var pulled = false;
+        for (final ext in ['png', 'jpg', 'webp', 'gif']) {
+          try {
+            final imgCloudPath = galleryCloudPath(charId, entry.id, ext);
+            final bytes = await _adapter.downloadBinary(imgCloudPath);
+            if (bytes.isNotEmpty) {
+              final destPath = await _imageStorage.saveBytes(
+                bytes, 'gallery/$charId', entry.id, ext,
+              );
+              updatedGallery.add(entry.copyWith(imagePath: destPath));
+              pulled = true;
+              break;
+            }
+          } catch (_) {}
+        }
+        if (!pulled) {
+          final absPath = _imageStorage.absolutePath(entry.imagePath);
+          if (absPath != null && await File(absPath).exists()) {
+            updatedGallery.add(entry);
+          }
+        }
+      }
+
+      if (updatedGallery.length != c.gallery.length ||
+          !_galleriesEqual(updatedGallery, c.gallery)) {
+        await _characterRepo.put(c.copyWith(gallery: updatedGallery));
+      }
+    } catch (_) {}
+  }
+
+  bool _galleriesEqual(List<GalleryEntry> a, List<GalleryEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id || a[i].imagePath != b[i].imagePath) return false;
+    }
+    return true;
   }
 }

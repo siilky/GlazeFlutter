@@ -76,6 +76,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(syncServiceProvider);
     final status = ref.watch(syncStatusProvider);
     final provider = ref.watch(syncProviderProvider);
     final connected = ref.watch(syncConnectedProvider);
@@ -491,6 +492,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
             ],
           ),
         ),
+
       ),
     );
   }
@@ -803,10 +805,9 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _connectDropbox() async {
-    final service = ref.read(syncServiceProvider).value;
-    if (service == null) return;
     setState(() => _isConnecting = true);
     try {
+      final service = await ref.read(syncServiceProvider.future);
       await service.connectDropbox();
       ref.read(syncConnectedProvider.notifier).state = true;
       ref.read(syncProviderProvider.notifier).state = SyncProvider.dropbox;
@@ -825,10 +826,9 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _connectGDrive() async {
-    final service = ref.read(syncServiceProvider).value;
-    if (service == null) return;
     setState(() => _isConnectingGdrive = true);
     try {
+      final service = await ref.read(syncServiceProvider.future);
       await service.connectGDrive();
       ref.read(syncConnectedProvider.notifier).state = true;
       ref.read(syncProviderProvider.notifier).state = SyncProvider.gdrive;
@@ -847,7 +847,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _disconnect() async {
-    final service = ref.read(syncServiceProvider).value;
+    final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
 
     final confirmed = await GlazeBottomSheet.show<bool>(
@@ -987,15 +987,13 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _doSync(String mode) async {
-    final service = ref.read(syncServiceProvider).value;
-    if (service == null) return;
-
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
     ref.read(syncLastErrorProvider.notifier).state = null;
     setState(() => _syncResult = null);
 
     int itemsCount = 0;
     try {
+      final service = await ref.read(syncServiceProvider.future);
       switch (mode) {
         case 'push':
           await service.fullPush(
@@ -1051,6 +1049,9 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
     } catch (e) {
       ref.read(syncLastErrorProvider.notifier).state = e.toString();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
+      if (mounted) {
+        GlazeToast.errorWithCopy(context, 'Sync failed: ', e);
+      }
     } finally {
       if (mounted) {
         ref.read(syncProgressProvider.notifier).state = null;
@@ -1059,7 +1060,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _resolveConflict(SyncConflict conflict, String choice) async {
-    final service = ref.read(syncServiceProvider).value;
+    final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
     await service.resolveConflict(conflict, choice);
     ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
@@ -1067,7 +1068,6 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
       ref.read(syncStatusProvider.notifier).state = SyncStatus.idle;
     }
   }
-
   void _setAutoSync(bool val) async {
     final service = ref.read(syncServiceProvider).value;
     if (service != null) {
@@ -1221,3 +1221,4 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
     );
   }
 }
+

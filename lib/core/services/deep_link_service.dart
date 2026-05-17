@@ -8,6 +8,7 @@ class DeepLinkService {
   static final DeepLinkService instance = DeepLinkService._();
 
   final Map<String, Completer<Uri>> _pendingOAuth = {};
+  final Map<String, Uri> _earlyCallbacks = {};
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _subscription;
 
@@ -27,12 +28,32 @@ class DeepLinkService {
 
   void _handleDeepLink(Uri uri) {
     debugPrint('DeepLinkService: received $uri');
-    final path = uri.path;
-    if (path.startsWith('/oauth/')) {
-      final provider = path.replaceFirst('/oauth/', '');
+    if (uri.host == 'oauth') {
+      final provider = uri.path.replaceFirst('/', '');
       final completer = _pendingOAuth.remove(provider);
       if (completer != null && !completer.isCompleted) {
         completer.complete(uri);
+      } else {
+        _earlyCallbacks[provider] = uri;
+      }
+      return;
+    }
+    if (uri.scheme.startsWith('db-') && uri.host == 'auth') {
+      final completer = _pendingOAuth.remove('dropbox');
+      if (completer != null && !completer.isCompleted) {
+        completer.complete(uri);
+      } else {
+        _earlyCallbacks['dropbox'] = uri;
+      }
+      return;
+    }
+    final host = uri.host;
+    if (host.contains('googleusercontent')) {
+      final completer = _pendingOAuth.remove('gdrive');
+      if (completer != null && !completer.isCompleted) {
+        completer.complete(uri);
+      } else {
+        _earlyCallbacks['gdrive'] = uri;
       }
     }
   }
@@ -41,6 +62,9 @@ class DeepLinkService {
     String provider, {
     Duration timeout = const Duration(minutes: 5),
   }) async {
+    final early = _earlyCallbacks.remove(provider);
+    if (early != null) return early;
+
     final completer = Completer<Uri>();
     _pendingOAuth[provider] = completer;
     return completer.future.timeout(timeout, onTimeout: () {

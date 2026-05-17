@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/services/deep_link_service.dart';
@@ -66,28 +67,28 @@ class DropboxAuth {
     final codeChallenge = _sha256Base64Url(_codeVerifier!);
     final state = _generateRandomString(32);
 
-    final redirectUri = Platform.isAndroid || Platform.isIOS
-        ? SyncConfig.dropboxRedirectNative!
-        : 'http://localhost';
-
-    final authUrl =
-        '$_authBase?response_type=code&client_id=$appKey&redirect_uri=${Uri.encodeComponent(redirectUri)}'
-        '&code_challenge=$codeChallenge&code_challenge_method=S256&state=$state'
-        '&token_access_type=offline';
-
     if (Platform.isAndroid || Platform.isIOS) {
+      final redirectUri = SyncConfig.dropboxRedirectNative;
+      final authUrl =
+          '$_authBase?response_type=code&client_id=$appKey&redirect_uri=${Uri.encodeComponent(redirectUri)}'
+          '&code_challenge=$codeChallenge&code_challenge_method=S256&state=$state'
+          '&token_access_type=offline';
       final deepLinkService = DeepLinkService.instance;
       await launchUrl(Uri.parse(authUrl), mode: LaunchMode.externalApplication);
       final callbackUri = await deepLinkService.waitForOAuthCallback('dropbox');
       final code = callbackUri.queryParameters['code'];
       final returnedState = callbackUri.queryParameters['state'];
-      if (code == null) throw StateError('No authorization code in callback');
-      if (returnedState != state) throw StateError('OAuth state mismatch');
+      if (code == null) throw StateError('No authorization code in callback (uri=$callbackUri)');
+      if (returnedState != state) throw StateError('OAuth state mismatch (expected=$state got=$returnedState)');
       await _handleCodeExchange(code, redirectUri);
       return;
     }
 
-    final result = await OAuthLocalServer.authenticate(authUrl);
+    final result = await OAuthLocalServer.authenticate(
+      '$_authBase?response_type=code&client_id=$appKey&redirect_uri=http://localhost'
+      '&code_challenge=$codeChallenge&code_challenge_method=S256&state=$state'
+      '&token_access_type=offline',
+    );
     await _handleCodeExchange(result.code, result.redirectUri);
   }
 
@@ -117,8 +118,20 @@ class DropboxAuth {
     if (_expiresAt != null &&
         DateTime.now().millisecondsSinceEpoch >= _expiresAt!) {
       await _refreshAccessToken();
+      await _persistTokens();
     }
     return _accessToken!;
+  }
+
+  Future<void> _persistTokens() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('gz_sync_tokens');
+    final existing = raw != null
+        ? jsonDecode(raw) as Map<String, dynamic>
+        : <String, dynamic>{};
+    final saved = saveTokens();
+    if (saved != null) existing.addAll(saved);
+    await prefs.setString('gz_sync_tokens', jsonEncode(existing));
   }
 
   Future<void> _refreshAccessToken() async {

@@ -26,6 +26,43 @@ class SyncQueue {
     }
   }
 
+  Future<({List<T> results, List<Object> errors})> enqueueAll<T>(
+    List<Future<T> Function()> tasks, {
+    int concurrency = 3,
+    int delayMs = 300,
+  }) async {
+    final results = <T>[];
+    final errors = <Object>[];
+    var index = 0;
+
+    Future<void> worker() async {
+      while (index < tasks.length) {
+        if (_isAborted) throw Exception('Sync queue aborted');
+        while (_isPaused) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        final i = index++;
+        if (i >= tasks.length) break;
+        try {
+          final result = await enqueue(tasks[i]);
+          results.insert(i, result);
+        } catch (e) {
+          errors.add(e);
+        }
+        if (delayMs > 0 && index < tasks.length) {
+          await Future.delayed(Duration(milliseconds: delayMs));
+        }
+      }
+    }
+
+    final workers = List.generate(
+      tasks.length.clamp(0, concurrency),
+      (_) => worker(),
+    );
+    await Future.wait(workers);
+    return (results: results, errors: errors);
+  }
+
   Future<T> _retryWithBackoff<T>(
     Future<T> Function() operation,
     String? label,
@@ -70,5 +107,17 @@ class SyncQueue {
     _isPaused = false;
     _isAborted = false;
     _pendingCount = 0;
+  }
+}
+
+class SyncQueueAggregateError implements Exception {
+  final List<Object> errors;
+  SyncQueueAggregateError(this.errors);
+
+  @override
+  String toString() {
+    final first = errors.first.toString();
+    if (errors.length == 1) return first;
+    return '$first (+${errors.length - 1} more errors)';
   }
 }

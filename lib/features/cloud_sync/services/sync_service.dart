@@ -267,8 +267,7 @@ class SyncService {
         break;
     }
     _accountInfo = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('gz_sync_tokens');
+    await _saveTokens();
   }
 
   Future<void> setAutoSync(bool enabled, {int messageCount = 5}) async {
@@ -294,6 +293,23 @@ class SyncService {
         return _dropboxAuth.isConnected;
       case SyncProvider.gdrive:
         return _gdriveAuth.isConnected;
+    }
+  }
+
+  Future<void> wipeCloud({
+    void Function(SyncProgress)? onProgress,
+  }) async {
+    if (_status == SyncStatus.syncing) return;
+    _status = SyncStatus.syncing;
+    _lastError = null;
+    try {
+      await _engine.wipeCloudData(
+        onProgress: onProgress ?? (_) {},
+      );
+      _status = SyncStatus.idle;
+    } catch (e) {
+      _lastError = e.toString();
+      _status = SyncStatus.error;
     }
   }
 
