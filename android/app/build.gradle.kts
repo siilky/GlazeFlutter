@@ -44,7 +44,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        val envFile = rootProject.file("../../.env")
+        val envFile = rootProject.file("../.env")
         val dropboxAppKey = if (envFile.exists()) {
             envFile.readLines()
                 .find { it.startsWith("DROPBOX_APP_KEY=") }
