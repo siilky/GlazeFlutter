@@ -40,7 +40,8 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
         children: [
           _ProviderSelector(
             provider: provider,
-            onChanged: _connecting ? (_) {} : (p) => ref.read(syncProviderProvider.notifier).state = p,
+            onChanged:
+                _connecting ? (_) {} : (p) => ref.read(syncProviderProvider.notifier).state = p,
           ),
           const SizedBox(height: 16),
           _ConnectButton(
@@ -56,7 +57,6 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
               status: status,
               onPush: () => _doSync('push'),
               onPull: () => _doSync('pull'),
-              onFullSync: () => _doSync('full'),
             ),
           ],
           if (progress != null) ...[
@@ -86,11 +86,10 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
 
   Future<void> _connect() async {
     if (_connecting) return;
-    final service = ref.read(syncServiceProvider).value;
-    if (service == null) return;
-    final provider = ref.read(syncProviderProvider);
     setState(() => _connecting = true);
+    final provider = ref.read(syncProviderProvider);
     try {
+      final service = await ref.read(syncServiceProvider.future);
       if (provider == SyncProvider.dropbox) {
         await service.connectDropbox();
       } else {
@@ -107,36 +106,28 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _disconnect() async {
-    final service = ref.read(syncServiceProvider).value;
+    final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
     await service.disconnect();
     ref.read(syncConnectedProvider.notifier).state = false;
   }
 
   Future<void> _doSync(String mode) async {
-    final service = ref.read(syncServiceProvider).value;
+    final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
 
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
     ref.read(syncLastErrorProvider.notifier).state = null;
 
     try {
-      switch (mode) {
-        case 'push':
-          await service.fullPush(
-            onProgress: (p) => ref.read(syncProgressProvider.notifier).state = p,
-          );
-          break;
-        case 'pull':
-          await service.fullPull(
-            onProgress: (p) => ref.read(syncProgressProvider.notifier).state = p,
-          );
-          break;
-        case 'full':
-          await service.fullSync(
-            onProgress: (p) => ref.read(syncProgressProvider.notifier).state = p,
-          );
-          break;
+      if (mode == 'push') {
+        await service.fullPush(
+          onProgress: (p) => ref.read(syncProgressProvider.notifier).state = p,
+        );
+      } else {
+        await service.fullPull(
+          onProgress: (p) => ref.read(syncProgressProvider.notifier).state = p,
+        );
       }
       ref.read(syncStatusProvider.notifier).state = service.status;
       ref.read(syncConflictsProvider.notifier).state = service.conflicts;
@@ -148,7 +139,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Future<void> _resolveConflict(SyncConflict conflict, String choice) async {
-    final service = ref.read(syncServiceProvider).value;
+    final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
     await service.resolveConflict(conflict, choice);
     ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
@@ -173,7 +164,8 @@ class _ProviderSelector extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Provider', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            const Text('Provider',
+                style: TextStyle(color: Colors.white70, fontSize: 12)),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -202,7 +194,8 @@ class _ProviderChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _ProviderChip({required this.label, required this.selected, required this.onTap});
+  const _ProviderChip(
+      {required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -240,9 +233,11 @@ class _ConnectButton extends StatelessWidget {
         icon: SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          child:
+              CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
         ),
-        label: Text('Connecting to ${provider == SyncProvider.dropbox ? 'Dropbox' : 'Google Drive'}...'),
+        label: Text(
+            'Connecting to ${provider == SyncProvider.dropbox ? 'Dropbox' : 'Google Drive'}...'),
         style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F3460)),
       );
     }
@@ -250,14 +245,17 @@ class _ConnectButton extends StatelessWidget {
       return OutlinedButton.icon(
         onPressed: onDisconnect,
         icon: const Icon(Icons.link_off, color: Colors.redAccent),
-        label: const Text('Disconnect', style: TextStyle(color: Colors.redAccent)),
-        style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent)),
+        label: const Text('Disconnect',
+            style: TextStyle(color: Colors.redAccent)),
+        style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Colors.redAccent)),
       );
     }
     return FilledButton.icon(
       onPressed: onConnect,
       icon: const Icon(Icons.link),
-      label: Text('Connect ${provider == SyncProvider.dropbox ? 'Dropbox' : 'Google Drive'}'),
+      label: Text(
+          'Connect ${provider == SyncProvider.dropbox ? 'Dropbox' : 'Google Drive'}'),
       style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F3460)),
     );
   }
@@ -267,13 +265,11 @@ class _SyncActions extends StatelessWidget {
   final SyncStatus status;
   final VoidCallback onPush;
   final VoidCallback onPull;
-  final VoidCallback onFullSync;
 
   const _SyncActions({
     required this.status,
     required this.onPush,
     required this.onPull,
-    required this.onFullSync,
   });
 
   @override
@@ -283,37 +279,29 @@ class _SyncActions extends StatelessWidget {
       color: const Color(0xFF16213E),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        child: Row(
           children: [
-            SizedBox(
-              width: double.infinity,
+            Expanded(
               child: FilledButton.icon(
-                onPressed: syncing ? null : onFullSync,
-                icon: const Icon(Icons.sync),
-                label: const Text('Full Sync (Push + Pull)'),
+                onPressed: syncing ? null : onPush,
+                icon: syncing
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.cloud_upload),
+                label: const Text('Push'),
               ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: syncing ? null : onPush,
-                    icon: const Icon(Icons.cloud_upload),
-                    label: const Text('Push'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: syncing ? null : onPull,
-                    icon: const Icon(Icons.cloud_download),
-                    label: const Text('Pull'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white70),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: syncing ? null : onPull,
+                icon: const Icon(Icons.cloud_download),
+                label: const Text('Pull'),
+              ),
             ),
           ],
         ),
@@ -329,7 +317,8 @@ class _ProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pct = progress.total > 0 ? progress.current / progress.total : 0.0;
+    final pct =
+        progress.total > 0 ? progress.current / progress.total : 0.0;
     return Card(
       color: const Color(0xFF16213E),
       child: Padding(
@@ -342,7 +331,8 @@ class _ProgressBar extends StatelessWidget {
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(height: 8),
-            LinearProgressIndicator(value: pct, backgroundColor: const Color(0xFF1A1A2E)),
+            LinearProgressIndicator(
+                value: pct, backgroundColor: const Color(0xFF1A1A2E)),
             const SizedBox(height: 4),
             Text(
               '${progress.current}/${progress.total}',
@@ -368,10 +358,13 @@ class _ErrorCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+            const Icon(Icons.error_outline,
+                color: Colors.redAccent, size: 20),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(error, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+              child: Text(error,
+                  style:
+                      const TextStyle(color: Colors.redAccent, fontSize: 13)),
             ),
           ],
         ),
@@ -397,7 +390,8 @@ class _ConflictList extends StatelessWidget {
           children: [
             Text(
               'Conflicts (${conflicts.length})',
-              style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  color: Colors.orangeAccent, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             ...conflicts.map((c) => Padding(
@@ -405,15 +399,18 @@ class _ConflictList extends StatelessWidget {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(c.name, style: const TextStyle(color: Colors.white70)),
+                        child: Text(c.name,
+                            style: const TextStyle(color: Colors.white70)),
                       ),
                       TextButton(
                         onPressed: () => onResolve(c, 'local'),
-                        child: const Text('Keep Local', style: TextStyle(color: Colors.blueAccent)),
+                        child: const Text('Keep Local',
+                            style: TextStyle(color: Colors.blueAccent)),
                       ),
                       TextButton(
                         onPressed: () => onResolve(c, 'cloud'),
-                        child: const Text('Use Cloud', style: TextStyle(color: Colors.greenAccent)),
+                        child: const Text('Use Cloud',
+                            style: TextStyle(color: Colors.greenAccent)),
                       ),
                     ],
                   ),
@@ -436,7 +433,8 @@ class _AutoSyncToggle extends StatelessWidget {
     return Card(
       color: const Color(0xFF16213E),
       child: SwitchListTile(
-        title: const Text('Auto-sync after messages', style: TextStyle(color: Colors.white70)),
+        title: const Text('Auto-sync after messages',
+            style: TextStyle(color: Colors.white70)),
         subtitle: const Text('Automatically push after every 5 messages',
             style: TextStyle(color: Colors.white38, fontSize: 12)),
         value: enabled,
