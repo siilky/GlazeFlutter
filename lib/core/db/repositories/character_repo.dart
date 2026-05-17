@@ -130,6 +130,7 @@ class CharacterRepo {
             : {},
         characterVersion: c.characterVersion,
         macroName: c.macroName,
+        picksHash: c.picksHash,
       );
 
   CharactersCompanion _toCompanion(Character m) => CharactersCompanion(
@@ -155,5 +156,6 @@ class CharacterRepo {
         extensionsJson: Value(m.extensions.isNotEmpty ? jsonEncode(m.extensions) : null),
         characterVersion: Value(m.characterVersion),
         macroName: Value(m.macroName),
+        picksHash: Value(m.picksHash),
       );
 }
