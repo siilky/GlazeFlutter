@@ -312,7 +312,7 @@ class _FolderCardState extends State<_FolderCard> {
                           imageUrl: folder.imageUrl!,
                           fit: BoxFit.cover,
                           errorWidget: (_, _, _) =>
-                              _buildFolderBackground(context),
+                              _folderGradient(context),
                         )
                       : _buildFolderBackground(context),
                 ),
@@ -424,9 +424,11 @@ class _FolderCardState extends State<_FolderCard> {
     );
   }
 
-  String _charImageUrl(PicksCharacter c) {
+  String _charImageUrl(PicksCharacter c, {bool useThumb = true}) {
     final parts = <String>[...widget.path, widget.folder.id];
-    return '$kPicksBaseUrl/${parts.join('/')}/${c.fileName ?? '${c.id}.png'}';
+    final base = '$kPicksBaseUrl/${parts.join('/')}';
+    if (useThumb && c.thumb != null) return '$base/${Uri.encodeComponent(c.thumb!)}';
+    return '$base/${Uri.encodeComponent(c.fileName ?? '${c.id}.png')}';
   }
 }
 
@@ -471,7 +473,11 @@ class _PicksCharacterCardState extends ConsumerState<_PicksCharacterCard> {
     return '$base/${char.fileName ?? '${char.id}.png'}';
   }
 
-  String get _imageUrl => '$kPicksBaseUrl/$_relativePath';
+  String get _imageUrl {
+    final base = widget.path.join('/');
+    final name = char.thumb ?? char.fileName ?? '${char.id}.png';
+    return '$kPicksBaseUrl/$base/${Uri.encodeComponent(name)}';
+  }
 
   bool get _isImported {
     final chars = ref.read(charactersProvider).valueOrNull ?? [];
