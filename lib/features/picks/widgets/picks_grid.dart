@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -260,6 +261,16 @@ class _FolderCard extends StatefulWidget {
 
 class _FolderCardState extends State<_FolderCard> {
   bool _hovered = false;
+  late final List<PicksCharacter> _shuffledChars;
+
+  @override
+  void initState() {
+    super.initState();
+    final allChars = widget.folder.characters.isNotEmpty
+        ? widget.folder.characters
+        : widget.folder.subfolders.expand((sf) => sf.characters).toList();
+    _shuffledChars = List.of(allChars)..shuffle(Random());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -298,9 +309,10 @@ class _FolderCardState extends State<_FolderCard> {
                       ? CachedNetworkImage(
                           imageUrl: folder.imageUrl!,
                           fit: BoxFit.cover,
-                          errorWidget: (_, _, _) => _folderGradient(context),
+                          errorWidget: (_, _, _) =>
+                              _buildFolderBackground(context),
                         )
-                      : _folderGradient(context),
+                      : _buildFolderBackground(context),
                 ),
                 Positioned.fill(
                   child: Container(
@@ -375,6 +387,54 @@ class _FolderCardState extends State<_FolderCard> {
       ),
     );
   }
+
+  Widget _buildFolderBackground(BuildContext context) {
+    if (_shuffledChars.isEmpty) {
+      return _folderGradient(context);
+    }
+
+    final previews = _shuffledChars.take(3).toList();
+    if (previews.length == 1) {
+      return CachedNetworkImage(
+        imageUrl: _charImageUrl(previews[0]),
+        fit: BoxFit.cover,
+        placeholder: (_, _) => _folderGradient(context),
+        errorWidget: (_, _, _) => _folderGradient(context),
+      );
+    }
+
+    return Row(
+      children: previews.asMap().entries.map((entry) {
+        final i = entry.key;
+        final c = entry.value;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(left: i > 0 ? 2 : 0),
+            child: CachedNetworkImage(
+              imageUrl: _charImageUrl(c),
+              fit: BoxFit.cover,
+              placeholder: (_, _) => _folderGradient(context),
+              errorWidget: (_, _, _) => _folderGradient(context),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _charImageUrl(PicksCharacter c) {
+    final base = [widget.folder.id];
+    if (widget.folder.characters.isEmpty &&
+        widget.folder.subfolders.isNotEmpty) {
+      for (final sf in widget.folder.subfolders) {
+        if (sf.characters.contains(c)) {
+          base.add(sf.id);
+          break;
+        }
+      }
+    }
+    return '$kPicksBaseUrl/${base.join('/')}/${c.fileName ?? '${c.id}.png'}';
+  }
 }
 
 Widget _folderGradient(BuildContext context) {
@@ -417,6 +477,8 @@ class _PicksCharacterCardState extends ConsumerState<_PicksCharacterCard> {
     final base = widget.path.join('/');
     return '$base/${char.fileName ?? '${char.id}.png'}';
   }
+
+  String get _imageUrl => '$kPicksBaseUrl/$_relativePath';
 
   bool get _isImported {
     final chars = ref.read(charactersProvider).valueOrNull ?? [];
@@ -559,6 +621,15 @@ class _PicksCharacterCardState extends ConsumerState<_PicksCharacterCard> {
   }
 
   Widget _buildPlaceholder() {
+    return CachedNetworkImage(
+      imageUrl: _imageUrl,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => _buildLetterPlaceholder(),
+      errorWidget: (_, _, _) => _buildLetterPlaceholder(),
+    );
+  }
+
+  Widget _buildLetterPlaceholder() {
     return Container(
       color: context.cs.surfaceContainerHighest,
       child: Center(
