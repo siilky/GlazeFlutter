@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -198,6 +199,7 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
                   final folder = _currentFolders[index];
                   return _FolderCard(
                     folder: folder,
+                    path: _path,
                     onTap: () => _navigateInto(folder.id),
                   );
                 },
@@ -250,9 +252,10 @@ class _PicksFolderViewState extends State<_PicksFolderView> {
 
 class _FolderCard extends StatefulWidget {
   final PicksFolder folder;
+  final List<String> path;
   final VoidCallback onTap;
 
-  const _FolderCard({required this.folder, required this.onTap});
+  const _FolderCard({required this.folder, required this.path, required this.onTap});
 
   @override
   State<_FolderCard> createState() => _FolderCardState();
@@ -260,6 +263,16 @@ class _FolderCard extends StatefulWidget {
 
 class _FolderCardState extends State<_FolderCard> {
   bool _hovered = false;
+  late final List<PicksCharacter> _shuffledChars;
+
+  @override
+  void initState() {
+    super.initState();
+    final allChars = widget.folder.characters.isNotEmpty
+        ? widget.folder.characters
+        : widget.folder.subfolders.expand((sf) => sf.characters).toList();
+    _shuffledChars = List.of(allChars)..shuffle(Random());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -298,9 +311,10 @@ class _FolderCardState extends State<_FolderCard> {
                       ? CachedNetworkImage(
                           imageUrl: folder.imageUrl!,
                           fit: BoxFit.cover,
-                          errorWidget: (_, _, _) => _folderGradient(context),
+                          errorWidget: (_, _, _) =>
+                              _folderGradient(context),
                         )
-                      : _folderGradient(context),
+                      : _buildFolderBackground(context),
                 ),
                 Positioned.fill(
                   child: Container(
@@ -375,6 +389,51 @@ class _FolderCardState extends State<_FolderCard> {
       ),
     );
   }
+
+  Widget _buildFolderBackground(BuildContext context) {
+    if (_shuffledChars.isEmpty) {
+      return _folderGradient(context);
+    }
+
+    final previews = _shuffledChars.take(3).toList();
+    if (previews.length == 1) {
+      return CachedNetworkImage(
+        imageUrl: _charImageUrl(previews[0]),
+        fit: BoxFit.cover,
+        placeholder: (_, _) => _folderGradient(context),
+        errorWidget: (_, _, _) => _folderGradient(context),
+      );
+    }
+
+    return Row(
+      children: previews.asMap().entries.map((entry) {
+        final i = entry.key;
+        final c = entry.value;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(left: i > 0 ? 2 : 0),
+            child: CachedNetworkImage(
+              imageUrl: _charImageUrl(c),
+              fit: BoxFit.cover,
+              placeholder: (_, _) => _folderGradient(context),
+              errorWidget: (_, _, _) => _folderGradient(context),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _charImageUrl(PicksCharacter c, {bool useThumb = true}) {
+    final parts = <String>[...widget.path, widget.folder.id];
+    final base = '$kPicksBaseUrl/${parts.join('/')}';
+    if (useThumb && c.thumb != null) {
+      final segs = c.thumb!.split('/');
+      final encoded = segs.map(Uri.encodeComponent).join('/');
+      return '$base/$encoded';
+    }
+    return '$base/${Uri.encodeComponent(c.fileName ?? '${c.id}.png')}';
+  }
 }
 
 Widget _folderGradient(BuildContext context) {
@@ -416,6 +475,14 @@ class _PicksCharacterCardState extends ConsumerState<_PicksCharacterCard> {
   String get _relativePath {
     final base = widget.path.join('/');
     return '$base/${char.fileName ?? '${char.id}.png'}';
+  }
+
+  String get _imageUrl {
+    final base = widget.path.join('/');
+    final name = char.fileName ?? '${char.id}.png';
+    final segs = name.split('/');
+    final encoded = segs.map(Uri.encodeComponent).join('/');
+    return '$kPicksBaseUrl/$base/$encoded';
   }
 
   bool get _isImported {
@@ -559,6 +626,15 @@ class _PicksCharacterCardState extends ConsumerState<_PicksCharacterCard> {
   }
 
   Widget _buildPlaceholder() {
+    return CachedNetworkImage(
+      imageUrl: _imageUrl,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => _buildLetterPlaceholder(),
+      errorWidget: (_, _, _) => _buildLetterPlaceholder(),
+    );
+  }
+
+  Widget _buildLetterPlaceholder() {
     return Container(
       color: context.cs.surfaceContainerHighest,
       child: Center(
