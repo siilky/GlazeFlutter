@@ -140,6 +140,9 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
     } catch (e) {
       ref.read(syncLastErrorProvider.notifier).state = e.toString();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
+      if (mounted) {
+        GlazeToast.error(context, 'Sync failed: ', e);
+      }
     }
     ref.read(syncProgressProvider.notifier).state = null;
   }
@@ -189,6 +192,9 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
     } catch (e) {
       ref.read(syncLastErrorProvider.notifier).state = e.toString();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
+      if (mounted) {
+        GlazeToast.error(context, 'Clear cloud failed: ', e);
+      }
     }
     ref.read(syncProgressProvider.notifier).state = null;
   }

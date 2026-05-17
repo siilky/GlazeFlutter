@@ -32,6 +32,7 @@ class SyncQueue {
     int delayMs = 300,
   }) async {
     final results = <T>[];
+    final errors = <Object>[];
     var index = 0;
 
     Future<void> worker() async {
@@ -42,8 +43,12 @@ class SyncQueue {
         }
         final i = index++;
         if (i >= tasks.length) break;
-        final result = await enqueue(tasks[i]);
-        results.insert(i, result);
+        try {
+          final result = await enqueue(tasks[i]);
+          results.insert(i, result);
+        } catch (e) {
+          errors.add(e);
+        }
         if (delayMs > 0 && index < tasks.length) {
           await Future.delayed(Duration(milliseconds: delayMs));
         }
@@ -55,6 +60,9 @@ class SyncQueue {
       (_) => worker(),
     );
     await Future.wait(workers);
+    if (errors.isNotEmpty) {
+      throw SyncQueueAggregateError(errors);
+    }
     return results;
   }
 
@@ -102,5 +110,17 @@ class SyncQueue {
     _isPaused = false;
     _isAborted = false;
     _pendingCount = 0;
+  }
+}
+
+class SyncQueueAggregateError implements Exception {
+  final List<Object> errors;
+  SyncQueueAggregateError(this.errors);
+
+  @override
+  String toString() {
+    final first = errors.first.toString();
+    if (errors.length == 1) return first;
+    return '$first (+${errors.length - 1} more errors)';
   }
 }
