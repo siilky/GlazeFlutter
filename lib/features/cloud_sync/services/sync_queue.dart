@@ -26,6 +26,38 @@ class SyncQueue {
     }
   }
 
+  Future<List<T>> enqueueAll<T>(
+    List<Future<T> Function()> tasks, {
+    int concurrency = 3,
+    int delayMs = 300,
+  }) async {
+    final results = <T>[];
+    var index = 0;
+
+    Future<void> worker() async {
+      while (index < tasks.length) {
+        if (_isAborted) throw Exception('Sync queue aborted');
+        while (_isPaused) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        final i = index++;
+        if (i >= tasks.length) break;
+        final result = await enqueue(tasks[i]);
+        results.insert(i, result);
+        if (delayMs > 0 && index < tasks.length) {
+          await Future.delayed(Duration(milliseconds: delayMs));
+        }
+      }
+    }
+
+    final workers = List.generate(
+      tasks.length.clamp(0, concurrency),
+      (_) => worker(),
+    );
+    await Future.wait(workers);
+    return results;
+  }
+
   Future<T> _retryWithBackoff<T>(
     Future<T> Function() operation,
     String? label,

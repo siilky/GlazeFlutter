@@ -73,21 +73,26 @@ class SyncEngine {
     } catch (_) {}
 
     final entries = localManifest.entries.values.toList();
+
+    final galleryDirs = <String>{};
+    for (final entry in entries) {
+      if (entry.type == 'character' && !entry.deleted) {
+        galleryDirs.add('$cloudBase/gallery/${entry.id}');
+      }
+    }
+    for (final dir in galleryDirs) {
+      await _adapter.ensureFolder(dir);
+    }
+
+    final tasks = <Future<void> Function()>[];
     var processed = 0;
 
     for (final entry in entries) {
-      processed++;
-      onProgress(SyncProgress(
-        current: processed,
-        total: entries.length,
-        message: 'Pushing ${entry.type}:${entry.id}',
-      ));
-
       final cloudEntry = cloudManifest?.entries[entry.key];
 
       if (entry.deleted) {
         if (cloudEntry != null && !cloudEntry.deleted) {
-          await SyncSerialization.deleteCloudFileIfExists(_adapter, entry);
+          tasks.add(() => SyncSerialization.deleteCloudFileIfExists(_adapter, entry));
         }
         continue;
       }
@@ -96,7 +101,19 @@ class SyncEngine {
         continue;
       }
 
-      await _queue.enqueue(() => _pushEntry(entry));
+      tasks.add(() async {
+        processed++;
+        onProgress(SyncProgress(
+          current: processed,
+          total: entries.length,
+          message: 'Pushing ${entry.type}:${entry.id}',
+        ));
+        await _pushEntry(entry);
+      });
+    }
+
+    if (tasks.isNotEmpty) {
+      await _queue.enqueueAll(tasks, concurrency: 3, delayMs: 300);
     }
 
     final cleanedEntries = Map<String, SyncManifestEntry>.from(localManifest.entries)
@@ -123,16 +140,10 @@ class SyncEngine {
     final localManifest = await _manifestBuilder.buildLocalManifest();
 
     final entries = cloudManifest.entries.values.toList();
+    final tasks = <Future<void> Function()>[];
     var processed = 0;
 
     for (final cloudEntry in entries) {
-      processed++;
-      onProgress(SyncProgress(
-        current: processed,
-        total: entries.length,
-        message: 'Pulling ${cloudEntry.type}:${cloudEntry.id}',
-      ));
-
       final localEntry = localManifest.entries[cloudEntry.key];
 
       if (cloudEntry.hash == localEntry?.hash && cloudEntry.deleted == localEntry?.deleted) {
@@ -154,7 +165,19 @@ class SyncEngine {
         continue;
       }
 
-      await _queue.enqueue(() => _pullEntry(cloudEntry));
+      tasks.add(() async {
+        processed++;
+        onProgress(SyncProgress(
+          current: processed,
+          total: entries.length,
+          message: 'Pulling ${cloudEntry.type}:${cloudEntry.id}',
+        ));
+        await _pullEntry(cloudEntry);
+      });
+    }
+
+    if (tasks.isNotEmpty) {
+      await _queue.enqueueAll(tasks, concurrency: 3, delayMs: 300);
     }
 
     final cloudKeys = cloudManifest.entries.keys.toSet();
