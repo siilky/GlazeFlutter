@@ -150,7 +150,6 @@ class SyncService {
   Future<void> fullPush({
     void Function(SyncProgress)? onProgress,
   }) async {
-    if (_status == SyncStatus.syncing) return;
     _status = SyncStatus.syncing;
     _lastError = null;
 
@@ -166,13 +165,13 @@ class SyncService {
     } catch (e) {
       _lastError = e.toString();
       _status = SyncStatus.error;
+      rethrow;
     }
   }
 
   Future<void> fullPull({
     void Function(SyncProgress)? onProgress,
   }) async {
-    if (_status == SyncStatus.syncing) return;
     _status = SyncStatus.syncing;
     _lastError = null;
     _conflicts.clear();
@@ -194,6 +193,7 @@ class SyncService {
     } catch (e) {
       _lastError = e.toString();
       _status = SyncStatus.error;
+      rethrow;
     }
   }
 

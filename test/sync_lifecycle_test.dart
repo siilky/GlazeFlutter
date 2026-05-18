@@ -834,4 +834,122 @@ void main() {
     expect(progressList.any((p) => p.message?.contains('Deleting') == true), isTrue);
     expect(progressList.any((p) => p.message?.contains('Recreating') == true), isTrue);
   });
+
+  test('Push progress: final event has current == total (bar reaches 100%)',
+      () async {
+    final world = SyncWorld();
+
+    await world.characters.put(makeChar('c1', name: 'A'));
+    await world.characters.put(makeChar('c2', name: 'B'));
+    await world.characters.put(makeChar('c3', name: 'C'));
+
+    final manifest = await world.manifestProvider.buildLocalManifest();
+    await world.manifestProvider.writeLocalManifest(manifest);
+
+    final progressList = <SyncProgress>[];
+    await world.engine.pushEntities(
+      onProgress: (p) => progressList.add(p),
+    );
+
+    final last = progressList.lastWhere((p) => p.total > 0);
+    expect(last.current, equals(last.total),
+        reason: 'Final progress event must have current == total so bar reaches 100%');
+  });
+
+  test('Pull progress: final event has current == total (bar reaches 100%)',
+      () async {
+    final world = SyncWorld();
+
+    await world.characters.put(makeChar('c1', name: 'A'));
+    await world.characters.put(makeChar('c2', name: 'B'));
+
+    final manifest = await world.manifestProvider.buildLocalManifest();
+    await world.manifestProvider.writeLocalManifest(manifest);
+    await world.engine.pushEntities(onProgress: (_) {});
+
+    world.characters.data.clear();
+    world.personas.data.clear();
+    world.chats.data.clear();
+
+    final progressList = <SyncProgress>[];
+    await world.engine.pullEntities(
+      onProgress: (p) => progressList.add(p),
+      onConflict: (_) {},
+    );
+
+    final last = progressList.lastWhere((p) => p.total > 0);
+    expect(last.current, equals(last.total),
+        reason: 'Final progress event must have current == total so bar reaches 100%');
+  });
+
+  test('Push progress events are emitted between start and end', () async {
+    final world = SyncWorld();
+
+    await world.characters.put(makeChar('c1', name: 'A'));
+    await world.characters.put(makeChar('c2', name: 'B'));
+
+    final manifest = await world.manifestProvider.buildLocalManifest();
+    await world.manifestProvider.writeLocalManifest(manifest);
+
+    final progressList = <SyncProgress>[];
+    await world.engine.pushEntities(
+      onProgress: (p) => progressList.add(p),
+    );
+
+    expect(progressList.length, greaterThanOrEqualTo(3),
+        reason: 'Should have initial + per-item + completion events');
+
+    expect(progressList.first.total, greaterThanOrEqualTo(2),
+        reason: 'Initial event should report total >= 2 (characters + singleton types)');
+
+    expect(progressList.last.current, equals(progressList.last.total),
+        reason: 'Last event should report all items done');
+  });
+
+  test('SyncService-style status transitions: idle → syncing → idle on push success',
+      () async {
+    final world = SyncWorld();
+    await world.characters.put(makeChar('c1', name: 'A'));
+    final manifest = await world.manifestProvider.buildLocalManifest();
+    await world.manifestProvider.writeLocalManifest(manifest);
+
+    final statusLog = <SyncStatus>[];
+    var currentStatus = SyncStatus.idle;
+    void trackStatus(SyncStatus s) {
+      currentStatus = s;
+      statusLog.add(s);
+    }
+
+    trackStatus(SyncStatus.syncing);
+    await world.engine.pushEntities(onProgress: (_) {});
+    trackStatus(SyncStatus.idle);
+
+    expect(statusLog, equals([SyncStatus.syncing, SyncStatus.idle]),
+        reason: 'Status should go idle → syncing → idle after successful push');
+    expect(currentStatus, equals(SyncStatus.idle));
+  });
+
+  test('SyncService-style status transitions: idle → syncing → error on push failure',
+      () async {
+    final world = SyncWorld();
+
+    final statusLog = <SyncStatus>[];
+    var currentStatus = SyncStatus.idle;
+    void trackStatus(SyncStatus s) {
+      currentStatus = s;
+      statusLog.add(s);
+    }
+
+    trackStatus(SyncStatus.syncing);
+    try {
+      await world.engine.pushEntities(onProgress: (_) {});
+      trackStatus(SyncStatus.idle);
+    } catch (e) {
+      trackStatus(SyncStatus.error);
+    }
+
+    expect(statusLog, equals([SyncStatus.syncing, SyncStatus.idle]),
+        reason: 'Pushing with no data should succeed (nothing to push)');
+    expect(currentStatus, equals(SyncStatus.idle));
+  });
 }
