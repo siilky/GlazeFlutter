@@ -52,9 +52,13 @@ class CharacterRepo implements SyncCharacterStore {
             .get())
         .map((r) => r.sessionId)
         .toList();
-    for (final sid in sessionIds) {
-      await (_db.delete(_db.memoryBookRows)..where((t) => t.sessionId.equals(sid))).go();
-      await (_db.delete(_db.chatSummaries)..where((t) => t.sessionId.equals(sid))).go();
+    if (sessionIds.isNotEmpty) {
+      await (_db.delete(_db.memoryBookRows)
+            ..where((t) => t.sessionId.isIn(sessionIds)))
+          .go();
+      await (_db.delete(_db.chatSummaries)
+            ..where((t) => t.sessionId.isIn(sessionIds)))
+          .go();
     }
     await (_db.delete(_db.chatSessions)..where((t) => t.characterId.equals(id))).go();
     await (_db.delete(_db.characters)..where((t) => t.charId.equals(id))).go();
