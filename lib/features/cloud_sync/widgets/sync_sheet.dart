@@ -48,14 +48,21 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
 
   void _loadIncludeApiKeys() async {
     final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.get('gz_sync_include_api_keys');
+    final val = raw is bool ? raw : false;
+    if (!mounted) return;
     setState(() {
-      _syncIncludeApiKeys = prefs.getBool('gz_sync_include_api_keys') ?? false;
+      _syncIncludeApiKeys = val;
     });
   }
 
   void _setIncludeApiKeys(bool val) async {
     final prefs = await SharedPreferences.getInstance();
+    if (prefs.get('gz_sync_include_api_keys') is! bool) {
+      await prefs.remove('gz_sync_include_api_keys');
+    }
     await prefs.setBool('gz_sync_include_api_keys', val);
+    if (!mounted) return;
     setState(() {
       _syncIncludeApiKeys = val;
     });
@@ -967,6 +974,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
                 }
               },
             );
+            if (!mounted) return;
             ref.read(syncStatusProvider.notifier).state = service.status;
             setState(() {
               _syncResult = {
@@ -974,14 +982,11 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
                 'total': 'all',
               };
             });
-            if (context.mounted) {
-              GlazeToast.show(context, 'Cloud data wiped successfully.');
-            }
+            GlazeToast.show(context, 'Cloud data wiped successfully.');
           } catch (e) {
+            if (!mounted) return;
             ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
-            if (mounted) {
-              GlazeToast.error(context, 'Wipe failed: ', e);
-            }
+            GlazeToast.error(context, 'Wipe failed: ', e);
           } finally {
             if (mounted) {
               setState(() => _isWiping = false);
@@ -1053,14 +1058,14 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
           });
           break;
       }
+      if (!mounted) return;
       ref.read(syncStatusProvider.notifier).state = service.status;
       ref.read(syncConflictsProvider.notifier).state = service.conflicts;
     } catch (e) {
+      if (!mounted) return;
       ref.read(syncLastErrorProvider.notifier).state = e.toString();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
-      if (mounted) {
-        GlazeToast.errorWithCopy(context, 'Sync failed: ', e);
-      }
+      GlazeToast.errorWithCopy(context, 'Sync failed: ', e);
     } finally {
       if (mounted) {
         ref.read(syncProgressProvider.notifier).state = null;
