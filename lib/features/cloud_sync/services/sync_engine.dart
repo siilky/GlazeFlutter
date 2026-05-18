@@ -289,6 +289,9 @@ class SyncEngine {
       await _pushCharacterAvatar(entry.id);
       await _pushCharacterGallery(entry.id);
     }
+    if (entry.type == 'persona') {
+      await _pushPersonaAvatar(entry.id);
+    }
   }
 
   Future<void> _pullEntry(SyncManifestEntry entry) async {
@@ -305,6 +308,9 @@ class SyncEngine {
     if (entry.type == 'character') {
       await _pullCharacterAvatar(entry.id);
       await _pullCharacterGallery(entry.id);
+    }
+    if (entry.type == 'persona') {
+      await _pullPersonaAvatar(entry.id);
     }
   }
 
@@ -437,6 +443,42 @@ class SyncEngine {
               bytes, 'avatars', charId, ext,
             );
             await _characterRepo.put(c.copyWith(avatarPath: relativePath));
+            return;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pushPersonaAvatar(String personaId) async {
+    try {
+      final p = await _personaRepo.getById(personaId);
+      if (p?.avatarPath == null) return;
+      final file = File(_imageStorage.absolutePath(p!.avatarPath)!);
+      if (!await file.exists()) return;
+      final bytes = await file.readAsBytes();
+      final ext = p.avatarPath!.split('.').last;
+      await _adapter.uploadBinary(
+        personaAvatarCloudPath(personaId, ext),
+        bytes,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _pullPersonaAvatar(String personaId) async {
+    try {
+      final p = await _personaRepo.getById(personaId);
+      if (p == null) return;
+
+      for (final ext in ['png', 'jpg', 'webp', 'gif']) {
+        try {
+          final imgCloudPath = personaAvatarCloudPath(personaId, ext);
+          final bytes = await _adapter.downloadBinary(imgCloudPath);
+          if (bytes.isNotEmpty) {
+            final relativePath = await _imageStorage.saveBytes(
+              bytes, 'avatars', personaId, ext,
+            );
+            await _personaRepo.put(p.copyWith(avatarPath: relativePath));
             return;
           }
         } catch (_) {}

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -951,5 +952,48 @@ void main() {
     expect(statusLog, equals([SyncStatus.syncing, SyncStatus.idle]),
         reason: 'Pushing with no data should succeed (nothing to push)');
     expect(currentStatus, equals(SyncStatus.idle));
+  });
+
+  test('Persona avatar is pushed to cloud and pulled back', () async {
+    final deviceA = SyncWorld();
+
+    final avatarBytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+
+    final tmpDir = Directory.systemTemp.createTempSync('glaze_test_avatar');
+    final avatarFile = File('${tmpDir.path}/p1.png');
+    await avatarFile.writeAsBytes(avatarBytes);
+
+    final persona = Persona(id: 'p1', name: 'Test', avatarPath: avatarFile.path);
+    await deviceA.personas.put(persona);
+
+    final manifest = await deviceA.manifestProvider.buildLocalManifest();
+    await deviceA.manifestProvider.writeLocalManifest(manifest);
+
+    await deviceA.engine.pushEntities(onProgress: (_) {});
+
+    final avatarCloudPath = personaAvatarCloudPath('p1', 'png');
+    expect(deviceA.cloud.files.containsKey(avatarCloudPath), isTrue,
+        reason: 'Persona avatar should be uploaded to cloud');
+
+    final deviceB = SyncWorld();
+    deviceB.cloud.files.addAll(deviceA.cloud.files);
+
+    await deviceB.engine.pullEntities(
+      onProgress: (_) {},
+      onConflict: (_) {},
+    );
+
+    final pulled = deviceB.personas.data['p1'];
+    expect(pulled, isNotNull, reason: 'Persona should be pulled');
+    expect(pulled!.avatarPath, isNotNull,
+        reason: 'Persona avatar path should be set after pull');
+
+    final savedKey = 'avatars/p1.png';
+    expect(deviceB.images.saved[savedKey], isNotNull,
+        reason: 'Persona avatar bytes should be saved to image storage');
+
+    try {
+      await tmpDir.delete(recursive: true);
+    } catch (_) {}
   });
 }
