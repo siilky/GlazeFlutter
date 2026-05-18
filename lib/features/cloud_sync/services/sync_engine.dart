@@ -7,13 +7,6 @@ import 'sync_conflict.dart';
 import 'sync_manifest.dart';
 import 'sync_queue.dart';
 import 'sync_serialization.dart';
-import '../../../core/db/repositories/character_repo.dart';
-import '../../../core/db/repositories/chat_repo.dart';
-import '../../../core/db/repositories/persona_repo.dart';
-import '../../../core/db/repositories/preset_repo.dart';
-import '../../../core/db/repositories/api_config_repo.dart';
-import '../../../core/db/repositories/lorebook_repo.dart';
-import '../../../core/db/repositories/embedding_repo.dart';
 import '../../../core/services/image_storage_service.dart';
 import '../../../core/models/character.dart';
 import '../../../core/models/gallery_entry.dart';
@@ -22,6 +15,7 @@ import '../../../core/models/chat_message.dart';
 import '../../../core/models/lorebook.dart';
 import '../../../core/models/api_config.dart';
 import '../../../core/models/preset.dart';
+import '../sync_repo_interfaces.dart';
 
 class SyncProgress {
   final int current;
@@ -33,15 +27,15 @@ class SyncProgress {
 
 class SyncEngine {
   final CloudAdapter _adapter;
-  final SyncManifestBuilder _manifestBuilder;
-  final CharacterRepo _characterRepo;
-  final ChatRepo _chatRepo;
-  final PersonaRepo _personaRepo;
-  final PresetRepo _presetRepo;
-  final ApiConfigRepo _apiRepo;
-  final LorebookRepo _lorebookRepo;
-  final EmbeddingRepo _embeddingRepo;
-  final ImageStorageService _imageStorage;
+  final SyncManifestProvider _manifestBuilder;
+  final SyncCharacterStore _characterRepo;
+  final SyncChatStore _chatRepo;
+  final SyncPersonaStore _personaRepo;
+  final SyncPresetStore _presetRepo;
+  final SyncApiConfigStore _apiRepo;
+  final SyncLorebookStore _lorebookRepo;
+  final SyncEmbeddingStore _embeddingRepo;
+  final SyncImageStore _imageStorage;
   final SyncQueue _queue = SyncQueue();
 
   SyncEngine(
@@ -213,6 +207,13 @@ class SyncEngine {
     if (choice == 'cloud') {
       await _pullEntry(conflict.cloudEntry);
     }
+
+    final localManifest = await _manifestBuilder.readLocalManifest();
+    final updatedEntries = Map<String, SyncManifestEntry>.from(localManifest.entries);
+    updatedEntries[conflict.key] = conflict.cloudEntry;
+    await _manifestBuilder.writeLocalManifest(
+      localManifest.copyWith(entries: updatedEntries),
+    );
   }
 
   Future<bool> cloudHasData() async {
@@ -303,17 +304,14 @@ class SyncEngine {
           if (s == null) return null;
           return s.toJson();
         case 'lorebooks':
-          final lorebook = await _lorebookRepo.getById(id);
-          if (lorebook == null) return null;
-          return lorebook.toJson();
+          final all = await _lorebookRepo.getAll();
+          return {'__singleton': true, 'items': all.map((l) => l.toJson()).toList()};
         case 'api_presets':
-          final config = await _apiRepo.getById(id);
-          if (config == null) return null;
-          return config.toJson();
+          final all = await _apiRepo.getAll();
+          return {'__singleton': true, 'items': all.map((a) => a.toJson()).toList()};
         case 'theme_presets':
-          final preset = await _presetRepo.getById(id);
-          if (preset == null) return null;
-          return preset.toJson();
+          final all = await _presetRepo.getAll();
+          return {'__singleton': true, 'items': all.map((p) => p.toJson()).toList()};
         default:
           return null;
       }
@@ -326,31 +324,45 @@ class SyncEngine {
     try {
       switch (type) {
         case 'character':
-          final c = Character.fromJson(data);
-          await _characterRepo.put(c);
+          await _characterRepo.put(Character.fromJson(data));
           break;
         case 'persona':
-          final p = Persona.fromJson(data);
-          await _personaRepo.put(p);
+          await _personaRepo.put(Persona.fromJson(data));
           break;
         case 'chat':
-          final session = ChatSession.fromJson(data);
-          await _chatRepo.put(session);
+          await _chatRepo.put(ChatSession.fromJson(data));
           break;
         case 'lorebooks':
-          final lorebook = Lorebook.fromJson(data);
-          await _lorebookRepo.put(lorebook);
+          await _applySingleton<Lorebook>(data, Lorebook.fromJson, _lorebookRepo);
           break;
         case 'api_presets':
-          final config = ApiConfig.fromJson(data);
-          await _apiRepo.put(config);
+          await _applySingleton<ApiConfig>(data, ApiConfig.fromJson, _apiRepo);
           break;
         case 'theme_presets':
-          final preset = Preset.fromJson(data);
-          await _presetRepo.put(preset);
+          await _applySingleton<Preset>(data, Preset.fromJson, _presetRepo);
           break;
       }
     } catch (_) {}
+  }
+
+  Future<void> _applySingleton<T>(
+    Map<String, dynamic> data,
+    T Function(Map<String, dynamic>) fromJson,
+    dynamic repo,
+  ) async {
+    final List<Map<String, dynamic>> items;
+    if (data['__singleton'] == true) {
+      items = (data['items'] as List).cast<Map<String, dynamic>>();
+    } else if (data.containsKey('items')) {
+      items = (data['items'] as List).cast<Map<String, dynamic>>();
+    } else {
+      items = [data];
+    }
+
+    final put = repo.put as Future<void> Function(T);
+    for (final item in items) {
+      await put(fromJson(item));
+    }
   }
 
   Future<void> _deleteLocalEntity(String type, String id) async {
@@ -366,8 +378,11 @@ class SyncEngine {
           await _chatRepo.delete(id);
           break;
         case 'lorebooks':
-          await _lorebookRepo.delete(id);
-          await _embeddingRepo.deleteBySourceId(id);
+          final all = await _lorebookRepo.getAll();
+          for (final lb in all) {
+            await _lorebookRepo.delete(lb.id);
+            await _embeddingRepo.deleteBySourceId(lb.id);
+          }
           break;
       }
     } catch (_) {}
