@@ -298,7 +298,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
                 ],
 
                 // Linear Progress bar during Sync
-                if (status == SyncStatus.syncing && progress != null) ...[
+                if ((status == SyncStatus.syncing || _isWiping) && progress != null) ...[
                   _buildProgressBar(progress),
                 ],
 
@@ -753,18 +753,20 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   }
 
   Widget _buildProgressBar(SyncProgress p) {
-    final pct = p.total > 0 ? (p.current / p.total).clamp(0.0, 1.0) : 0.0;
+    final indeterminate = p.total <= 0;
+    final pct = indeterminate ? null : (p.current / p.total).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
-        Text(
-          p.message ?? 'Syncing...',
-          style: TextStyle(
-            fontSize: 12,
-            color: context.cs.onSurfaceVariant,
+        if (p.message != null)
+          Text(
+            p.message!,
+            style: TextStyle(
+              fontSize: 12,
+              color: context.cs.onSurfaceVariant,
+            ),
           ),
-        ),
         const SizedBox(height: 6),
         ClipRRect(
           borderRadius: BorderRadius.circular(2),
@@ -775,19 +777,22 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
             minHeight: 4,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          '${p.current}/${p.total}',
-          style: TextStyle(
-            fontSize: 11,
-            color: context.cs.onSurfaceVariant.withValues(alpha: 0.7),
+        if (!indeterminate) ...[
+          const SizedBox(height: 4),
+          Text(
+            '${p.current}/${p.total}',
+            style: TextStyle(
+              fontSize: 11,
+              color: context.cs.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
 
   String _getStatusLabel(SyncStatus status, SyncService? service) {
+    if (_isWiping) return 'Wiping cloud data...';
     if (status == SyncStatus.syncing) return 'Syncing...';
     if (status == SyncStatus.error) return 'Error';
     if (status == SyncStatus.conflict) return 'Conflict detected';
@@ -940,7 +945,6 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
         placeholder: providerLabel,
         confirmLabel: 'Confirm',
         onConfirm: (typed) async {
-          Navigator.of(context, rootNavigator: true).pop(); // Close input sheet
           if (typed.trim().toLowerCase() != providerLabel.toLowerCase()) {
             if (context.mounted) {
               GlazeToast.show(context, 'Wipe cancelled: Provider name did not match.', isError: true);
