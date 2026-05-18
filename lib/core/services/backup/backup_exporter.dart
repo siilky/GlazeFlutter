@@ -26,37 +26,15 @@ class BackupExporter {
     try {
       await _writeJsonTo(sink);
       await sink.close();
-      final bytes = await tempFile.readAsBytes();
-      try {
-        await tempFile.delete();
-      } catch (_) {}
-      return FileExportService.exportBytes(
-        bytes: bytes,
+      final path = await FileExportService.exportFile(
+        sourcePath: tempFile.path,
         filename: filename,
         subfolder: 'backup',
       );
-    } catch (e) {
-      await sink.close();
       try {
         await tempFile.delete();
       } catch (_) {}
-      rethrow;
-    }
-  }
-
-  Future<String> exportToString() async {
-    final tempFile = File(
-        '${Directory.systemTemp.path}/glaze_export_${DateTime.now().millisecondsSinceEpoch}.glz');
-    final sink = tempFile.openWrite();
-
-    try {
-      await _writeJsonTo(sink);
-      await sink.close();
-      final result = await tempFile.readAsString();
-      try {
-        await tempFile.delete();
-      } catch (_) {}
-      return result;
+      return path;
     } catch (e) {
       await sink.close();
       try {
