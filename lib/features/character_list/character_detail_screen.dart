@@ -15,6 +15,7 @@ import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_tab_bar.dart';
 import '../../shared/widgets/image_viewer.dart';
 import '../../shared/widgets/sheet_view.dart';
+import '../../shared/widgets/colored_markdown.dart';
 
 // ─── Colour tokens ─────────────────────────────────────────────────────────
 
@@ -597,6 +598,14 @@ class _InfoTab extends StatelessWidget {
                 height: 1.55,
                 color: _kText75,
               ),
+              inlineComponents: [
+                HtmlColorMd(),
+                GlowTextMd(),
+                ColorGlowTextMd(),
+                GradientTextMd(),
+                BackgroundTextMd(),
+                ImageMd(),
+              ],
             ),
           ),
         ],
