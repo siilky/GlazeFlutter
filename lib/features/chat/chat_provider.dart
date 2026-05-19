@@ -28,6 +28,15 @@ final streamingStateProvider =
     );
 
 class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
+  @override
+  Future<ChatState> build(String arg) async {
+    ref.keepAlive();
+    final existing = await _sessionSvc.findExistingSession(arg);
+    if (existing != null) return ChatState(session: existing);
+    final session = await _sessionSvc.createInitialSession(arg);
+    return ChatState(session: session);
+  }
+
   CancelToken? _cancelToken;
   ChatMessage? _restorationMessage;
   int _activeGenId = 0;
@@ -37,14 +46,6 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
 
   ChatSessionService get _sessionSvc => ChatSessionService(ref);
   ChatMessageService get _messageSvc => ChatMessageService(ref);
-
-  @override
-  Future<ChatState> build(String arg) async {
-    final existing = await _sessionSvc.findExistingSession(arg);
-    if (existing != null) return ChatState(session: existing);
-    final session = await _sessionSvc.createInitialSession(arg);
-    return ChatState(session: session);
-  }
 
   Future<void> sendMessage(String text, {String? guidanceText}) async {
     final current = state.value;
