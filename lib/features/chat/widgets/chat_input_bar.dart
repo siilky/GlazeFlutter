@@ -69,6 +69,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   final _guidanceController = TextEditingController();
   bool _guidanceMode = false;
   Timer? _debounce;
+  final _internalFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -114,7 +115,22 @@ class _ChatInputBarState extends State<ChatInputBar> {
     _debounce?.cancel();
     _controller.dispose();
     _guidanceController.dispose();
+    _internalFocusNode.dispose();
     super.dispose();
+  }
+
+  FocusNode get _effectiveFocusNode => widget.focusNode ?? _internalFocusNode;
+
+  void _requestFocus() {
+    final fn = _effectiveFocusNode;
+    if (fn.hasFocus) {
+      fn.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        fn.requestFocus();
+      });
+    } else {
+      fn.requestFocus();
+    }
   }
 
   void _handleSend() {
@@ -213,6 +229,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 controller: _guidanceController,
                 maxLines: 3,
                 minLines: 1,
+                textCapitalization: TextCapitalization.sentences,
                 keyboardType: TextInputType.multiline,
                 textInputAction: TextInputAction.newline,
                 style: const TextStyle(fontSize: 14, color: Colors.orange),
@@ -257,12 +274,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 ),
                 child: TextField(
                   controller: _controller,
-                  focusNode: widget.focusNode,
+                  focusNode: _effectiveFocusNode,
                   maxLines: 5,
                   minLines: 1,
+                  textCapitalization: TextCapitalization.sentences,
                   textInputAction: widget.virtualKeyboardSend
                       ? TextInputAction.send
                       : TextInputAction.newline,
+                  onTap: _requestFocus,
                   onSubmitted: widget.virtualKeyboardSend
                       ? (_) => _handleSend()
                       : null,
