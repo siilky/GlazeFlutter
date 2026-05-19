@@ -17,6 +17,16 @@ const double _kInstantScrollDistance = 3000;
 const int _kInitialRenderCount = 30;
 const int _kLoadMoreCount = 20;
 
+class ScrollAnchor {
+  final String messageId;
+  final double offsetFromViewportTop;
+  const ScrollAnchor(this.messageId, this.offsetFromViewportTop);
+}
+
+/// In-memory anchor cache keyed by sessionId — survives navigation within the app.
+final scrollAnchorProvider =
+    StateProvider.family<ScrollAnchor?, String>((ref, sessionId) => null);
+
 sealed class _ListItem {}
 
 class _MessageItem extends _ListItem {
@@ -32,11 +42,12 @@ class _DaySeparatorItem extends _ListItem {
 
 class _ContextCutoffItem extends _ListItem {}
 
-class MessageList extends StatefulWidget {
+class MessageList extends ConsumerStatefulWidget {
   final List<ChatMessage> messages;
   final bool isGenerating;
   final DateTime? generationStartTime;
   final String charId;
+  final String? sessionId;
   final double bottomInset;
   final String searchQuery;
   final List<SearchMatch> searchMatches;
@@ -49,6 +60,7 @@ class MessageList extends StatefulWidget {
     required this.isGenerating,
     this.generationStartTime,
     required this.charId,
+    this.sessionId,
     this.bottomInset = 180,
     this.searchQuery = '',
     this.searchMatches = const [],
@@ -57,10 +69,10 @@ class MessageList extends StatefulWidget {
   });
 
   @override
-  State<MessageList> createState() => _MessageListState();
+  ConsumerState<MessageList> createState() => _MessageListState();
 }
 
-class _MessageListState extends State<MessageList> {
+class _MessageListState extends ConsumerState<MessageList> {
   final _scrollController = ScrollController();
 
   bool _wasAtBottom = true;
@@ -72,6 +84,29 @@ class _MessageListState extends State<MessageList> {
   int _renderCount = _kInitialRenderCount;
   bool _needsInitialScroll = true;
 
+  /// GlobalKey per message id — required for anchor capture/restore via the
+  /// render tree.
+  final Map<String, GlobalKey> _msgKeys = {};
+
+  /// True once an anchor restore (or scroll-to-bottom fallback) has run for
+  /// the current session. Prevents the build-time fallback from firing every
+  /// frame.
+  bool _initialAnchorAttempted = false;
+
+  /// True once the initial scroll position has been applied. While false, the
+  /// ListView is laid out but kept invisible via `Offstage` so the user
+  /// doesn't see a flash of the top of the chat before we jump to the saved
+  /// anchor / bottom.
+  bool _initialScrollDone = false;
+
+  /// Pending search target — set when search index changes but target message
+  /// isn't currently rendered. Applied after a render pass expands `_renderCount`.
+  int? _pendingSearchScrollIndex;
+
+  /// Debounced anchor save while the user is scrolling so the persisted
+  /// position stays close to wherever they paused last.
+  Timer? _anchorSaveDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +114,17 @@ class _MessageListState extends State<MessageList> {
   }
 
   @override
+  void deactivate() {
+    // Capture anchor while the render tree is still live. By the time
+    // `dispose` runs, the ScrollController/RenderObjects are gone and
+    // `getOffsetToReveal` returns nothing useful.
+    _saveAnchor(widget.sessionId);
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    _anchorSaveDebounce?.cancel();
     _programmaticUnlockTimer?.cancel();
     _scrollDebounceTimer?.cancel();
     _scrollController.removeListener(_onScroll);
@@ -87,11 +132,100 @@ class _MessageListState extends State<MessageList> {
     super.dispose();
   }
 
+  GlobalKey _keyFor(String msgId) =>
+      _msgKeys.putIfAbsent(msgId, () => GlobalKey(debugLabel: 'msg_$msgId'));
+
+  void _pruneStaleKeys() {
+    final liveIds = widget.messages.map((m) => m.id).toSet();
+    _msgKeys.removeWhere((id, _) => !liveIds.contains(id));
+  }
+
+  ScrollAnchor? _captureAnchor() {
+    if (!_scrollController.hasClients) return null;
+    final pos = _scrollController.position;
+    if (!pos.hasContentDimensions) return null;
+    final currentOffset = pos.pixels;
+    ScrollAnchor? best;
+    double bestAbs = double.infinity;
+    for (final entry in _msgKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final ro = ctx.findRenderObject();
+      if (ro is! RenderBox || !ro.attached) continue;
+      final viewport = RenderAbstractViewport.maybeOf(ro);
+      if (viewport == null) continue;
+      final reveal = viewport.getOffsetToReveal(ro, 0.0).offset;
+      final delta = reveal - currentOffset; // distance from viewport top to box top
+      if (delta.abs() < bestAbs) {
+        bestAbs = delta.abs();
+        best = ScrollAnchor(entry.key, delta);
+      }
+    }
+    return best;
+  }
+
+  /// Returns true when the requested message was found and the scroll position
+  /// applied.
+  bool _restoreAnchor(ScrollAnchor anchor) {
+    if (!_scrollController.hasClients) return false;
+    final pos = _scrollController.position;
+    if (!pos.hasContentDimensions) return false;
+    final key = _msgKeys[anchor.messageId];
+    final ctx = key?.currentContext;
+    if (ctx == null) return false;
+    final ro = ctx.findRenderObject();
+    if (ro is! RenderBox || !ro.attached) return false;
+    final viewport = RenderAbstractViewport.maybeOf(ro);
+    if (viewport == null) return false;
+    final reveal = viewport.getOffsetToReveal(ro, 0.0).offset;
+    final target =
+        (reveal - anchor.offsetFromViewportTop).clamp(0.0, pos.maxScrollExtent);
+    if ((target - pos.pixels).abs() < 0.5) return true;
+    _beginProgrammaticScroll();
+    _scrollController.jumpTo(target);
+    _endProgrammaticScroll();
+    return true;
+  }
+
+  void _saveAnchor(String? sessionId) {
+    if (sessionId == null || sessionId.isEmpty) return;
+    // `ref` is invalid once the widget has been unmounted; guard against
+    // late-firing debounce timers.
+    if (!mounted) return;
+    // Don't overwrite a saved anchor with "at the very bottom" — that's
+    // already the default restore behaviour and saving it just hides whatever
+    // useful position the user had previously.
+    if (_wasAtBottom) {
+      ref.read(scrollAnchorProvider(sessionId).notifier).state = null;
+      return;
+    }
+    final anchor = _captureAnchor();
+    if (anchor == null) return;
+    ref.read(scrollAnchorProvider(sessionId).notifier).state = anchor;
+  }
+
   @override
   void didUpdateWidget(covariant MessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    // Session switch: persist the old anchor, reset state so the new session
+    // either restores its own anchor or falls back to scroll-to-bottom.
+    if (widget.sessionId != oldWidget.sessionId) {
+      _saveAnchor(oldWidget.sessionId);
+      _msgKeys.clear();
+      _wasAtBottom = true;
+      _showScrollButton = false;
+      _renderCount = _kInitialRenderCount;
+      _needsInitialScroll = true;
+      _initialAnchorAttempted = false;
+      _initialScrollDone = false;
+      _pendingSearchScrollIndex = null;
+      return;
+    }
+
     final totalCount = widget.messages.length;
+    final oldCount = oldWidget.messages.length;
+
     if (totalCount > _renderCount) {
       if (_wasAtBottom) {
         _renderCount = totalCount;
@@ -103,39 +237,208 @@ class _MessageListState extends State<MessageList> {
       }
     }
 
-    final newCount = widget.messages.length;
-    final oldCount = oldWidget.messages.length;
+    // Edit / height-change preservation: when message content changes (not just
+    // length) and the user isn't pinned to the bottom, snapshot the anchor
+    // BEFORE the new content lays out, then restore it after the next frame.
+    // didUpdateWidget runs against the previous frame's render tree, so the
+    // capture sees old box positions; the post-frame restore sees new ones.
+    ScrollAnchor? editAnchor;
+    if (!_wasAtBottom &&
+        totalCount == oldCount &&
+        !identical(widget.messages, oldWidget.messages)) {
+      editAnchor = _captureAnchor();
+    }
 
-    if (_wasAtBottom && newCount > oldCount) {
+    if (_wasAtBottom && totalCount > oldCount) {
       _scheduleScrollToBottom();
     }
 
-    if (widget.bottomInset != oldWidget.bottomInset && _wasAtBottom) {
-      _scrollToBottom(smooth: false);
+    // Keyboard / drawer / input-bar resize — Telegram-style: shift content up
+    // by exactly the inset delta so what was just above the new panel stays
+    // visible. This is `el.scrollTop += diff` from Vue's updateContentPadding.
+    //
+    // The drawer opens over ~260ms via a TweenAnimationBuilder in chat_screen,
+    // so this branch fires every frame with a small `delta`. A per-frame
+    // `jumpTo` inside a postFrame callback ends up one frame behind the
+    // drawer panel (drawer paints at progress P, scroll catches up at P-1),
+    // which reads as juddery. Replacing it with a short `animateTo` lets the
+    // ScrollController interpolate continuously toward the running target —
+    // each new call cancels the previous one and re-aims at the freshest
+    // target, smoothing the per-frame steps into one fluid motion.
+    if (widget.bottomInset != oldWidget.bottomInset) {
+      final delta = widget.bottomInset - oldWidget.bottomInset;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final pos = _scrollController.position;
+        if (!pos.hasContentDimensions) return;
+        final target =
+            (pos.pixels + delta).clamp(0.0, pos.maxScrollExtent);
+        if ((target - pos.pixels).abs() < 0.5) return;
+        _beginProgrammaticScroll();
+        _scrollController
+            .animateTo(
+          target,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+        )
+            .whenComplete(() {
+          _endProgrammaticScroll(
+              delay: const Duration(milliseconds: 30));
+        });
+      });
     }
 
+    // Search navigation: jump precisely to the target message via its
+    // GlobalKey instead of the previous (idx/total)*max approximation.
     int oldTargetIndex = -1;
-    if (oldWidget.searchMatches.isNotEmpty && oldWidget.searchCurrentIndex < oldWidget.searchMatches.length) {
-      oldTargetIndex = oldWidget.searchMatches[oldWidget.searchCurrentIndex].messageIndex;
+    if (oldWidget.searchMatches.isNotEmpty &&
+        oldWidget.searchCurrentIndex < oldWidget.searchMatches.length) {
+      oldTargetIndex =
+          oldWidget.searchMatches[oldWidget.searchCurrentIndex].messageIndex;
     }
     int newTargetIndex = -1;
-    if (widget.searchMatches.isNotEmpty && widget.searchCurrentIndex < widget.searchMatches.length) {
-      newTargetIndex = widget.searchMatches[widget.searchCurrentIndex].messageIndex;
+    if (widget.searchMatches.isNotEmpty &&
+        widget.searchCurrentIndex < widget.searchMatches.length) {
+      newTargetIndex =
+          widget.searchMatches[widget.searchCurrentIndex].messageIndex;
+    }
+    if (newTargetIndex != -1 && newTargetIndex != oldTargetIndex) {
+      _scrollToMessageIndex(newTargetIndex);
     }
 
-    if (newTargetIndex != -1 && newTargetIndex != oldTargetIndex) {
-      final pos = _scrollController.position;
-      if (pos.hasContentDimensions) {
-        final max = pos.maxScrollExtent;
-        final total = widget.messages.length;
-        if (total > 0) {
-          if (oldTargetIndex == -1 || (newTargetIndex - oldTargetIndex).abs() > 5) {
-            final targetOffset = (newTargetIndex / total) * max;
-            _scrollController.jumpTo(targetOffset);
-          }
-        }
-      }
+    if (editAnchor != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _restoreAnchor(editAnchor!);
+      });
     }
+  }
+
+  void _markInitialScrollDone() {
+    if (!mounted || _initialScrollDone) return;
+    setState(() => _initialScrollDone = true);
+  }
+
+  /// Jumps to `maxScrollExtent`, then re-jumps on subsequent frames as the
+  /// extent grows. ListView only lays out items near the current scroll
+  /// position; on the very first frame `maxScrollExtent` is extrapolated from
+  /// the top ~10 items' average height and severely underestimates the true
+  /// total for long chats (we saw 317-message chats landing at item #20).
+  /// Re-jumping a handful of times lets the extent stabilise as items are
+  /// laid out around the new scroll position.
+  void _jumpToBottomNow({int remainingRetargets = 4}) {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (!pos.hasContentDimensions) return;
+    _beginProgrammaticScroll();
+    _scrollController.jumpTo(pos.maxScrollExtent);
+    _endProgrammaticScroll();
+    _wasAtBottom = true;
+    _showScrollButton = false;
+    if (remainingRetargets <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final p = _scrollController.position;
+      if (!p.hasContentDimensions) return;
+      // If maxScrollExtent grew (more items got laid out below the previous
+      // estimate), bring `pixels` up to the new max.
+      if (p.maxScrollExtent - p.pixels > 0.5) {
+        _jumpToBottomNow(remainingRetargets: remainingRetargets - 1);
+      }
+    });
+  }
+
+  /// Initial-restore retry loop. The anchor's message may live far outside
+  /// the rendered window, so a single restore attempt usually fails. First
+  /// pass: coarse jump to the message's approximate scroll offset using its
+  /// chronological index — this triggers ListView to lay out items in that
+  /// region. Subsequent passes refine via the now-available GlobalKey.
+  void _restoreSavedAnchor(ScrollAnchor anchor,
+      {required int remainingAttempts}) {
+    if (!mounted || remainingAttempts <= 0) {
+      _jumpToBottomNow();
+      _markInitialScrollDone();
+      return;
+    }
+    if (!_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreSavedAnchor(anchor,
+            remainingAttempts: remainingAttempts - 1);
+      });
+      return;
+    }
+    final pos = _scrollController.position;
+    if (!pos.hasContentDimensions || pos.maxScrollExtent <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreSavedAnchor(anchor,
+            remainingAttempts: remainingAttempts - 1);
+      });
+      return;
+    }
+
+    if (_restoreAnchor(anchor)) {
+      _wasAtBottom = false;
+      _showScrollButton = true;
+      _markInitialScrollDone();
+      return;
+    }
+
+    final idx = widget.messages.indexWhere((m) => m.id == anchor.messageId);
+    if (idx < 0) {
+      _jumpToBottomNow();
+      _markInitialScrollDone();
+      return;
+    }
+
+    // Coarse jump based on chronological position so the target's region gets
+    // laid out by the next frame.
+    final fraction = idx / widget.messages.length.clamp(1, 1 << 30);
+    final estimate =
+        (fraction * pos.maxScrollExtent).clamp(0.0, pos.maxScrollExtent);
+    _beginProgrammaticScroll();
+    _scrollController.jumpTo(estimate);
+    _endProgrammaticScroll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreSavedAnchor(anchor,
+          remainingAttempts: remainingAttempts - 1);
+    });
+  }
+
+  /// Render-aware jump to a message by chronological index. Expands the
+  /// rendered window if needed so the target is laid out, then uses
+  /// `Scrollable.ensureVisible` for a pixel-accurate position regardless of
+  /// variable item heights.
+  void _scrollToMessageIndex(int messageIndex, {double alignment = 0.5}) {
+    if (messageIndex < 0 || messageIndex >= widget.messages.length) return;
+    final msg = widget.messages[messageIndex];
+    final keyCtx = _msgKeys[msg.id]?.currentContext;
+
+    if (keyCtx != null) {
+      _beginProgrammaticScroll();
+      Scrollable.ensureVisible(
+        keyCtx,
+        alignment: alignment,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      ).whenComplete(() {
+        _endProgrammaticScroll(
+            delay: const Duration(milliseconds: 280));
+      });
+      return;
+    }
+
+    // Target isn't in the rendered window — expand it then retry next frame.
+    final totalCount = widget.messages.length;
+    _pendingSearchScrollIndex = messageIndex;
+    setState(() {
+      _renderCount = totalCount;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final pending = _pendingSearchScrollIndex;
+      _pendingSearchScrollIndex = null;
+      if (pending != null) _scrollToMessageIndex(pending, alignment: alignment);
+    });
   }
 
   Widget _buildMessageWidget(ChatMessage msg, int index) {
@@ -147,7 +450,7 @@ class _MessageListState extends State<MessageList> {
         : -1;
 
     return Message(
-      key: ValueKey(msg.id),
+      key: _keyFor(msg.id),
       content: msg.content,
       isUser: msg.role == 'user',
       isSystem: msg.role == 'system',
@@ -226,12 +529,27 @@ class _MessageListState extends State<MessageList> {
       });
     }
 
-    final wantsButton = distance > _kStickToBottomThreshold;
-    if (wantsButton != _showScrollButton) {
+    // Continuously track `_wasAtBottom` from the actual distance. The
+    // `_handleUserScroll` callback only fires during user drag, so without
+    // this the flag stays stale through ballistic / programmatic scrolling
+    // and ends up clearing/saving the wrong anchor on exit.
+    final atBottom = distance <= _kStickToBottomThreshold;
+    final wantsButton = !atBottom;
+    final needsRebuild = atBottom != _wasAtBottom || wantsButton != _showScrollButton;
+    if (needsRebuild) {
       setState(() {
+        _wasAtBottom = atBottom;
         _showScrollButton = wantsButton;
       });
     }
+
+    // Debounced anchor save — keeps the persisted position close to the most
+    // recent paused-state so `deactivate` is not the only chance to save.
+    _anchorSaveDebounce?.cancel();
+    _anchorSaveDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _saveAnchor(widget.sessionId);
+    });
   }
 
   bool _handleUserScroll(UserScrollNotification notification) {
@@ -322,6 +640,8 @@ class _MessageListState extends State<MessageList> {
 
   @override
   Widget build(BuildContext context) {
+    _pruneStaleKeys();
+
     final allItems = _buildItems();
     final totalCount = allItems.length;
     final renderCount = _renderCount.clamp(0, totalCount);
@@ -330,14 +650,40 @@ class _MessageListState extends State<MessageList> {
     if (_needsInitialScroll && totalCount > 0) {
       _needsInitialScroll = false;
       _renderCount = totalCount;
+      final savedAnchor = widget.sessionId == null
+          ? null
+          : ref.read(scrollAnchorProvider(widget.sessionId!));
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToBottom(smooth: false, force: true);
+        if (!mounted) return;
+        if (_initialAnchorAttempted) return;
+        _initialAnchorAttempted = true;
+        if (savedAnchor != null) {
+          _restoreSavedAnchor(savedAnchor, remainingAttempts: 3);
+        } else {
+          // Inline jump so `_initialScrollDone` flips in the same frame as
+          // the scroll — avoids a flash of the top of the list.
+          if (_scrollController.hasClients) {
+            final pos = _scrollController.position;
+            if (pos.hasContentDimensions) {
+              _beginProgrammaticScroll();
+              _scrollController.jumpTo(pos.maxScrollExtent);
+              _endProgrammaticScroll();
+            }
+          }
+          _markInitialScrollDone();
+        }
       });
     }
 
     return Stack(
       children: [
-        NotificationListener<UserScrollNotification>(
+        Offstage(
+          // Keep the list laid out (we need `maxScrollExtent` to be computed
+          // before the first scroll) but unpainted until the initial scroll
+          // has run. Avoids a 1–2 frame flash showing the top of the chat
+          // before we jump to the saved anchor / bottom.
+          offstage: !_initialScrollDone,
+          child: NotificationListener<UserScrollNotification>(
           onNotification: _handleUserScroll,
           child: ListView.builder(
           controller: _scrollController,
@@ -389,6 +735,7 @@ class _MessageListState extends State<MessageList> {
            },
           ),
          ),
+        ),
           Positioned(
            right: 16,
            bottom: widget.bottomInset + 8,

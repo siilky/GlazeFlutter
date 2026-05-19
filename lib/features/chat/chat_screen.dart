@@ -530,6 +530,7 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                         isGenerating: widget.state.isGenerating,
                         generationStartTime: widget.state.generationStartTime,
                         charId: widget.charId,
+                        sessionId: widget.state.session?.id,
                         bottomInset: messageListBottom,
                         searchQuery: widget.searchQuery,
                         searchMatches: widget.searchMatches,
