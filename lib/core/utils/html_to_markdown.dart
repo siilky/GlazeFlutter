@@ -417,6 +417,30 @@ String? _namedColorToHex(String name) => _namedColors[name];
 
 bool hasHtmlTags(String content) => content.contains('<') && _htmlTagRegex.hasMatch(content);
 
+String ensureLineBreaks(String text) {
+  final buffer = StringBuffer();
+  var i = 0;
+  while (i < text.length) {
+    if (text[i] == '\n') {
+      var nextNonNewline = i + 1;
+      while (nextNonNewline < text.length && text[nextNonNewline] == '\n') {
+        nextNonNewline++;
+      }
+      final newlineCount = nextNonNewline - i;
+      if (newlineCount >= 2) {
+        for (var n = 0; n < newlineCount; n++) buffer.write('\n');
+      } else {
+        buffer.write('  \n');
+      }
+      i = nextNonNewline;
+    } else {
+      buffer.write(text[i]);
+      i++;
+    }
+  }
+  return buffer.toString();
+}
+
 String stripHtml(String content) {
   if (!hasHtmlTags(content)) return content;
   var result = _stripBlock(content, 'style');

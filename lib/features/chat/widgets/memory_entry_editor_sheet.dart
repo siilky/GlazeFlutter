@@ -87,9 +87,12 @@ class _MemoryEntryEditorSheetState extends State<MemoryEntryEditorSheet> {
   }
 
   Widget _field(String label, TextEditingController controller, {String? hint, int maxLines = 1}) {
+    final isMultiline = maxLines > 1;
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      keyboardType: isMultiline ? TextInputType.multiline : null,
+      textInputAction: isMultiline ? TextInputAction.newline : null,
       style: TextStyle(color: context.cs.onSurface, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,

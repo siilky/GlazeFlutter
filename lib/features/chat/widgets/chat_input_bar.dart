@@ -213,6 +213,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 controller: _guidanceController,
                 maxLines: 3,
                 minLines: 1,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
                 style: const TextStyle(fontSize: 14, color: Colors.orange),
                 decoration: InputDecoration(
                   hintText: 'Guidance instructions...',
