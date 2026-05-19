@@ -22,6 +22,23 @@ class FileExportService {
     return _share(data, filename);
   }
 
+  static Future<String> exportFile({
+    required String sourcePath,
+    required String filename,
+    required String subfolder,
+  }) async {
+    if (Platform.isWindows || Platform.isLinux) {
+      return _copyWithPicker(sourcePath: sourcePath, filename: filename);
+    }
+    if (Platform.isAndroid) {
+      return _copyToDownloads(sourcePath, filename, subfolder);
+    }
+    if (Platform.isMacOS) {
+      return _copyToMacDownloads(sourcePath, filename, subfolder);
+    }
+    return _shareFile(sourcePath, filename);
+  }
+
   static Future<String> exportBytes({
     required List<int> bytes,
     required String filename,
@@ -132,5 +149,48 @@ class FileExportService {
     await file.writeAsBytes(bytes);
     await Share.shareXFiles([XFile(file.path)]);
     return file.path;
+  }
+
+  static Future<String> _copyWithPicker({
+    required String sourcePath,
+    required String filename,
+  }) async {
+    final path = await FilePicker.saveFile(
+      dialogTitle: 'Save $filename',
+      fileName: filename,
+      type: FileType.custom,
+      allowedExtensions: [filename.split('.').last],
+    );
+    if (path == null) throw Exception('Save cancelled');
+    await File(sourcePath).copy(path);
+    return path;
+  }
+
+  static Future<String> _copyToDownloads(
+      String sourcePath, String filename, String subfolder) async {
+    final dir = Directory('/storage/emulated/0/Download/Glaze/$subfolder');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final destPath = '${dir.path}/$filename';
+    await File(sourcePath).copy(destPath);
+    return destPath;
+  }
+
+  static Future<String> _copyToMacDownloads(
+      String sourcePath, String filename, String subfolder) async {
+    final downloads = await getDownloadsDirectory();
+    final dir = Directory('${downloads?.path ?? '~/Downloads'}/Glaze/$subfolder');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final destPath = '${dir.path}/$filename';
+    await File(sourcePath).copy(destPath);
+    return destPath;
+  }
+
+  static Future<String> _shareFile(String sourcePath, String filename) async {
+    await Share.shareXFiles([XFile(sourcePath)]);
+    return sourcePath;
   }
 }
