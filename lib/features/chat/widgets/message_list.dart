@@ -107,6 +107,13 @@ class _MessageListState extends ConsumerState<MessageList> {
   /// position stays close to wherever they paused last.
   Timer? _anchorSaveDebounce;
 
+  /// Accumulates the target scroll position when `bottomInset` changes over
+  /// multiple frames (e.g. OS keyboard animation), so that each frame's
+  /// `animateTo` calculates the new target relative to the intended target
+  /// rather than the lagging physical scroll position.
+  double? _runningScrollTarget;
+
+
   @override
   void initState() {
     super.initState();
@@ -271,8 +278,10 @@ class _MessageListState extends ConsumerState<MessageList> {
         if (!mounted || !_scrollController.hasClients) return;
         final pos = _scrollController.position;
         if (!pos.hasContentDimensions) return;
-        final target =
-            (pos.pixels + delta).clamp(0.0, pos.maxScrollExtent);
+        final base = _runningScrollTarget ?? pos.pixels;
+        final target = (base + delta).clamp(0.0, pos.maxScrollExtent);
+        _runningScrollTarget = target;
+        
         if ((target - pos.pixels).abs() < 0.5) return;
         _beginProgrammaticScroll();
         _scrollController
@@ -282,6 +291,9 @@ class _MessageListState extends ConsumerState<MessageList> {
           curve: Curves.easeOut,
         )
             .whenComplete(() {
+          if (mounted && _runningScrollTarget == target) {
+            _runningScrollTarget = null;
+          }
           _endProgrammaticScroll(
               delay: const Duration(milliseconds: 30));
         });
