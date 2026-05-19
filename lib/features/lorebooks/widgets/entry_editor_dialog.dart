@@ -414,9 +414,12 @@ class _EntryEditorDialogState extends ConsumerState<EntryEditorDialog> {
     int maxLines = 1,
     String? hint,
   }) {
+    final isMultiline = maxLines > 1;
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      keyboardType: isMultiline ? TextInputType.multiline : null,
+      textInputAction: isMultiline ? TextInputAction.newline : null,
       style: TextStyle(color: context.cs.onSurface, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,

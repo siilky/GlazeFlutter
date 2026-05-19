@@ -23,11 +23,24 @@ class InputBar extends StatefulWidget {
 
 class _InputBarState extends State<InputBar> {
   final _controller = TextEditingController();
+  final _focusNode = FocusNode();
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  void _requestFocus() {
+    if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _focusNode.requestFocus();
+      });
+    } else {
+      _focusNode.requestFocus();
+    }
   }
 
   void _handleSend() {
@@ -62,9 +75,12 @@ class _InputBarState extends State<InputBar> {
                   ),
                   child: TextField(
                     controller: _controller,
+                    focusNode: _focusNode,
                     maxLines: 5,
                     minLines: 1,
+                    textCapitalization: TextCapitalization.sentences,
                     textInputAction: TextInputAction.send,
+                    onTap: _requestFocus,
                     onSubmitted: (_) => _handleSend(),
                     style: const TextStyle(fontSize: 16),
                     decoration: const InputDecoration(

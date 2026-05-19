@@ -908,7 +908,7 @@ class _MessageState extends ConsumerState<Message>
                 var mdContent = _markdownCache.get(_cacheKey);
                 if (mdContent == null) {
                   mdContent = _highlightPhrases(
-                    hasHtmlTags(displayContent) ? htmlToMarkdown(displayContent) : displayContent,
+                    ensureLineBreaks(hasHtmlTags(displayContent) ? htmlToMarkdown(displayContent) : displayContent),
                   );
                   _markdownCache.put(_cacheKey, mdContent);
                 }

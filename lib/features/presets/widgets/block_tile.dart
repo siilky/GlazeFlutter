@@ -95,6 +95,8 @@ class BlockTile extends StatelessWidget {
                 decoration: const InputDecoration(labelText: 'Content'),
                 maxLines: 4,
                 minLines: 2,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
                 onChanged: (v) => onChanged(block.copyWith(content: v)),
               ),
             ],

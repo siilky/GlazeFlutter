@@ -245,6 +245,8 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
             controller: ctrl,
             maxLines: 12,
             autofocus: true,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
             style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontSize: 14),
             decoration: InputDecoration(
               filled: true,
@@ -288,6 +290,8 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
             controller: ctrl,
             maxLines: 16,
             autofocus: true,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
             style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontSize: 14),
             decoration: InputDecoration(
               filled: true,

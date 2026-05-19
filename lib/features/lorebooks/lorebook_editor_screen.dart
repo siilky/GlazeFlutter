@@ -437,6 +437,8 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                   children: [
                     TextField(
                       controller: testCtrl,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
                       style: TextStyle(color: context.cs.onSurface),
                       decoration: InputDecoration(
                         hintText: 'Type test text...',

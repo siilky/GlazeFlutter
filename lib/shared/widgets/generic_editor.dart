@@ -539,11 +539,17 @@ class _GenericEditorState extends State<GenericEditor> {
     final ctrl = _controllers[field.key];
     if (ctrl == null) return const SizedBox();
 
+    final isTextarea = field.type == 'textarea';
     return TextField(
       controller: ctrl,
-      maxLines: field.type == 'textarea' ? (field.rows ?? 3) : 1,
-      minLines: field.type == 'textarea' ? (field.rows ?? 3) : 1,
-      keyboardType: field.type == 'number' ? TextInputType.number : TextInputType.text,
+      maxLines: isTextarea ? (field.rows ?? 3) : 1,
+      minLines: isTextarea ? (field.rows ?? 3) : 1,
+      keyboardType: field.type == 'number'
+          ? TextInputType.number
+          : isTextarea
+              ? TextInputType.multiline
+              : TextInputType.text,
+      textInputAction: isTextarea ? TextInputAction.newline : null,
       style: TextStyle(fontSize: 15, color: context.cs.onSurface),
       decoration: InputDecoration(
         hintText: field.placeholder,

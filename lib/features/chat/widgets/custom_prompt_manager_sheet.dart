@@ -226,6 +226,8 @@ class _PromptEditorState extends State<_PromptEditor> {
           TextField(
             controller: _promptCtrl,
             maxLines: 10,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
             style: TextStyle(color: context.cs.onSurface, fontSize: 13),
             decoration: InputDecoration(
               labelText: 'Prompt template',
