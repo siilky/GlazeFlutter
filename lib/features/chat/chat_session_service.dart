@@ -36,14 +36,18 @@ class ChatSessionService {
   }
 
   Future<ChatSession?> findExistingSession(String charId) async {
-    final repo = _ref.read(chatRepoProvider);
-    final sessions = await repo.getByCharacterId(charId);
-    if (sessions.isEmpty) return null;
-
     final charRepo = _ref.read(characterRepoProvider);
     final character = await charRepo.getById(charId);
     final currentIdx = character?.currentSessionIndex ?? 0;
-    return sessions.where((s) => s.sessionIndex == currentIdx).firstOrNull ?? sessions.first;
+
+    final repo = _ref.read(chatRepoProvider);
+    final directId = '${charId}_$currentIdx';
+    var session = await repo.getById(directId);
+    if (session != null) return session;
+
+    final sessions = await repo.getByCharacterId(charId);
+    if (sessions.isEmpty) return null;
+    return sessions.first;
   }
 
   Future<ChatSession> switchToSession(String charId, int sessionIndex) async {
