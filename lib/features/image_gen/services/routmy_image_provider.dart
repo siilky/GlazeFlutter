@@ -22,10 +22,10 @@ class RoutmyImageProvider {
     List<String>? referenceImages,
     CancelToken? cancelToken,
   }) async {
-    final isGemini = model.startsWith('google/');
+    final isChatModel = model.startsWith('google/') || model.startsWith('recraft/');
 
-    if (isGemini) {
-      return _generateGeminiChat(
+    if (isChatModel) {
+      return _generateChat(
         apiKey: apiKey,
         model: model,
         prompt: prompt,
@@ -36,53 +36,40 @@ class RoutmyImageProvider {
         cancelToken: cancelToken,
       );
     }
-    return _generateOpenAIImages(
+    return _generateImages(
       apiKey: apiKey,
       model: model,
       prompt: prompt,
       aspectRatio: aspectRatio,
+      imageSize: imageSize,
       quality: quality,
       referenceImages: referenceImages,
       cancelToken: cancelToken,
     );
   }
 
-  Future<Uint8List> _generateOpenAIImages({
+  Future<Uint8List> _generateImages({
     required String apiKey,
     required String model,
     required String prompt,
     required String aspectRatio,
+    required String imageSize,
     required String quality,
     List<String>? referenceImages,
     CancelToken? cancelToken,
   }) async {
     final url = '$baseUrl/v1/images/generations';
 
-    String size;
-    if (aspectRatio == '16:9') {
-      size = '1792x1024';
-    } else if (aspectRatio == '9:16') {
-      size = '1024x1792';
-    } else if (aspectRatio == '2:3') {
-      size = '768x1152';
-    } else if (aspectRatio == '3:2') {
-      size = '1152x768';
-    } else {
-      size = '1024x1024';
-    }
-
     final body = <String, dynamic>{
       'model': model,
       'prompt': prompt,
       'n': 1,
-      'size': size,
-      'quality': quality,
-      'response_format': 'b64_json',
+      'image_config': {
+        'aspect_ratio': aspectRatio,
+        'image_size': imageSize,
+        if (quality.isNotEmpty) 'quality': quality,
+      },
     };
-
-    if (referenceImages != null && referenceImages.isNotEmpty) {
-      body['image'] = referenceImages.first;
-    }
 
     final b64 = await _http.postAndExtractBase64(
       url: url,
@@ -95,15 +82,21 @@ class RoutmyImageProvider {
         final imageObj = data.first as Map<String, dynamic>;
         final b64 = imageObj['b64_json'] as String?;
         if (b64 != null && b64.isNotEmpty) return b64;
-        final url = imageObj['url'] as String?;
-        if (url != null) throw Exception('URL response not supported, expected b64_json');
+        final imgUrl = imageObj['url'] as String?;
+        if (imgUrl != null && imgUrl.startsWith('data:')) {
+          final commaIdx = imgUrl.indexOf(',');
+          if (commaIdx != -1) return imgUrl.substring(commaIdx + 1);
+        }
+        if (imgUrl != null) {
+          throw Exception('URL response — need to download');
+        }
         throw Exception('No image in response');
       },
     );
     return ImageGenHttp.base64ToBytes(b64);
   }
 
-  Future<Uint8List> _generateGeminiChat({
+  Future<Uint8List> _generateChat({
     required String apiKey,
     required String model,
     required String prompt,
@@ -141,7 +134,7 @@ class RoutmyImageProvider {
       'image_config': {
         'aspect_ratio': aspectRatio,
         'image_size': imageSize,
-        'quality': quality,
+        if (quality.isNotEmpty) 'quality': quality,
       },
     };
 

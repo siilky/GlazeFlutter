@@ -21,6 +21,7 @@ class ImageGenService {
 
   static final _imgGenRegex = RegExp(r'\[IMG:GEN(?::(.*?))?\]');
   static final _imgResultRegex = RegExp(r'\[IMG:RESULT:(.*?)\]');
+  static final _imgErrorRegex = RegExp(r'\[IMG:ERROR:(.*?)\]');
   static final _htmlIigTagRegex = RegExp(r"<img\s[^>]*?data-iig-instruction\s*=\s*'([^']*)'[^>]*>", caseSensitive: false, dotAll: true);
   static final _htmlIigTagDoubleRegex = RegExp(r'''<img\s[^>]*?data-iig-instruction\s*=\s*"([^"]*)"[^>]*>''', caseSensitive: false, dotAll: true);
 
@@ -91,7 +92,9 @@ class ImageGenService {
   }
 
   String replaceTagWithError(String text, int index, String error) {
-    final encoded = jsonEncode({'error': error});
+    final instructions = extractImageGenInstructions(text);
+    final instructionJson = index < instructions.length ? jsonEncode(instructions[index]) : '';
+    final encoded = jsonEncode({'error': error, if (instructionJson.isNotEmpty) 'instruction': instructionJson});
     int count = 0;
     var result = text.replaceAllMapped(_htmlIigTagRegex, (m) {
       if (count++ == index) return '[IMG:ERROR:$encoded]';
@@ -127,6 +130,19 @@ class ImageGenService {
 
   String resetLoadingTags(String text) {
     return text;
+  }
+
+  String resetErrorTags(String text) {
+    return text.replaceAllMapped(_imgErrorRegex, (m) {
+      try {
+        final json = jsonDecode(m.group(1)!) as Map<String, dynamic>;
+        final instruction = json['instruction'] as String?;
+        if (instruction != null && instruction.isNotEmpty) {
+          return '[IMG:GEN:$instruction]';
+        }
+      } catch (_) {}
+      return '[IMG:GEN]';
+    });
   }
 
   Future<String> processMessageImages({

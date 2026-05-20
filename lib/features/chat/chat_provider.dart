@@ -11,6 +11,7 @@ import '../../core/utils/time_helpers.dart';
 import '../../core/state/db_provider.dart';
 import '../cloud_sync/sync_provider.dart';
 import '../chat_history/chat_history_provider.dart';
+import '../image_gen/image_gen_provider.dart';
 import 'chat_generation_service.dart';
 import 'chat_message_service.dart';
 import 'chat_session_service.dart';
@@ -49,6 +50,47 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
 
   void abortImageGeneration() {
     _imgGenCancelToken?.cancel();
+    _imgGenCancelToken = null;
+  }
+
+  Future<void> retryImageGeneration() async {
+    if (isGeneratingImage) return;
+    final current = state.value;
+    if (current == null || current.session == null) return;
+
+    final session = current.session!;
+    final lastIdx = session.messages.length - 1;
+    if (lastIdx < 0) return;
+    final lastMsg = session.messages[lastIdx];
+    if (lastMsg.role != 'assistant') return;
+
+    final notifier = ref.read(imageGenSettingsProvider.notifier);
+    final service = await notifier.getServiceAsync();
+
+    if (!service.hasImageGenTags(lastMsg.content) && !lastMsg.content.contains('[IMG:ERROR:')) return;
+
+    final resetContent = service.resetErrorTags(lastMsg.content);
+    if (resetContent == lastMsg.content && !service.hasImageGenTags(resetContent)) return;
+
+    final newMessages = List<ChatMessage>.from(session.messages);
+    newMessages[lastIdx] = lastMsg.copyWith(content: resetContent);
+    final resetSession = session.copyWith(
+      messages: newMessages,
+      updatedAt: currentTimestampSeconds(),
+    );
+    state = AsyncData(ChatState(session: resetSession, isGeneratingImage: true));
+
+    final imgCancelToken = CancelToken();
+    _imgGenCancelToken = imgCancelToken;
+
+    final genService = ChatGenerationService(ref);
+    await genService.processImageTags(
+      currentState: state.value!,
+      charId: arg,
+      cancelToken: imgCancelToken,
+      onStateUpdate: (s) { state = AsyncData(s); },
+    );
+
     _imgGenCancelToken = null;
   }
 
