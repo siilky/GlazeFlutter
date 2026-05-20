@@ -720,8 +720,8 @@ class _MessageListState extends ConsumerState<MessageList> {
           reverse: true,
           cacheExtent: 2000,
           padding: EdgeInsets.only(
-            bottom: MediaQuery.paddingOf(context).top + 80,
-            top: widget.bottomInset,
+            bottom: widget.bottomInset + 16,
+            top: MediaQuery.paddingOf(context).top + 80,
           ),
           itemCount: renderCount + (widget.isGenerating ? 1 : 0) + (startFrom > 0 ? 1 : 0),
           itemBuilder: (context, index) {
