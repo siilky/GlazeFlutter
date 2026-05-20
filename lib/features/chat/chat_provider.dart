@@ -346,16 +346,13 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   }
 
   void abortGeneration() {
-    _activeGenId++; // invalidate any in-flight onStateUpdate / final writes
+    _activeGenId++;
     _cancelToken?.cancel();
     _cancelToken = null;
     _imgGenCancelToken?.cancel();
     _imgGenCancelToken = null;
-    _clearStreaming();
+    _clearStreaming();;
 
-    // Immediately clear isGenerating and restore the previous assistant message
-    // if we aborted a regeneration mid-flight.  The genId guard blocks any
-    // in-flight onError/onComplete from writing isGenerating: false on their own.
     final current = state.value;
     if (current != null && current.isGenerating) {
       final restoration = _restorationMessage;
@@ -371,10 +368,13 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
         state = AsyncData(ChatState(
           session: restoredSession ?? current.session,
           isGenerating: false,
+          isGeneratingImage: false,
         ));
       } else {
-        state = AsyncData(ChatState(session: current.session, isGenerating: false));
+        state = AsyncData(ChatState(session: current.session, isGenerating: false, isGeneratingImage: false));
       }
+    } else if (current != null && current.isGeneratingImage) {
+      state = AsyncData(ChatState(session: current.session, isGeneratingImage: false));
     }
     _restorationMessage = null;
 

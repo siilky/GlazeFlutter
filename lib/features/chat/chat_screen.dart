@@ -665,9 +665,14 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                               isGenerating: widget.state.isGenerating,
                               isGeneratingImage: widget.state.isGeneratingImage,
                               onStop: (widget.state.isGenerating || widget.state.isGeneratingImage)
-                                  ? () => ref
-                                        .read(chatProvider(widget.charId).notifier)
-                                        .abortGeneration()
+                                  ? () {
+                                      final notifier = ref.read(chatProvider(widget.charId).notifier);
+                                      if (widget.state.isGeneratingImage && !widget.state.isGenerating) {
+                                        notifier.abortImageGeneration();
+                                      } else {
+                                        notifier.abortGeneration();
+                                      }
+                                    }
                                   : null,
                               onMagicDrawer: widget.onToggleDrawer,
                               onImageGen: () => GlazeBottomSheet.show(

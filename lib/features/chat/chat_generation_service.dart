@@ -195,9 +195,17 @@ class ChatGenerationService {
     if (session == null) return;
 
     final imgGenSettingsAsync = _ref.read(imageGenSettingsProvider);
-    final imgGenSettings = imgGenSettingsAsync.value;
-    debugPrint('IMGGEN: settings=${imgGenSettings != null}, enabled=${imgGenSettings?.enabled}, isLoading=${imgGenSettingsAsync.isLoading}, hasError=${imgGenSettingsAsync.hasError}');
-    if (imgGenSettings == null || !imgGenSettings.enabled) return;
+    if (imgGenSettingsAsync.isLoading) {
+      debugPrint('IMGGEN: settings still loading, waiting...');
+      final imgGenSettings = await _ref.read(imageGenSettingsProvider.future);
+      debugPrint('IMGGEN: settings loaded, enabled=${imgGenSettings.enabled}');
+      if (!imgGenSettings.enabled) return;
+    } else {
+      final imgGenSettings = imgGenSettingsAsync.value;
+      debugPrint('IMGGEN: settings=${imgGenSettings != null}, enabled=${imgGenSettings?.enabled}, isLoading=${imgGenSettingsAsync.isLoading}, hasError=${imgGenSettingsAsync.hasError}');
+      if (imgGenSettings == null || !imgGenSettings.enabled) return;
+    }
+    final imgGenSettings = await _ref.read(imageGenSettingsProvider.future);
 
     final lastIdx = session.messages.length - 1;
     if (lastIdx < 0) return;
