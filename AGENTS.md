@@ -135,7 +135,7 @@ Also protect markdown formatting patterns (`**bold**`, `*italic*`, `__bold__`, `
 
 - **Board URL:** https://trello.com/b/jRUaax0b/glazeflutter
 - **Board ID:** `6a08b1a3055cd731743d9c2b`
-- **API credentials** are in `.env` (`TRELLO_API_KEY`, `TRELLO_TOKEN`)
+- **API credentials** are in `.trello` (gitignored, not shipped in builds) — read with `source .trello` or parse manually
 - Use Trello REST API (`https://api.trello.com/1/...?key=...&token=...`) to read/update cards
 
 ### Lists
