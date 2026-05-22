@@ -523,6 +523,8 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
     String title,
   ) {
     showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.cs.surfaceContainerHigh,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),

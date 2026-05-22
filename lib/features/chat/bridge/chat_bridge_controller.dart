@@ -15,6 +15,7 @@ class ChatBridgeController {
   String? currentChatLayout;
   String? _charAvatarDataUrl;
   String? _personaAvatarDataUrl;
+  bool isGenerating = false;
 
   ChatBridgeController(this._controller) {
     _setupHandlers();
@@ -101,6 +102,7 @@ class ChatBridgeController {
   void Function(String id, String guidanceText)? onGuidedSwipe;
   void Function(String id)? onMemoryClick;
   void Function(String id)? onToggleHidden;
+  void Function(List<String> ids)? onSelectionChange;
 
   void _setupHandlers() {
     _controller.addJavaScriptHandler(
@@ -219,6 +221,17 @@ class ChatBridgeController {
     );
 
     _controller.addJavaScriptHandler(
+      handlerName: 'onSelectionChange',
+      callback: (args) {
+        if (args.isEmpty) return;
+        try {
+          final list = jsonDecode(args[0] as String) as List;
+          onSelectionChange?.call(list.cast<String>());
+        } catch (_) {}
+      },
+    );
+
+    _controller.addJavaScriptHandler(
       handlerName: 'onBridgeResolve',
       callback: (args) {
         if (args.length < 2) return;
@@ -326,6 +339,14 @@ class ChatBridgeController {
     return _callJs('applyTheme', json);
   }
 
+  Future<void> setPerformanceMode(bool enabled) {
+    return _eval('window.bridge?.setPerformanceMode(${enabled})');
+  }
+
+  Future<void> setSelectionMode(bool enabled) {
+    return _eval('window.bridge?.setSelectionMode(${enabled})');
+  }
+
   Future<void> _callJs(String method, String arg) {
     return _eval('window.bridge?.$method(${_escapeJsonStr(arg)})');
   }
@@ -404,6 +425,7 @@ class ChatBridgeController {
       if (memoryStatus != null) 'memoryStatus': memoryStatus,
       if (m.triggeredLorebooks.isNotEmpty) 'triggeredLorebooks': m.triggeredLorebooks.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList(),
       if (m.triggeredMemories.isNotEmpty) 'triggeredMemories': m.triggeredMemories.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList(),
+      'isGenerating': isGenerating,
     };
   }
 }

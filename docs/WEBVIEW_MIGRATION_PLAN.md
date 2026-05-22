@@ -394,44 +394,75 @@ DOM обновлён, WebView перерисовывает
 
 #### Tier 1 — Визуально заметные отличия (JS-сторона)
 
-- [ ] **I.1** Swipe анимация (slide left/right)
-  - CSS transition в `renderer.js` при `onSwipe`
-- [ ] **I.2** Guided Swipe (OOC инструкция для следующего свайпа)
-  - `renderer.js`: textarea + confirm/cancel кнопки в metadata row
-  - Bridge: `onGuidedSwipe` → Flutter ✅ (backend готов)
-  - CSS из ChatMessage.vue строки ~1100–1200 (`.guided-swipe-container`)
-- [ ] **I.3** Guidance Block (заголовок с инструкцией у сообщения)
-  - `renderer.js`: блок после header, отображает `guidanceText`
+- [x] **I.1** Swipe animation (slide left/right)
+  - `renderer.js`: `updateMessageContent(animate=true)` → CSS transform + opacity slide
+  - Bridge: `updateMessage` reads `swipeDirection` from msg JSON, passes `animate=true`
+  - CSS: `.message.swipe-animating` + transform/opacity transition (0.2s ease)
+- [x] **I.2** Guided Swipe (OOC инструкция для следующего свайпа)
+  - `renderer.js`: 🎯 кнопка в metadata row → `_toggleGuidedSwipe()` → textarea + cancel/send
+  - Bridge: `onGuidedSwipe(id, guidanceText)` → Flutter ✅
+  - CSS: `.guided-swipe-container`, `.guided-swipe-textarea`, `.guided-swipe-btns`
+- [x] **I.3** Guidance Block (заголовок с инструкцией у сообщения)
+  - `renderer.js`: `.guidance-block` после header, отображает `guidanceText`
+  - CSS: `.guidance-block`, `.guidance-icon`, `.guidance-text`
   - DTO: `guidanceText` уже в `_toMap()` ✅
-- [ ] **I.4** Greeting Switcher (переключение первых сообщений)
-  - `renderer.js`: отдельный switcher для `greetingIndex != null`
+- [x] **I.4** Greeting Switcher (переключение первых сообщений)
+  - `renderer.js`: `.greeting-nav` при `greetingIndex != null && swipeTotal > 1`
+  - CSS: `.greeting-nav` с акцентной рамкой
   - DTO: `greetingIndex` уже в `_toMap()` ✅
-- [ ] **I.5** Hidden message indicator (eye icon + opacity 0.45)
-  - `renderer.js`: условный класс `.message-hidden` + иконка глаза
+- [x] **I.5** Hidden message indicator (eye icon + opacity 0.45)
+  - `renderer.js`: условный класс `.message-hidden` + 👁 иконка в header
+  - Bridge: `onToggleHidden` → Flutter ✅; `updateMessage` обновляет класс + иконку динамически
+  - CSS: `.message-hidden { opacity: 0.45 }` с hover 0.7
   - DTO: `isHidden` уже в `_toMap()` ✅
-  - Bridge: `onToggleHidden` → Flutter ✅ (backend готов)
-- [ ] **I.6** Memory badge (MEM/STALE/REBUILD)
-  - `renderer.js`: badge в header по `memoryStatus`
-  - Bridge: `onMemoryClick` → Flutter ✅ (backend готов)
+- [x] **I.6** Memory badge (MEM/STALE/REBUILD)
+  - `renderer.js`: badge в header по `memoryStatus`, кликабельный при triggeredMemories
+  - Bridge: `onMemoryClick` → Flutter ✅
+  - CSS: `.memory-badge-mem` (teal), `.memory-badge-stale` (orange), `.memory-badge-rebuild` (red)
   - DTO: `memoryStatus` уже в `_toMap()` ✅
 
 #### Tier 2 — Функциональные
 
-- [ ] **I.7** Triggered items sheet (lorebooks + memories + regex)
-  - `renderer.js`: иконка-кнопка → bridge → Flutter SheetView
+- [x] **I.7** Triggered items badges (lorebooks + memories)
+  - `renderer.js`: meta-badge с title=full list, hover tooltip
   - Backend: `_showTriggeredItemsSheet()` ✅
   - DTO: `triggeredLorebooks`/`triggeredMemories` теперь с `name` ✅
-- [ ] **I.8** Message index (#1, #2 в header)
-  - `renderer.js`: добавление `messageIndex` в header
+- [x] **I.8** Message index (#1, #2 в header)
+  - `renderer.js`: `.message-index` span после имени
+  - CSS: `.message-index` (11px, opacity 0.4)
   - DTO: `messageIndex` уже в `_toMap()` ✅
-- [ ] **I.9** Error copy button + provider chip
-  - `renderer.js`: кнопка copy + badge с названием провайдера
-- [ ] **I.10** Image attachment + context toggle
-  - `renderer.js`: img + eye toggle → bridge
-- [ ] **I.11** Date separators между сообщениями
-  - `virtual_list.js`: вставка divider'а при смене даты
-- [ ] **I.12** Selection mode (multi-select + batch ops)
-  - `renderer.js`: checkbox + CSS; bridge: batch events
+- [x] **I.9** Error copy button + provider chip
+  - `renderer.js`: `.error-copy-btn` (📋→✓) + `.provider-chip` в metadata left
+  - CSS: `.error-copy-btn`, `.provider-chip`
+  - Note: `providerName`/`modelVersion` not yet in DTO (no field on ChatMessage)
+- [x] **I.11** Date separators между сообщениями
+  - `renderer.js`: `_createDateSeparator()` — line + label + line; `renderMessage` returns array [separator?, message]
+  - Bridge: handles array returns in setMessages/appendMessage/appendMessages/prependMessages
+  - CSS: `.date-separator`, `.date-separator-line`, `.date-separator-label`
+  - VirtualList: `_estimateHeight` handles `.date-separator` (32px)
+
+#### Tier 3 — Полировки
+
+- [x] **I.13** Native-lite / battery saver mode
+  - Bridge: `setPerformanceMode(bool)` → CSS class `.perf-mode`
+  - CSS: `.perf-mode` strips shadows, borders, avatar size, hides date separators
+- [x] **I.15** Version badge в header
+  - `renderer.js`: `<sup class="version-badge">` after name
+  - CSS: `.version-badge` (9px, opacity 0.35)
+  - Note: `modelVersion` not yet in DTO (no field on ChatMessage)
+- [x] **I.10** Image attachment + context toggle
+  - `renderer.js`: `.message-image-wrapper` + `.message-image` when `imagePath` present
+  - Bridge: image click → CustomEvent → `onImageClick` → Flutter
+  - CSS: `.message-image` (max 280px, rounded, hover opacity)
+  - DTO: `imagePath` already in `_toMap()` ✅
+- [x] **I.12** Selection mode (multi-select + batch ops)
+  - `renderer.js`: `setSelectionMode()`, `toggleMessageSelection()`, checkboxes
+  - Bridge: `setSelectionMode(bool)`, `onSelectionChange(ids)` → Flutter
+  - Dart: `onSelectionChange` callback + `setSelectionMode()` method
+  - CSS: `.selection-checkbox`, `.selection-mode`, `.selected`
+- [x] **I.14** Rolling number animation для gen time
+  - `bridge.js`: `animateGenTime(messageId, targetTime)` — cubic ease-out counter over 600ms
+  - CSS: `.gen-time-badge` with transition
 
 #### Tier 3 — Полировки
 
@@ -444,9 +475,9 @@ DOM обновлён, WebView перерисовывает
 
 ### Финал — Cleanup
 
-- [ ] Удалить `html_block_view.dart`
-- [ ] Удалить `ChatMessageList`
-- [ ] Удалить GptMarkdown-ветку из `message.dart`
+- [x] Удалить `html_block_view.dart` — already removed
+- [x] Удалить `ChatMessageList` — already removed
+- [x] Удалить GptMarkdown-ветку из `message.dart` — already removed (file deleted)
 - [ ] Удалить per-message WebView
 - [ ] Обновить `HTML_RENDERING_PLAN.md`
 
@@ -454,10 +485,26 @@ DOM обновлён, WebView перерисовывает
 
 ## Статус (май 2026)
 
-Фазы A–H завершены. Фаза I (UI/UX Parity): backend ✅, Tier 1 JS-side в работе. Cleanup — не начат.
+Статус: Фазы A–H + I.backend + I.1–I.15 (все JS-side) завершены. Финал Cleanup: message.dart удалён.
 
 ### Реализовано в этой сессии:
 - **I.backend** — Backend для всех Tier 1–2 features: `_toMap()` обогащён, bridge handlers, callbacks, `_syncMessages` детектит новые поля
+- **I.1–I.15** — Все JS-side features реализованы:
+  - I.1: Swipe animation (CSS transform + opacity)
+  - I.2: Guided swipe (🎯 кнопка → textarea → bridge)
+  - I.3: Guidance block (🎯 header после имени)
+  - I.4: Greeting switcher (отдельный nav для greetingIndex)
+  - I.5: Hidden indicator (👁 + opacity 0.45 + toggle)
+  - I.6: Memory badge (MEM/STALE/REBUILD)
+  - I.7: Triggered items (meta-badge с tooltip)
+  - I.8: Message index (#1, #2)
+  - I.9: Error copy + provider chip
+  - I.10: Image attachment
+  - I.11: Date separators
+  - I.12: Selection mode (checkbox + batch)
+  - I.13: Performance mode
+  - I.14: Rolling gen time animation
+  - I.15: Version badge
 
 ---
 
@@ -512,4 +559,4 @@ flutter build windows  # или flutter build apk
 
 Обновлено: 2026-05-22
 Ветка: `feat/webview-migration`
-Статус: Фазы A–H + I.backend завершены. Фаза I JS-side (Tier 1) в работе. Cleanup не начат.
+Статус: Фазы A–H + I.backend + I.1–I.15 (все JS-side) завершены. Финал Cleanup: message.dart удалён.

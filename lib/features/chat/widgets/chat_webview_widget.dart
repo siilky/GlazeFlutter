@@ -210,6 +210,10 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       }
     }
 
+    if (widget.isGenerating != old.isGenerating) {
+      _bridge!.isGenerating = widget.isGenerating;
+    }
+
     _syncMessages(old.messages);
 
     if (_wasGenerating && !widget.isGenerating) {

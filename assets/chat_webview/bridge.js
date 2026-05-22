@@ -7,6 +7,7 @@ class Bridge {
     this._setupSmoothScroll();
     this._setupScrollListener();
     this._setupInteractionListener();
+    this._setupImageClickForward();
   }
 
   _sendToFlutter(name, args) {
@@ -95,6 +96,11 @@ class Bridge {
 
   _setupInteractionListener() {
     document.addEventListener('click', (e) => {
+      if (e.target.closest('.selection-checkbox')) {
+        this._handleSelectionCheckbox(e);
+        return;
+      }
+
       const link = e.target.closest('a');
       if (link) {
         e.preventDefault();
@@ -135,6 +141,46 @@ class Bridge {
       if (regenBtn) {
         const id = regenBtn.dataset.messageId;
         this._sendToFlutter('onRegenerate', [id]);
+        return;
+      }
+
+      const guidedBtn = e.target.closest('.guided-swipe-btn');
+      if (guidedBtn) {
+        const id = guidedBtn.dataset.messageId;
+        this._toggleGuidedSwipe(id);
+        return;
+      }
+
+      const memoryBadge = e.target.closest('[data-action="memory-click"]');
+      if (memoryBadge) {
+        this._sendToFlutter('onMemoryClick', [memoryBadge.dataset.messageId]);
+        return;
+      }
+
+      const hiddenToggle = e.target.closest('[data-action="toggle-hidden"]');
+      if (hiddenToggle) {
+        this._sendToFlutter('onToggleHidden', [hiddenToggle.dataset.messageId]);
+        return;
+      }
+
+      const errorCopyBtn = e.target.closest('.error-copy-btn');
+      if (errorCopyBtn) {
+        const msgEl = document.querySelector(`[data-message-id="${errorCopyBtn.dataset.messageId}"]`);
+        if (msgEl) {
+          const raw = msgEl.dataset.rawText || '';
+          try {
+            navigator.clipboard.writeText(raw);
+          } catch (_) {
+            const ta = document.createElement('textarea');
+            ta.value = raw;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+          }
+          errorCopyBtn.textContent = '✓';
+          setTimeout(() => { errorCopyBtn.textContent = '📋'; }, 1200);
+        }
         return;
       }
 
@@ -214,12 +260,26 @@ class Bridge {
       container.classList.add('layout-bubble');
     }
 
+    this.renderer.resetDateTracking();
     const messages = JSON.parse(messagesJson);
     const ids = [];
     const elements = [];
     for (const msg of messages) {
-      ids.push(msg.id);
-      elements.push(this.renderer.renderMessage(msg));
+      const rendered = this.renderer.renderMessage(msg);
+      if (Array.isArray(rendered)) {
+        for (const el of rendered) {
+          if (el.dataset.messageId) {
+            ids.push(el.dataset.messageId);
+            elements.push(el);
+          } else {
+            ids.push(`__date_${el.dataset.dateSeparator || Date.now()}`);
+            elements.push(el);
+          }
+        }
+      } else {
+        ids.push(msg.id);
+        elements.push(rendered);
+      }
     }
     this.virtualList.setMessagesBatch(ids, elements);
 
@@ -231,16 +291,30 @@ class Bridge {
 
   appendMessage(messageJson) {
     const msg = JSON.parse(messageJson);
-    const el = this.renderer.renderMessage(msg);
-    this.virtualList.append(msg.id, el);
+    const rendered = this.renderer.renderMessage(msg);
+    if (Array.isArray(rendered)) {
+      for (const el of rendered) {
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        this.virtualList.append(id, el);
+      }
+    } else {
+      this.virtualList.append(msg.id, rendered);
+    }
     this.virtualList.scrollToBottom();
   }
 
   appendMessages(messagesJson) {
     const messages = JSON.parse(messagesJson);
     messages.forEach(msg => {
-      const el = this.renderer.renderMessage(msg);
-      this.virtualList.append(msg.id, el);
+      const rendered = this.renderer.renderMessage(msg);
+      if (Array.isArray(rendered)) {
+        for (const el of rendered) {
+          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+          this.virtualList.append(id, el);
+        }
+      } else {
+        this.virtualList.append(msg.id, rendered);
+      }
     });
   }
 
@@ -248,8 +322,15 @@ class Bridge {
     const messages = JSON.parse(messagesJson);
     const scrollBefore = this.virtualList.container.scrollHeight;
     messages.forEach(msg => {
-      const el = this.renderer.renderMessage(msg);
-      this.virtualList.prepend(msg.id, el);
+      const rendered = this.renderer.renderMessage(msg);
+      if (Array.isArray(rendered)) {
+        for (const el of rendered) {
+          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+          this.virtualList.prepend(id, el);
+        }
+      } else {
+        this.virtualList.prepend(msg.id, rendered);
+      }
     });
     const scrollAfter = this.virtualList.container.scrollHeight;
     this.virtualList.container.scrollTop = scrollAfter - scrollBefore;
@@ -257,7 +338,39 @@ class Bridge {
 
   updateMessage(messageJson) {
     const msg = JSON.parse(messageJson);
-    this.renderer.updateMessage(msg.id, msg.text, msg.isUser);
+    const msgEl = document.querySelector(`[data-message-id="${msg.id}"]`);
+    if (!msgEl) return;
+
+    const animate = !!msg.swipeDirection;
+    if (msg.swipeDirection) {
+      msgEl.dataset.swipeDirection = msg.swipeDirection;
+    }
+
+    this.renderer.updateMessageContent(msgEl, msg.text, msg.isUser, msg.isTyping, animate);
+
+    if (msg.isHidden !== undefined) {
+      msgEl.classList.toggle('message-hidden', !!msg.isHidden);
+      const eye = msgEl.querySelector('[data-action="toggle-hidden"]');
+      if (msg.isHidden && !eye) {
+        const header = msgEl.querySelector('.message-header');
+        if (header) {
+          const indicator = document.createElement('span');
+          indicator.className = 'hidden-indicator';
+          indicator.textContent = '👁';
+          indicator.title = 'Hidden message — click to unhide';
+          indicator.dataset.messageId = msg.id;
+          indicator.dataset.action = 'toggle-hidden';
+          const timeEl = header.querySelector('.message-time');
+          if (timeEl) {
+            header.insertBefore(indicator, timeEl);
+          } else {
+            header.appendChild(indicator);
+          }
+        }
+      } else if (!msg.isHidden && eye) {
+        eye.remove();
+      }
+    }
   }
 
   removeMessage(messageId) {
@@ -416,5 +529,106 @@ class Bridge {
     }
     bg.style.filter = `blur(${blur || 0}px)`;
     bg.style.opacity = opacity != null ? opacity : 1;
+  }
+
+  _toggleGuidedSwipe(messageId) {
+    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!msgEl) return;
+
+    const existing = msgEl.querySelector('.guided-swipe-container');
+    if (existing) {
+      existing.remove();
+      return;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'guided-swipe-container';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'guided-swipe-textarea';
+    textarea.placeholder = 'Enter guidance for the next swipe...';
+    container.appendChild(textarea);
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'guided-swipe-btns';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'guided-swipe-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => container.remove());
+    btnRow.appendChild(cancelBtn);
+
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'guided-swipe-send';
+    sendBtn.textContent = 'Swipe →';
+    sendBtn.addEventListener('click', () => {
+      const guidance = textarea.value.trim();
+      if (guidance) {
+        this._sendToFlutter('onGuidedSwipe', [messageId, guidance]);
+      }
+      container.remove();
+    });
+    btnRow.appendChild(sendBtn);
+
+    container.appendChild(btnRow);
+
+    const metaRow = msgEl.querySelector('.message-meta');
+    if (metaRow) {
+      metaRow.parentNode.insertBefore(container, metaRow.nextSibling);
+    } else {
+      msgEl.appendChild(container);
+    }
+
+    textarea.focus();
+  }
+
+  setPerformanceMode(enabled) {
+    const container = document.getElementById('chat-container') || document.body;
+    container.classList.toggle('perf-mode', !!enabled);
+  }
+
+  animateGenTime(messageId, targetTime) {
+    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!msgEl) return;
+    const badge = msgEl.querySelector('.gen-time-badge');
+    if (!badge) return;
+
+    const match = targetTime.match(/([\d.]+)(.*)/);
+    if (!match) { badge.textContent = targetTime; return; }
+
+    const target = parseFloat(match[1]);
+    const suffix = match[2] || '';
+    if (isNaN(target)) { badge.textContent = targetTime; return; }
+
+    const start = performance.now();
+    const duration = 600;
+
+    const tick = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = (target * eased).toFixed(target % 1 !== 0 ? 1 : 0);
+      badge.textContent = `${current}${suffix}`;
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  setSelectionMode(enabled) {
+    this.renderer.setSelectionMode(enabled);
+  }
+
+  _handleSelectionCheckbox(e) {
+    const cb = e.target.closest('.selection-checkbox');
+    if (!cb) return;
+    e.stopPropagation();
+    const id = cb.dataset.messageId;
+    this.renderer.toggleMessageSelection(id);
+    this._sendToFlutter('onSelectionChange', [JSON.stringify(this.renderer.getSelectedIds())]);
+  }
+
+  _setupImageClickForward() {
+    this.virtualList.container.addEventListener('image-click', (e) => {
+      this._sendToFlutter('onImageClick', [e.detail.src]);
+    });
   }
 }

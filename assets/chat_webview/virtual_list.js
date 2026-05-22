@@ -197,6 +197,7 @@ class VirtualList {
 
   _estimateHeight(el) {
     if (el.offsetHeight > 0) return el.offsetHeight;
+    if (el.classList.contains('date-separator')) return 32;
     const role = el.classList.contains('message-user') ? 'user' :
                  el.classList.contains('message-system') ? 'system' : 'assistant';
     return role === 'system' ? 60 : 120;

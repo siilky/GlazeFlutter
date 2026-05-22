@@ -5,14 +5,66 @@ class Renderer {
     this.searchQuery = null;
     this.activeSearchIndex = -1;
     this.searchMatches = [];
+    this._lastTimestamps = { date: null, idx: -1 };
+    this._selectionMode = false;
+    this._selectedIds = new Set();
+  }
+
+  setSelectionMode(enabled) {
+    this._selectionMode = !!enabled;
+    if (!enabled) this._selectedIds.clear();
+    document.querySelectorAll('.message').forEach(msgEl => {
+      msgEl.classList.toggle('selection-mode', this._selectionMode);
+      const cb = msgEl.querySelector('.selection-checkbox');
+      if (enabled && !cb) {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'selection-checkbox';
+        checkbox.dataset.messageId = msgEl.dataset.messageId;
+        checkbox.checked = this._selectedIds.has(msgEl.dataset.messageId);
+        msgEl.insertBefore(checkbox, msgEl.firstChild);
+      } else if (!enabled && cb) {
+        cb.remove();
+      }
+      msgEl.classList.toggle('selected', this._selectedIds.has(msgEl.dataset.messageId));
+    });
+  }
+
+  toggleMessageSelection(messageId) {
+    if (this._selectedIds.has(messageId)) {
+      this._selectedIds.delete(messageId);
+    } else {
+      this._selectedIds.add(messageId);
+    }
+    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (msgEl) {
+      msgEl.classList.toggle('selected', this._selectedIds.has(messageId));
+      const cb = msgEl.querySelector('.selection-checkbox');
+      if (cb) cb.checked = this._selectedIds.has(messageId);
+    }
+  }
+
+  getSelectedIds() {
+    return [...this._selectedIds];
   }
 
   renderMessage(messageData) {
     const { id, role, text, timestamp, displayName, avatarUrl, isUser, isAssistant, isSystem, isError, isTyping } = messageData;
 
+    const elements = [];
+
+    if (timestamp) {
+      const dateStr = this._formatDate(timestamp);
+      if (dateStr && dateStr !== this._lastTimestamps.date) {
+        elements.push(this._createDateSeparator(dateStr));
+        this._lastTimestamps = { date: dateStr, idx: 0 };
+      }
+    }
+
     const messageEl = document.createElement('div');
     let className = `message ${this._getRoleClass(role)}`;
     if (isError) className += ' message-error';
+    if (messageData.isHidden) className += ' message-hidden';
     messageEl.className = className;
     messageEl.dataset.messageId = id;
     messageEl.dataset.rawText = text || '';
@@ -20,6 +72,34 @@ class Renderer {
 
     const header = this._createHeader(messageData);
     messageEl.appendChild(header);
+
+    if (messageData.imagePath) {
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'message-image-wrapper';
+      const img = document.createElement('img');
+      img.className = 'message-image';
+      img.src = messageData.imagePath;
+      img.loading = 'lazy';
+      img.addEventListener('click', () => {
+        this.virtualList.container.dispatchEvent(new CustomEvent('image-click', { detail: { src: messageData.imagePath } }));
+      });
+      imgWrap.appendChild(img);
+      messageEl.appendChild(imgWrap);
+    }
+
+    if (messageData.guidanceText) {
+      const guidanceBlock = document.createElement('div');
+      guidanceBlock.className = 'guidance-block';
+      const icon = document.createElement('span');
+      icon.className = 'guidance-icon';
+      icon.textContent = '🎯';
+      guidanceBlock.appendChild(icon);
+      const textEl = document.createElement('span');
+      textEl.className = 'guidance-text';
+      textEl.textContent = messageData.guidanceText;
+      guidanceBlock.appendChild(textEl);
+      messageEl.appendChild(guidanceBlock);
+    }
 
     const contentContainer = document.createElement('div');
     contentContainer.className = 'message-content';
@@ -228,10 +308,11 @@ class Renderer {
       messageEl.appendChild(meta);
     }
 
-    return messageEl;
+    elements.push(messageEl);
+    return elements.length > 1 ? elements : messageEl;
   }
 
-  updateMessageContent(messageEl, text, isUser = false, isTyping = false) {
+  updateMessageContent(messageEl, text, isUser = false, isTyping = false, animate = false) {
     const contentContainer = messageEl.querySelector('.message-content');
     if (!contentContainer || !contentContainer.shadowRoot) return;
 
@@ -250,7 +331,25 @@ class Renderer {
         formatted = this._applySearchHighlight(formatted);
       }
 
-      shadowMessage.innerHTML = formatted;
+      if (animate) {
+        messageEl.classList.add('swipe-animating');
+        const dir = messageEl.dataset.swipeDirection || 'left';
+        messageEl.style.transform = dir === 'left' ? 'translateX(-30px)' : 'translateX(30px)';
+        messageEl.style.opacity = '0.3';
+        requestAnimationFrame(() => {
+          messageEl.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+          shadowMessage.innerHTML = formatted;
+          messageEl.style.transform = '';
+          messageEl.style.opacity = '';
+          setTimeout(() => {
+            messageEl.classList.remove('swipe-animating');
+            messageEl.style.transition = '';
+            delete messageEl.dataset.swipeDirection;
+          }, 220);
+        });
+      } else {
+        shadowMessage.innerHTML = formatted;
+      }
     } catch (e) {
       shadowMessage.textContent = text || '';
       console.error('Formatter error:', e);
@@ -265,7 +364,7 @@ class Renderer {
   }
 
   _createHeader(messageData) {
-    const { role, displayName, personaName, avatarUrl, timestamp, avatarColor } = messageData;
+    const { role, displayName, personaName, avatarUrl, timestamp, avatarColor, messageIndex, isHidden, memoryStatus, modelVersion } = messageData;
 
     const header = document.createElement('div');
     header.className = 'message-header';
@@ -292,6 +391,43 @@ class Renderer {
     nameEl.textContent = finalName;
     header.appendChild(nameEl);
 
+    if (messageIndex != null) {
+      const idx = document.createElement('span');
+      idx.className = 'message-index';
+      idx.textContent = `#${messageIndex + 1}`;
+      header.appendChild(idx);
+    }
+
+    if (modelVersion) {
+      const ver = document.createElement('sup');
+      ver.className = 'version-badge';
+      ver.textContent = modelVersion;
+      header.appendChild(ver);
+    }
+
+    if (memoryStatus) {
+      const badge = document.createElement('span');
+      badge.className = `memory-badge memory-badge-${memoryStatus.toLowerCase()}`;
+      badge.textContent = memoryStatus;
+      if (messageData.triggeredMemories && messageData.triggeredMemories.length > 0) {
+        badge.title = messageData.triggeredMemories.map(m => m.name).join(', ');
+        badge.style.cursor = 'pointer';
+        badge.dataset.messageId = messageData.id;
+        badge.dataset.action = 'memory-click';
+      }
+      header.appendChild(badge);
+    }
+
+    if (isHidden) {
+      const eye = document.createElement('span');
+      eye.className = 'hidden-indicator';
+      eye.textContent = '👁';
+      eye.title = 'Hidden message — click to unhide';
+      eye.dataset.messageId = messageData.id;
+      eye.dataset.action = 'toggle-hidden';
+      header.appendChild(eye);
+    }
+
     if (timestamp) {
       const time = document.createElement('div');
       time.className = 'message-time';
@@ -303,8 +439,10 @@ class Renderer {
   }
 
   _createMetadata(messageData) {
-    const { genTime, tokens, triggeredLorebooks, triggeredMemories, swipeIndex, swipeTotal, id } = messageData;
-    const hasLorebooks = (triggeredLorebooks || 0) + (triggeredMemories || 0) > 0;
+    const { genTime, tokens, triggeredLorebooks, triggeredMemories, swipeIndex, swipeTotal, id, guidanceText, greetingIndex, isLast, isGenerating, isError, providerName } = messageData;
+    const lorebooks = triggeredLorebooks || [];
+    const memories = triggeredMemories || [];
+    const hasInjects = lorebooks.length + memories.length > 0;
 
     const row = document.createElement('div');
     row.className = 'message-meta';
@@ -314,7 +452,7 @@ class Renderer {
 
     if (genTime) {
       const badge = document.createElement('span');
-      badge.className = 'meta-badge';
+      badge.className = 'meta-badge gen-time-badge';
       badge.textContent = `${genTime}`;
       left.appendChild(badge);
     }
@@ -326,11 +464,29 @@ class Renderer {
       left.appendChild(badge);
     }
 
-    if (hasLorebooks) {
+    if (providerName) {
+      const chip = document.createElement('span');
+      chip.className = 'meta-badge provider-chip';
+      chip.textContent = providerName;
+      left.appendChild(chip);
+    }
+
+    if (hasInjects) {
       const badge = document.createElement('span');
       badge.className = 'meta-badge meta-badge-inject';
-      badge.textContent = `${(triggeredLorebooks || 0) + (triggeredMemories || 0)}`;
-      badge.title = `Lorebooks: ${triggeredLorebooks || 0}, Memories: ${triggeredMemories || 0}`;
+      badge.textContent = `${lorebooks.length + memories.length}`;
+      const parts = [];
+      if (lorebooks.length) parts.push(`WI: ${lorebooks.map(e => e.name).join(', ')}`);
+      if (memories.length) parts.push(`Mem: ${memories.map(e => e.name).join(', ')}`);
+      badge.title = parts.join('\n');
+      left.appendChild(badge);
+    }
+
+    if (guidanceText) {
+      const badge = document.createElement('span');
+      badge.className = 'meta-badge meta-badge-guidance';
+      badge.textContent = '🎯';
+      badge.title = `Guidance: ${guidanceText}`;
       left.appendChild(badge);
     }
 
@@ -339,7 +495,39 @@ class Renderer {
     const right = document.createElement('div');
     right.className = 'message-meta-right';
 
-    if (swipeTotal > 1) {
+    if (isError) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'error-copy-btn';
+      copyBtn.dataset.messageId = id;
+      copyBtn.textContent = '📋';
+      copyBtn.title = 'Copy error';
+      right.appendChild(copyBtn);
+    }
+
+    if (greetingIndex != null && swipeTotal > 1) {
+      const greetNav = document.createElement('div');
+      greetNav.className = 'swipe-nav greeting-nav';
+      const prevBtn = document.createElement('button');
+      prevBtn.className = 'swipe-btn';
+      prevBtn.textContent = '‹';
+      prevBtn.dataset.action = 'swipe-left';
+      prevBtn.dataset.messageId = id;
+      greetNav.appendChild(prevBtn);
+
+      const label = document.createElement('span');
+      label.className = 'swipe-label';
+      label.textContent = `${(swipeIndex || 0) + 1}/${swipeTotal}`;
+      greetNav.appendChild(label);
+
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'swipe-btn';
+      nextBtn.textContent = '›';
+      nextBtn.dataset.action = 'swipe-right';
+      nextBtn.dataset.messageId = id;
+      greetNav.appendChild(nextBtn);
+
+      right.appendChild(greetNav);
+    } else if (swipeTotal > 1) {
       const swipe = document.createElement('div');
       swipe.className = 'swipe-nav';
       const prevBtn = document.createElement('button');
@@ -364,13 +552,20 @@ class Renderer {
       right.appendChild(swipe);
     }
 
-    if (messageData.role === 'assistant' && messageData.isLast) {
+    if (messageData.role === 'assistant' && isLast && !isGenerating) {
       const regenBtn = document.createElement('button');
       regenBtn.className = 'regen-btn';
       regenBtn.dataset.messageId = id;
       regenBtn.textContent = '↻';
       regenBtn.title = 'Regenerate';
       right.appendChild(regenBtn);
+
+      const guidedBtn = document.createElement('button');
+      guidedBtn.className = 'guided-swipe-btn';
+      guidedBtn.dataset.messageId = id;
+      guidedBtn.textContent = '🎯';
+      guidedBtn.title = 'Guided swipe';
+      right.appendChild(guidedBtn);
     }
 
     const menuBtn = document.createElement('button');
@@ -409,6 +604,53 @@ class Renderer {
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
     return `${hours}:${minutes}`;
+  }
+
+  _formatDate(timestamp) {
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    const y = date.getFullYear();
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const d = date.getDate().toString().padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  _formatDateDisplay(dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  }
+
+  _createDateSeparator(dateStr) {
+    const el = document.createElement('div');
+    el.className = 'date-separator';
+    el.dataset.dateSeparator = dateStr;
+
+    const line = document.createElement('div');
+    line.className = 'date-separator-line';
+    el.appendChild(line);
+
+    const label = document.createElement('span');
+    label.className = 'date-separator-label';
+    label.textContent = this._formatDateDisplay(dateStr);
+    el.appendChild(label);
+
+    const line2 = document.createElement('div');
+    line2.className = 'date-separator-line';
+    el.appendChild(line2);
+
+    return el;
+  }
+
+  resetDateTracking() {
+    this._lastTimestamps = { date: null, idx: -1 };
   }
 
   _applySearchHighlight(html) {
