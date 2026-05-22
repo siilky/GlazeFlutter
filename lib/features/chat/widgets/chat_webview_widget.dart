@@ -172,25 +172,29 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     }
 
     if (widget.charId != old.charId || widget.sessionId != old.sessionId) {
-      _bridge!.setIdentity(
-        charName: widget.charName,
-        charColor: widget.charColor,
-        personaName: widget.personaName,
-        layout: widget.chatLayout,
-        charAvatarPath: widget.charAvatarPath,
-        personaAvatarPath: widget.personaAvatarPath,
-      );
-      _bridge!.applyTheme({'chat-layout': widget.chatLayout ?? 'bubble'});
-      _bridge!.setBackgroundImage(widget.bgImagePath, widget.bgBlur.toInt(), widget.bgOpacity);
-      _bridge!.setChatFont(
-        fontName: widget.chatFontName,
-        fontDataUrl: widget.chatFontDataUrl,
-        fontSize: widget.chatFontSize,
-        letterSpacing: widget.chatLetterSpacing,
-      );
+      if (widget.charId != old.charId) {
+        _bridge!.setIdentity(
+          charName: widget.charName,
+          charColor: widget.charColor,
+          personaName: widget.personaName,
+          layout: widget.chatLayout,
+          charAvatarPath: widget.charAvatarPath,
+          personaAvatarPath: widget.personaAvatarPath,
+        );
+        _bridge!.applyTheme({'chat-layout': widget.chatLayout ?? 'bubble'});
+        _bridge!.setBackgroundImage(widget.bgImagePath, widget.bgBlur.toInt(), widget.bgOpacity);
+        _bridge!.setChatFont(
+          fontName: widget.chatFontName,
+          fontDataUrl: widget.chatFontDataUrl,
+          fontSize: widget.chatFontSize,
+          letterSpacing: widget.chatLetterSpacing,
+        );
+      }
       _bridge!.clearAll();
       _bridge!.setMessages(widget.messages);
       _bridge!.scrollToBottom();
+      _wasGenerating = widget.isGenerating;
+      _streamingSent = false;
       return;
     }
 

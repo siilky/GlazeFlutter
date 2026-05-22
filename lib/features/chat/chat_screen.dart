@@ -192,9 +192,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _sessionApplied = true;
     final notifier = ref.read(chatProvider(widget.charId).notifier);
     if (widget.forceNewSession) {
-      await notifier.createNewSession();
+      unawaited(notifier.createNewSession());
     } else if (widget.initialSessionIndex != null) {
-      await notifier.switchSession(widget.initialSessionIndex!);
+      unawaited(notifier.switchSession(widget.initialSessionIndex!));
     }
   }
 
@@ -203,13 +203,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final charId = widget.charId;
     final chatStateAsync = ref.watch(chatProvider(charId));
     final chatState = chatStateAsync.value;
-
-    final sessionMismatch = !_sessionApplied &&
-        widget.initialSessionIndex != null &&
-        chatState?.session?.sessionIndex != widget.initialSessionIndex;
-    if (sessionMismatch) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
 
     final character = ref.watch(characterByIdProvider(charId));
     final title = character?.name ?? 'Chat';

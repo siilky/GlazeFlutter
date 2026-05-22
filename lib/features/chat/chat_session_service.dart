@@ -52,12 +52,18 @@ class ChatSessionService {
 
   Future<ChatSession> switchToSession(String charId, int sessionIndex) async {
     final repo = _ref.read(chatRepoProvider);
-    final sessions = await repo.getByCharacterId(charId);
-    final target = sessions.where((s) => s.sessionIndex == sessionIndex).firstOrNull;
-    if (target != null) {
-      await saveCurrentSessionIndex(charId, sessionIndex);
+    final session = await repo.getById('${charId}_$sessionIndex');
+    if (session == null) {
+      final sessions = await repo.getByCharacterId(charId);
+      final target = sessions.where((s) => s.sessionIndex == sessionIndex).firstOrNull;
+      if (target != null) {
+        await saveCurrentSessionIndex(charId, sessionIndex);
+        return target;
+      }
+      throw StateError('Session $charId#$sessionIndex not found');
     }
-    return target!;
+    await saveCurrentSessionIndex(charId, sessionIndex);
+    return session;
   }
 
   Future<ChatSession> createNewSession(String charId) async {
