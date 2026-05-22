@@ -387,7 +387,10 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     try {
       final session = await _sessionSvc.switchToSession(arg, sessionIndex);
       _buildComplete = true;
-      state = AsyncData(ChatState(session: session));
+      final start = session.messages.length > ChatState.initialPageSize
+          ? session.messages.length - ChatState.initialPageSize
+          : 0;
+      state = AsyncData(ChatState(session: session, visibleStartIndex: start));
     } catch (_) {
       final current = state.value;
       if (current != null) {
@@ -417,7 +420,10 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     _clearStreaming();
     final session = await _sessionSvc.branchSession(arg, current.session!, index);
     _invalidateHistory();
-    state = AsyncData(ChatState(session: session));
+    final start = session.messages.length > ChatState.initialPageSize
+        ? session.messages.length - ChatState.initialPageSize
+        : 0;
+    state = AsyncData(ChatState(session: session, visibleStartIndex: start));
   }
 
   Future<void> newSession() async {
