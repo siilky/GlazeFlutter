@@ -254,6 +254,16 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     final skipLast = widget.isGenerating && _streamingSent;
     final newLen = newIds.length - (skipLast ? 1 : 0);
 
+    if (oldIds.isEmpty) {
+      _bridge?.setMessages(widget.messages);
+      return;
+    }
+
+    if (newIds.isEmpty) {
+      _bridge?.clearAll();
+      return;
+    }
+
     if (newIds.length < oldIds.length) {
       _bridge?.clearAll();
       _bridge?.setMessages(widget.messages);

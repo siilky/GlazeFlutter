@@ -29,17 +29,26 @@ final streamingStateProvider =
     );
 
 class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
+  bool _buildComplete = false;
+
   @override
   Future<ChatState> build(String arg) async {
     ref.keepAlive();
+    _buildComplete = false;
     final existing = await _sessionSvc.findExistingSession(arg);
+    if (_buildComplete) {
+      return state.value ?? ChatState(session: existing);
+    }
     if (existing != null) {
       final start = existing.messages.length > ChatState.initialPageSize
           ? existing.messages.length - ChatState.initialPageSize
           : 0;
-      return ChatState(session: existing, visibleStartIndex: start);
+      final result = ChatState(session: existing, visibleStartIndex: start);
+      _buildComplete = true;
+      return result;
     }
     final session = await _sessionSvc.createInitialSession(arg);
+    _buildComplete = true;
     return ChatState(session: session);
   }
 
@@ -375,8 +384,16 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     _activeGenId++;
     _restorationMessage = null;
     _clearStreaming();
-    final session = await _sessionSvc.switchToSession(arg, sessionIndex);
-    state = AsyncData(ChatState(session: session));
+    try {
+      final session = await _sessionSvc.switchToSession(arg, sessionIndex);
+      _buildComplete = true;
+      state = AsyncData(ChatState(session: session));
+    } catch (_) {
+      final current = state.value;
+      if (current != null) {
+        state = AsyncData(current);
+      }
+    }
   }
 
   Future<void> createNewSession() async {
@@ -384,6 +401,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     _restorationMessage = null;
     _clearStreaming();
     final session = await _sessionSvc.createNewSession(arg);
+    _buildComplete = true;
     _invalidateHistory();
     state = AsyncData(ChatState(session: session));
   }
