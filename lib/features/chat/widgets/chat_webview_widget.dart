@@ -46,6 +46,7 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
   final double chatFontSize;
   final double chatLetterSpacing;
   final int lastProcessedMessageCount;
+  final int visibleStartIndex;
 
   const ChatWebViewWidget({
     super.key,
@@ -81,6 +82,7 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
     this.chatFontSize = 15.0,
     this.chatLetterSpacing = 0.0,
     this.lastProcessedMessageCount = 0,
+    this.visibleStartIndex = 0,
   });
 
   @override
@@ -140,7 +142,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       letterSpacing: widget.chatLetterSpacing,
     );
 
-    await _bridge!.setMessages(widget.messages);
+    await _bridge!.setMessages(widget.messages, offset: widget.visibleStartIndex);
     _bridge!.lastProcessedMessageCount = widget.lastProcessedMessageCount;
     if (widget.bottomInset > 0) {
       await _bridge!.setBottomPadding(widget.bottomInset);
@@ -181,7 +183,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
         letterSpacing: widget.chatLetterSpacing,
       );
       _bridge!.clearAll();
-      _bridge!.setMessages(widget.messages);
+      _bridge!.setMessages(widget.messages, offset: widget.visibleStartIndex);
       _bridge!.scrollToBottom();
       return;
     }
@@ -244,8 +246,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
 
     if (newIds.length < oldIds.length) {
       _bridge?.clearAll();
-      _bridge?.setMessages(widget.messages);
-      return;
+      _bridge?.setMessages(widget.messages, offset: widget.visibleStartIndex);
     }
 
     if (newIds.length > oldIds.length) {
@@ -267,7 +268,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       if (i >= newIds.length) break;
       if (newIds[i] != oldIds[i]) {
         _bridge?.clearAll();
-        _bridge?.setMessages(widget.messages);
+        _bridge?.setMessages(widget.messages, offset: widget.visibleStartIndex);
         return;
       }
       final o = oldMsgs[i];

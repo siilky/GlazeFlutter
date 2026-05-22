@@ -283,17 +283,21 @@ class Renderer {
           cursor: pointer;
           background: rgba(0,0,0,0.05);
           font-weight: 500;
-          list-style: none;
-          display: flex;
+          list-style: none !important;
+          display: flex !important;
           align-items: center;
           gap: 6px;
         }
         .glaze-message details summary::-webkit-details-marker {
-          display: none;
+          display: none !important;
+        }
+        .glaze-message details summary::marker {
+          display: none !important;
+          content: '';
         }
         .glaze-message details summary::before {
           content: '▶';
-          display: inline-block;
+          display: inline-block !important;
           font-size: 0.8em;
           transition: transform 0.2s;
           flex-shrink: 0;

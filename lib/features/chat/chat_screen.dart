@@ -659,6 +659,7 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                           chatFontSize: fontStyle.fontSize,
                           chatLetterSpacing: fontStyle.letterSpacing,
                           lastProcessedMessageCount: memProcessed.valueOrNull ?? 0,
+                          visibleStartIndex: widget.state.visibleStartIndex,
                           onMessageContext: (index, messageId, isUser, isSystem, content) {
                             showMessageContextMenu(
                               context: context,

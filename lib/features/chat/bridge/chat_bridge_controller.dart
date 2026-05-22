@@ -258,10 +258,10 @@ class ChatBridgeController {
     );
   }
 
-  Future<void> setMessages(List<ChatMessage> messages) {
+  Future<void> setMessages(List<ChatMessage> messages, {int offset = 0}) {
     final List<Map<String, dynamic>> mapped = [];
     for (int i = 0; i < messages.length; i++) {
-      mapped.add(_toMap(messages[i], isLast: i == messages.length - 1, messageIndex: i));
+      mapped.add(_toMap(messages[i], isLast: i == messages.length - 1, messageIndex: offset + i));
     }
     final json = jsonEncode(mapped);
     return _callJs('setMessages', json);
