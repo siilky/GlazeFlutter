@@ -2,8 +2,8 @@
 :root {
   --bg-color: #1a1a2e;
   --text-color: #e0e0e0;
-  --user-bg: rgba(255, 255, 255, 0.08);
-  --assistant-bg: rgba(255, 255, 255, 0.04);
+  --user-bg: rgba(121, 150, 206, 0.15);
+  --assistant-bg: rgba(255, 255, 255, 0.06);
   --system-bg: rgba(255, 152, 0, 0.08);
   --user-text: #e0e0e0;
   --assistant-text: #e0e0e0;
@@ -39,6 +39,7 @@
   background: var(--user-bg);
   color: var(--user-text);
   margin-left: 48px;
+  border-radius: 16px 16px 4px 16px;
   --current-quote-color: var(--user-quote-color, var(--quote-color));
   --current-italic-color: var(--user-italic-color, var(--italic-color));
 }
@@ -47,6 +48,7 @@
   background: var(--assistant-bg);
   color: var(--assistant-text);
   margin-right: 48px;
+  border-radius: 16px 16px 16px 4px;
   --current-quote-color: var(--char-quote-color, var(--quote-color));
   --current-italic-color: var(--char-italic-color, var(--italic-color));
 }

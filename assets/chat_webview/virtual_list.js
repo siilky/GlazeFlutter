@@ -10,7 +10,7 @@ class VirtualList {
 
     this._renderStart = 0;
     this._renderEnd = 0;
-    this._bufferSize = 5;
+    this._bufferSize = 10;
 
     this._topSpacer = document.createElement('div');
     this._topSpacer.className = 'vl-spacer vl-spacer-top';
@@ -25,12 +25,23 @@ class VirtualList {
     this._pendingScrollToId = null;
 
     this._resizeObserver = new ResizeObserver((entries) => {
+      let needsUpdate = false;
       for (const entry of entries) {
         const id = entry.target.dataset.vlId;
         if (id != null) {
           const newH = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
-          this._updateHeight(id, newH);
+          if (newH > 0) {
+            const oldH = this._heightCache.get(id);
+            if (oldH == null || Math.abs(oldH - newH) > 1) {
+              this._heightCache.set(id, newH);
+              needsUpdate = true;
+            }
+          }
         }
+      }
+      if (needsUpdate) {
+        this._rebuildPrefixSums();
+        this._updateSpacers();
       }
     });
 
@@ -39,10 +50,6 @@ class VirtualList {
         this._scheduleUpdate();
       }
     }, { passive: true });
-
-    this._mutationObserver = new MutationObserver(() => {
-      this._dirty = true;
-    });
   }
 
   clear() {
@@ -72,8 +79,7 @@ class VirtualList {
     this._dirty = true;
 
     const idx = this.messageOrder.length - 1;
-    const estH = this._estimateHeight(messageElement);
-    this._heightCache.set(messageId, estH);
+    this._heightCache.set(messageId, this._estimateHeight(messageElement));
 
     if (this._isInWindow(idx)) {
       this.container.insertBefore(messageElement, this._bottomSpacer);
@@ -103,8 +109,7 @@ class VirtualList {
     this.messageOrder.unshift(messageId);
     this._dirty = true;
 
-    const estH = this._estimateHeight(messageElement);
-    this._heightCache.set(messageId, estH);
+    this._heightCache.set(messageId, this._estimateHeight(messageElement));
 
     if (this._isInWindow(0)) {
       this.container.insertBefore(messageElement, this._topSpacer.nextSibling);
@@ -203,14 +208,6 @@ class VirtualList {
     return role === 'system' ? 60 : 120;
   }
 
-  _updateHeight(messageId, newHeight) {
-    const oldH = this._heightCache.get(messageId);
-    if (oldH == null || Math.abs(oldH - newHeight) < 1) return;
-    this._heightCache.set(messageId, newHeight);
-    this._rebuildPrefixSums();
-    this._updateSpacers();
-  }
-
   _rebuildPrefixSums() {
     const n = this.messageOrder.length;
     this._prefixSums = new Array(n + 1);
@@ -271,7 +268,10 @@ class VirtualList {
 
     this._computeWindow();
 
-    if (this._renderStart === oldStart && this._renderEnd === oldEnd) return;
+    if (this._renderStart === oldStart && this._renderEnd === oldEnd && !this._dirty) return;
+    this._dirty = false;
+
+    const scrollTopBefore = this.container.scrollTop;
 
     for (let i = oldStart; i < oldEnd; i++) {
       if (i >= this._renderStart && i < this._renderEnd) continue;
@@ -296,6 +296,11 @@ class VirtualList {
     }
 
     this._updateSpacers();
+
+    const scrollTopAfter = this.container.scrollTop;
+    if (Math.abs(scrollTopAfter - scrollTopBefore) > 1) {
+      this.container.scrollTop = scrollTopBefore;
+    }
   }
 
   _updateSpacers() {

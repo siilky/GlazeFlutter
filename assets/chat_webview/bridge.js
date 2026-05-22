@@ -4,7 +4,6 @@ class Bridge {
     this.virtualList = virtualList;
     this._pendingRequests = new Map();
     this._requestCounter = 0;
-    this._setupSmoothScroll();
     this._setupScrollListener();
     this._setupInteractionListener();
     this._setupImageClickForward();
@@ -43,47 +42,6 @@ class Bridge {
     clearTimeout(pending.timer);
     this._pendingRequests.delete(requestId);
     pending.reject(new Error(error));
-  }
-
-  _setupSmoothScroll() {
-    const container = this.virtualList.container;
-    let scrollTarget = null;
-    let isScrolling = false;
-
-    container.addEventListener('wheel', (e) => {
-      const target = e.target;
-      if (target && target.closest) {
-        if (target.closest('textarea, input, [contenteditable="true"]')) return;
-      }
-      e.preventDefault();
-
-      const delta = e.deltaY;
-      const step = 60;
-      if (!scrollTarget) {
-        scrollTarget = container.scrollTop;
-      }
-      scrollTarget += delta > 0 ? step : -step;
-      scrollTarget = Math.max(0, Math.min(scrollTarget, container.scrollHeight - container.clientHeight));
-
-      if (!isScrolling) {
-        isScrolling = true;
-        const animate = () => {
-          const current = container.scrollTop;
-          const diff = scrollTarget - current;
-          if (Math.abs(diff) < 1) {
-            container.scrollTop = scrollTarget;
-            isScrolling = false;
-            scrollTarget = null;
-            this.virtualList._scheduleUpdate();
-            return;
-          }
-          container.scrollTop = current + diff * 0.3;
-          this.virtualList._scheduleUpdate();
-          requestAnimationFrame(animate);
-        };
-        requestAnimationFrame(animate);
-      }
-    }, { passive: false });
   }
 
   _setupScrollListener() {
