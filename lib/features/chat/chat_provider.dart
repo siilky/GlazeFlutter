@@ -138,6 +138,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     );
 
     await ref.read(chatRepoProvider).put(updatedSession);
+    ChatSessionService.updateCache(updatedSession);
     _invalidateHistory();
     state = AsyncData(ChatState(session: updatedSession, isGenerating: true, generationStartTime: DateTime.now()));
 
@@ -188,6 +189,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       updatedAt: currentTimestampSeconds(),
     );
     await ref.read(chatRepoProvider).put(trimmedSession);
+    ChatSessionService.updateCache(trimmedSession);
     _invalidateHistory();
     state = AsyncData(ChatState(session: trimmedSession, isGenerating: true, generationStartTime: DateTime.now()));
     _restorationMessage = prevAssistant;
@@ -246,6 +248,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
         updatedAt: currentTimestampSeconds(),
       );
       await ref.read(chatRepoProvider).put(finalSession);
+      ChatSessionService.updateCache(finalSession);
       _invalidateHistory();
       state = AsyncData(ChatState(session: finalSession));
     } else {
@@ -322,6 +325,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     
     final updatedSession = current.session!.copyWith(draft: draftText);
     await ref.read(chatRepoProvider).put(updatedSession);
+    ChatSessionService.updateCache(updatedSession);
     state = AsyncData(ChatState(
       session: updatedSession,
       isGenerating: current.isGenerating,
@@ -426,6 +430,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
         );
         if (restoredSession != null) {
           ref.read(chatRepoProvider).put(restoredSession);
+          ChatSessionService.updateCache(restoredSession);
         }
         state = AsyncData(ChatState(
           session: restoredSession ?? current.session,
@@ -512,6 +517,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
           updatedAt: currentTimestampSeconds(),
         );
         await ref.read(chatRepoProvider).put(restoredSession);
+        ChatSessionService.updateCache(restoredSession);
         _invalidateHistory();
         state = AsyncData(ChatState(
           session: restoredSession,
@@ -561,7 +567,10 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
           if (restoration != null) {
             final msgs = <ChatMessage>[...(current.session?.messages ?? []), restoration];
             final restored = current.session?.copyWith(messages: msgs, updatedAt: currentTimestampSeconds());
-            if (restored != null) ref.read(chatRepoProvider).put(restored);
+            if (restored != null) {
+              ref.read(chatRepoProvider).put(restored);
+              ChatSessionService.updateCache(restored);
+            }
             state = AsyncData(ChatState(session: restored ?? current.session, isGenerating: false, error: e.toString()));
           } else {
             state = AsyncData(ChatState(session: current.session, isGenerating: false, error: e.toString()));

@@ -220,6 +220,18 @@ class Bridge {
     }
   }
 
+  _showLoadingScreen() {
+    let loading = document.getElementById('loading-screen');
+    if (!loading) {
+      loading = document.createElement('div');
+      loading.id = 'loading-screen';
+      loading.textContent = 'Loading...';
+      document.body.insertBefore(loading, document.body.firstChild);
+    }
+    loading.style.opacity = '1';
+    loading.style.display = 'flex';
+  }
+
   setMessages(messagesJson) {
     const container = document.getElementById('chat-container') || document.body;
     if (!container.classList.contains('layout-bubble') &&
@@ -230,9 +242,17 @@ class Bridge {
 
     this.renderer.resetDateTracking();
     const messages = JSON.parse(messagesJson);
+    
+    this._renderMessagesBatch(messages, 0);
+  }
+
+  _renderMessagesBatch(messages, startIndex) {
+    const batchSize = 5;
     const ids = [];
     const elements = [];
-    for (const msg of messages) {
+    
+    for (let i = startIndex; i < Math.min(startIndex + batchSize, messages.length); i++) {
+      const msg = messages[i];
       const rendered = this.renderer.renderMessage(msg);
       if (Array.isArray(rendered)) {
         for (const el of rendered) {
@@ -249,12 +269,26 @@ class Bridge {
         elements.push(rendered);
       }
     }
-    this.virtualList.setMessagesBatch(ids, elements);
-
-    requestAnimationFrame(() => {
-      this.virtualList.scrollToBottom();
-      this._hideLoadingScreen();
-    });
+    
+    if (startIndex === 0) {
+      this.virtualList.setMessagesBatch(ids, elements);
+    } else {
+      ids.forEach((id, idx) => {
+        this.virtualList.append(id, elements[idx]);
+      });
+    }
+    
+    const nextIndex = startIndex + batchSize;
+    if (nextIndex < messages.length) {
+      requestAnimationFrame(() => {
+        this._renderMessagesBatch(messages, nextIndex);
+      });
+    } else {
+      requestAnimationFrame(() => {
+        this.virtualList.scrollToBottom();
+        this._hideLoadingScreen();
+      });
+    }
   }
 
   appendMessage(messageJson) {
@@ -269,6 +303,7 @@ class Bridge {
       this.virtualList.append(msg.id, rendered);
     }
     this.virtualList.scrollToBottom();
+    this._hideLoadingScreen();
   }
 
   appendMessages(messagesJson) {
@@ -302,6 +337,7 @@ class Bridge {
     });
     const scrollAfter = this.virtualList.container.scrollHeight;
     this.virtualList.container.scrollTop = scrollAfter - scrollBefore;
+    this._hideLoadingScreen();
   }
 
   updateMessage(messageJson) {
@@ -352,6 +388,7 @@ class Bridge {
   }
 
   clearAll() {
+    this._showLoadingScreen();
     this.virtualList.clear();
   }
 
