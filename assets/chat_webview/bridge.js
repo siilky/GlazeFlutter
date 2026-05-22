@@ -615,4 +615,9 @@ class Bridge {
       this._sendToFlutter('onImageClick', [e.detail.src]);
     });
   }
+
+  debugFormatter(text) {
+    const formatted = this.renderer.formatter.format(text, false);
+    document.title = 'DBG:' + formatted.substring(0, 200);
+  }
 }

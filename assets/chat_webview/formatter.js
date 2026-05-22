@@ -16,6 +16,12 @@ class Formatter {
       result = (text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     }
 
+    const leaked = result.match(/\x01[A-Z_]+\d+\x01/g);
+    if (leaked) {
+      console.error('Formatter LEAK:', leaked, 'text:', text?.substring(0, 100));
+      result = result.replace(/\x01[A-Z_]+\d+\x01/g, '');
+    }
+
     if (this.cache.size >= this.cacheMaxSize) {
       const firstKey = this.cache.keys().next().value;
       this.cache.delete(firstKey);
@@ -36,7 +42,25 @@ class Formatter {
 
     // 1a. Extract <think...</think...> reasoning blocks
     const thinkBlocks = [];
-    html = html.replace(/<think([\s\S]*?)<\/think>/gi, (match, content) => {
+    html = html.replace(/<think\b[^>]*>([\s\S]*?)<\/think\b[^>]*>/gi, (match, content) => {
+      const id = this._ph('TB_', thinkBlocks.length, true);
+      thinkBlocks.push(content.trim());
+      return '\n\n' + id + '\n\n';
+    });
+
+    html = html.replace(/<think\b([^>]*?)(?:>|\n)([\s\S]*?)<\/think\b/gi, (match, attrs, content) => {
+      const id = this._ph('TB_', thinkBlocks.length, true);
+      thinkBlocks.push(content.trim());
+      return '\n\n' + id + '\n\n';
+    });
+
+    html = html.replace(/<thinking\b[^>]*>([\s\S]*?)<\/thinking\b[^>]*>/gi, (match, content) => {
+      const id = this._ph('TB_', thinkBlocks.length, true);
+      thinkBlocks.push(content.trim());
+      return '\n\n' + id + '\n\n';
+    });
+
+    html = html.replace(/<thinking\b([^>]*?)(?:>|\n)([\s\S]*?)<\/thinking\b/gi, (match, attrs, content) => {
       const id = this._ph('TB_', thinkBlocks.length, true);
       thinkBlocks.push(content.trim());
       return '\n\n' + id + '\n\n';
@@ -218,6 +242,8 @@ class Formatter {
       const formatted = this._processText(content, isUser);
       return `<details class="reasoning-block"><summary class="reasoning-summary">💭 Reasoning</summary><div class="reasoning-content">${formatted}</div></details>`;
     });
+
+    html = html.replace(/\x01[A-Z_]+\d+\x01/g, '');
 
     return html;
   }

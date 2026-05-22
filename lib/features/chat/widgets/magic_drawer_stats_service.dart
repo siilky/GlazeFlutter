@@ -98,6 +98,7 @@ class MagicDrawerStatsService {
           'entryIds': memoryResult.entries.map((e) => e.id).toList(),
           'needsRebuild': false,
           'stale': false,
+          'injected': memoryContent != null,
         };
         triggeredMemories = memoryResult.entries.map((e) => TriggeredEntry(
           id: e.id,

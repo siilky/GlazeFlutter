@@ -328,7 +328,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
             domStorageEnabled: true,
             transparentBackground: true,
             useHybridComposition: true,
-            cacheEnabled: false,
+            cacheEnabled: true,
             useWideViewPort: true,
             loadWithOverviewMode: true,
             allowFileAccessFromFileURLs: true,
