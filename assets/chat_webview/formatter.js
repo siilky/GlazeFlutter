@@ -34,7 +34,31 @@ class Formatter {
 
     let html = text;
 
-    // 1. Extract Code Blocks
+    // 1a. Extract <think...</think...> reasoning blocks
+    const thinkBlocks = [];
+    html = html.replace(/<think([\s\S]*?)<\/think>/gi, (match, content) => {
+      const id = this._ph('TB_', thinkBlocks.length, true);
+      thinkBlocks.push(content.trim());
+      return '\n\n' + id + '\n\n';
+    });
+
+    // 1b. Extract <style>...</style> blocks
+    const styleBlocks = [];
+    html = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (match, content) => {
+      const id = this._ph('STY_', styleBlocks.length, true);
+      styleBlocks.push(match);
+      return '\n\n' + id + '\n\n';
+    });
+
+    // 1c. Extract <script>...</script> blocks
+    const scriptBlocks = [];
+    html = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (match, content) => {
+      const id = this._ph('SCR_', scriptBlocks.length, true);
+      scriptBlocks.push(match);
+      return '\n\n' + id + '\n\n';
+    });
+
+    // 2. Extract Code Blocks
     const codeBlocks = [];
     html = html.replace(/```(\w*)\n?([\s\S]*?)(?:```|$)/g, (match, lang, code) => {
       const id = this._ph('CB_', codeBlocks.length);
@@ -42,9 +66,26 @@ class Formatter {
       return id;
     });
 
-    // 2. Extract HTML Tags — distinguish block vs inline
+    // 3. Extract CSS comments inside code blocks are already protected
+    //    Extract standalone CSS comments (outside code blocks)
+    const cssComments = [];
+    html = html.replace(/\/\*([\s\S]*?)\*\//g, (match) => {
+      const id = this._ph('CC_', cssComments.length);
+      cssComments.push(match);
+      return id;
+    });
+
+    // 4. Fix escaped HTML line breaks
+    html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+
+    // 5. Janitor images: ![alt](url) → <span class="janitor-img-wrapper">
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+      return `<span class="janitor-img-wrapper"><img src="${url}" alt="${alt}" class="janitor-img" loading="lazy"></span>`;
+    });
+
+    // 6. Extract HTML Tags — distinguish block vs inline
     const tagBlocks = [];
-    const blockTags = new Set(['div','p','style','pre','table','ul','ol','li','h1','h2','h3','h4','h5','h6','blockquote','section','article','header','footer','hr','details','summary','figure','figcaption','svg','path','math','canvas','video','audio','form','fieldset','nav','aside','main']);
+    const blockTags = new Set(['div','p','style','pre','table','ul','ol','li','h1','h2','h3','h4','h5','h6','blockquote','section','article','header','footer','hr','details','summary','figure','figcaption','svg','path','math','canvas','video','audio','form','fieldset','nav','aside','main','img','br']);
     const TAG_REGEX = /<(?:[^"'>]|"[^"]*"|'[^']*')*?>/g;
 
     html = html.replace(TAG_REGEX, (match) => {
@@ -55,8 +96,7 @@ class Formatter {
       return id;
     });
 
-    // 3. Extract Glaze custom markers BEFORE quotes
-    //    This protects styled segments from quote highlighting
+    // 7. Extract Glaze custom markers BEFORE quotes
     const styledSegments = [];
     const styledRegex = /(==hc:#[0-9a-fA-F]{3,8}==.+?==|==glow:#[0-9a-fA-F]{3,8},\d+==.+?==|==cg:#[0-9a-fA-F]{3,8},#[0-9a-fA-F]{3,8},\d+==.+?==|==grad:#[0-9a-fA-F]{3,8}(?:,#[0-9a-fA-F]{3,8})+==.+?==|==bg:#[0-9a-fA-F]{3,8}==.+?==|==mark==.+?==|==active==.+?==|\*\*[^*]+?\*\*|(?<!\*)\*[^*]+?\*(?!\*)|__[^_]+?__|(?<!\w)_[^_]+?_(?!\w)|~~[^~]+?~~)/gs;
 
@@ -66,22 +106,24 @@ class Formatter {
       return id;
     });
 
-    // 4. Quote formatting — skip \x01 placeholders and = prefixed "..." (HTML attributes)
+    // 8. Quote formatting — with unclosed quote handling for streaming
     const phGroup = '\x01[A-Z_]+\\d+\x01';
-    const quoteRegex = new RegExp(`(${phGroup})|(=[ \\t]*"(?:[^"]|\\\\")*?")|("((?:[^"]|\\\\")*?)"|«((?:[^»])*?)»)`, 'g');
-    html = html.replace(quoteRegex, (match, placeholder, skipQuote) => {
+    const quoteRegex = new RegExp(`(${phGroup})|(=[ \\t]*"(?:[^"]|\\\\")*?")|("((?:[^"]|\\\\")*?)"|«((?:[^»])*?)»)|("(?:[^"]*)$|«(?:[^»]*)$)`, 'gm');
+    html = html.replace(quoteRegex, (match, placeholder, skipQuote, closedQuote, closedContent, guillemetContent, unclosedQuote) => {
       if (placeholder) return placeholder;
       if (skipQuote) return skipQuote;
-      return `<span class="chat-quote">${match}</span>`;
+      if (closedQuote) return `<span class="chat-quote">${match}</span>`;
+      if (unclosedQuote) return `<span class="chat-quote chat-quote-unclosed">${match}</span>`;
+      return match;
     });
 
-    // 5. Restore styled segments with Glaze marker rendering
+    // 9. Restore styled segments with Glaze marker rendering
     html = html.replace(/\x01S_(\d+)\x01/g, (_, i) => {
       const seg = styledSegments[parseInt(i)];
       return this._renderStyledSegment(seg);
     });
 
-    // 6. Markdown Parsing
+    // 10. Markdown Parsing
     html = html.replace(/^>\s?(.*)$/gm, '<blockquote class="chat-blockquote">$1</blockquote>');
     html = html.replace(/<\/blockquote>\n*<blockquote class="chat-blockquote">/g, '<br>');
     html = html.replace(/^(_{3,}|-{3,}|\*{3,})$/gm, '<hr>');
@@ -93,10 +135,13 @@ class Formatter {
 
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-    // 7. Paragraphs — isolate block placeholders, don't wrap in <p>
+    // 11. Paragraphs — isolate block placeholders, don't wrap in <p>
     const blockPh = '\x01T_BLOCK_\\d+\x01';
     const codePh = '\x01CB_\\d+\x01';
-    html = html.replace(new RegExp(`\\n?(${codePh}|${blockPh})\\n?`, 'g'), '\n\n$1\n\n');
+    const stylePh = '\x01STY_BLOCK_\\d+\x01';
+    const scriptPh = '\x01SCR_BLOCK_\\d+\x01';
+    const allBlockPh = `${codePh}|${blockPh}|${stylePh}|${scriptPh}`;
+    html = html.replace(new RegExp(`\\n?(${allBlockPh})\\n?`, 'g'), '\n\n$1\n\n');
 
     const paragraphs = html.split(/\n\n+/);
     html = paragraphs
@@ -104,9 +149,9 @@ class Formatter {
         let trimmed = p.trim();
         if (!trimmed) return '';
 
-        if (new RegExp(`^(${codePh}|${blockPh})$`).test(trimmed)) return trimmed;
+        if (new RegExp(`^(${allBlockPh})$`).test(trimmed)) return trimmed;
 
-        const startsWithBlock = new RegExp(`^${blockPh}`).test(trimmed);
+        const startsWithBlock = new RegExp(`^(${blockPh}|${stylePh}|${scriptPh})`).test(trimmed);
         trimmed = trimmed.replace(new RegExp(`(\x01T_(?:BLOCK_)?\\d+\x01)\\s*\\n\\s*`, 'g'), '$1 ');
         trimmed = trimmed.replace(new RegExp(`\\s*\\n\\s*(\x01T_(?:BLOCK_)?\\d+\x01)`, 'g'), ' $1');
         trimmed = trimmed.replace(/\n/g, '<br>');
@@ -115,10 +160,21 @@ class Formatter {
       .filter(p => p !== '')
       .join('');
 
-    // 8. Restore HTML Tags
+    // 12. Restore HTML Tags
     html = html.replace(/\x01T_(?:BLOCK_)?(\d+)\x01/g, (_, i) => tagBlocks[parseInt(i)]);
 
-    // 9. Restore Code Blocks
+    // 13. Restore CSS comments
+    html = html.replace(/\x01CC_(\d+)\x01/g, (_, i) => cssComments[parseInt(i)]);
+
+    // 14. Restore style blocks
+    html = html.replace(/\x01STY_BLOCK_(\d+)\x01/g, (_, i) => styleBlocks[parseInt(i)]);
+
+    // 15. Restore script blocks (sandboxed)
+    html = html.replace(/\x01SCR_BLOCK_(\d+)\x01/g, (_, i) => {
+      return `<div class="script-block-hidden" style="display:none">${scriptBlocks[parseInt(i)]}</div>`;
+    });
+
+    // 16. Restore Code Blocks
     html = html.replace(/\x01CB_(\d+)\x01/g, (_, i) => {
       const block = codeBlocks[parseInt(i)];
       const escapedCode = block.code
@@ -126,28 +182,32 @@ class Formatter {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
       const langAttr = block.lang ? ` class="language-${block.lang}"` : '';
-      return `<pre><code${langAttr}>${escapedCode}</code></pre>`;
+      const langLabel = block.lang ? `<span class="code-lang">${block.lang}</span>` : '';
+      return `<div class="code-block-wrapper">${langLabel}<pre><code${langAttr}>${escapedCode}</code></pre></div>`;
+    });
+
+    // 17. Restore think blocks
+    html = html.replace(/\x01TB_BLOCK_(\d+)\x01/g, (_, i) => {
+      const content = thinkBlocks[parseInt(i)];
+      const formatted = this._processText(content, isUser);
+      return `<details class="reasoning-block"><summary class="reasoning-summary">💭 Reasoning</summary><div class="reasoning-content">${formatted}</div></details>`;
     });
 
     return html;
   }
 
   _renderStyledSegment(seg) {
-    // ==hc:#hex==text== — colored text
     let m = seg.match(/^==hc:(#[0-9a-fA-F]{3,8})==(.+?)==$/s);
     if (m) return `<span class="glaze-hc" style="color:${m[1]}">${m[2]}</span>`;
 
-    // ==glow:#hex,blur==text== — glow shadow
     m = seg.match(/^==glow:(#[0-9a-fA-F]{3,8}),(\d+)==(.+?)==$/s);
     if (m) return `<span class="glaze-glow" style="text-shadow:${m[1]} 0 0 ${m[2]}px, ${m[1]} 0 0 ${parseInt(m[2])/2}px">${m[3]}</span>`;
 
-    // ==cg:#textHex,#glowHex,blur==text== — colored + glow
     m = seg.match(/^==cg:(#[0-9a-fA-F]{3,8}),([0-9a-fA-F]{3,8}),(\d+)==(.+?)==$/s);
     if (m) {
       return `<span class="glaze-cg" style="color:${m[1]};text-shadow:${m[2]} 0 0 ${m[3]}px, ${m[2]} 0 0 ${parseInt(m[3])/2}px">${m[4]}</span>`;
     }
 
-    // ==grad:#hex1,#hex2==text== — gradient text
     m = seg.match(/^==grad:(#[0-9a-fA-F]{3,8}(?:,#[0-9a-fA-F]{3,8})+)==(.+?)==$/s);
     if (m) {
       const colors = m[1].match(/#[0-9a-fA-F]{3,8}/g);
@@ -155,19 +215,15 @@ class Formatter {
       return `<span class="glaze-grad" style="background:linear-gradient(90deg,${gradient});-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">${m[2]}</span>`;
     }
 
-    // ==bg:#hex==text== — background highlight
     m = seg.match(/^==bg:(#[0-9a-fA-F]{3,8})==(.+?)==$/s);
     if (m) return `<span class="glaze-bg" style="background:${m[1]};padding:1px 4px;border-radius:3px">${m[2]}</span>`;
 
-    // ==mark==text== — quote highlight
     m = seg.match(/^==mark==(.+?)==$/s);
     if (m) return `<span class="glaze-mark">${m[1]}</span>`;
 
-    // ==active==text== — active search match
     m = seg.match(/^==active==(.+?)==$/s);
     if (m) return `<span class="glaze-active">${m[1]}</span>`;
 
-    // Markdown bold/italic/strikethrough (extracted to protect from quote highlighting)
     m = seg.match(/^\*\*\*(.+?)\*\*\*$/s);
     if (m) return `<strong><em>${m[1]}</em></strong>`;
     m = seg.match(/^\*\*(.+?)\*\*$/s);

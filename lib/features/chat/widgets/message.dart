@@ -18,7 +18,8 @@ import '../../../core/utils/html_to_markdown.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/pencil_animation.dart';
 import '../../../shared/widgets/rolling_number.dart';
-import '../../../shared/widgets/colored_markdown.dart';import '../../../shared/widgets/image_viewer.dart';
+import '../../../shared/widgets/colored_markdown.dart';
+import '../../../shared/widgets/image_viewer.dart';
 import '../../../shared/widgets/glaze_toast.dart';
 import '../../../shared/theme/theme_font_provider.dart';
 import '../../../shared/theme/theme_provider.dart';
@@ -31,75 +32,6 @@ import '../../presets/preset_list_provider.dart';
 
 import '../editing_message_provider.dart';
 import 'message_actions.dart';
-
-class MarkMd extends InlineMd {
-  final Color textColor;
-
-  MarkMd({required this.textColor});
-
-  @override
-  RegExp get exp => RegExp(r'==mark==(.+?)==', dotAll: true);
-
-  @override
-  InlineSpan span(BuildContext context, String text, GptMarkdownConfig config) {
-    final match = exp.firstMatch(text);
-    final content = match?[1] ?? '';
-    final markStyle = (config.style ?? const TextStyle()).copyWith(
-      color: textColor,
-    );
-    return TextSpan(
-      children: MarkdownComponent.generate(context, content, config.copyWith(style: markStyle), false),
-      style: markStyle,
-    );
-  }
-}
-
-class ActiveMarkMd extends InlineMd {
-  final GlobalKey? activeKey;
-
-  ActiveMarkMd({this.activeKey});
-
-  @override
-  RegExp get exp => RegExp(r'==active==(.+?)==', dotAll: true);
-
-  @override
-  InlineSpan span(BuildContext context, String text, GptMarkdownConfig config) {
-    final match = exp.firstMatch(text);
-    final content = match?[1] ?? '';
-    return WidgetSpan(
-      alignment: PlaceholderAlignment.middle,
-      child: KeyedSubtree(
-        key: activeKey,
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFFF44336).withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-          child: Text.rich(
-            TextSpan(
-              children: MarkdownComponent.generate(context, content, config, false),
-              style: (config.style ?? const TextStyle()).copyWith(color: Colors.white),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class DetailsSummaryMd extends BlockMd {
-  @override
-  String get expString => r'<details[^>]*>\s*<summary[^>]*>(.*?)</summary>(.*?)</details>';
-
-  @override
-  Widget build(BuildContext context, String text, GptMarkdownConfig config) {
-    final fullMatch = RegExp(r'<details[^>]*>\s*<summary[^>]*>(.*?)</summary>(.*?)</details>', dotAll: true).firstMatch(text);
-    final summary = fullMatch?[1]?.trim() ?? 'Details';
-    final body = fullMatch?[2]?.trim() ?? '';
-    return _DetailsBlock(summary: summary, body: body, config: config);
-  }
-}
 
 final _markdownCache = LruCache<String, String>(maxSize: 200);
 
@@ -213,8 +145,6 @@ class Message extends ConsumerStatefulWidget {
 class _MessageState extends ConsumerState<Message>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   TextEditingController? _editController;
-  bool _highlighted = false;
-  final GlobalKey _activePhraseKey = GlobalKey();
 
   // --- Swipe gesture state ---
   double _swipeDx = 0;
@@ -263,10 +193,6 @@ class _MessageState extends ConsumerState<Message>
 
     _appearanceCtrl.forward();
 
-    if (widget.isSearchMatch) {
-      _triggerHighlight();
-    }
-
     _updateGenTimer();
   }
 
@@ -311,120 +237,7 @@ class _MessageState extends ConsumerState<Message>
       });
     }
 
-    if ((widget.isSearchMatch && !oldWidget.isSearchMatch) ||
-        (widget.activeMatchIndex != -1 && widget.activeMatchIndex != oldWidget.activeMatchIndex)) {
-      _triggerHighlight();
-    }
-
     _updateGenTimer();
-  }
-
-  static final _quoteRegex = RegExp(
-    r'(```.*?```|`[^`]*`)|«(?:(?!\n\n)[^»])*»|"(?:(?!\n\n)[^"])*"|\u201C(?:(?!\n\n)[^\u201D])*\u201D|\u2018(?:(?!\n\n)[^\u2019])*\u2019|(?<!\p{L})\x27(?:(?!\n\n)[^\x27])*\x27(?!\p{L})',
-    unicode: true, dotAll: true,
-  );
-  static final _styledSegmentRegex = RegExp(
-    r'(==(?:hc:#[0-9a-fA-F]{3,8}|glow:#[0-9a-fA-F]{3,8},\d+|cg:#[0-9a-fA-F]{3,8},#[0-9a-fA-F]{3,8},\d+|grad:#[0-9a-fA-F]{3,8}(?:,#[0-9a-fA-F]{3,8})+|bg:#[0-9a-fA-F]{3,8})==.+?=='
-    r'|\*\*[^*]+?\*\*'
-    r'|(?<!\*)\*[^*]+?\*(?!\*)'
-    r'|__[^_]+?__'
-    r'|(?<!\w)_[^_]+?_(?!\w)'
-    r'|~~[^~]+?~~'
-    r')',
-    dotAll: true,
-  );
-
-  String _applyQuoteHighlight(String plain) {
-    return plain.replaceAllMapped(_quoteRegex, (match) {
-      if (match[1] != null) return match[1]!;
-      return '==mark==${match[0]}==';
-    });
-  }
-
-  String _highlightPhrases(String content) {
-    final styledMatches = _styledSegmentRegex.allMatches(content).toList();
-
-    final quoteSpans = <({int start, int end})>[];
-    for (final m in _quoteRegex.allMatches(content)) {
-      if (m[1] == null) {
-        quoteSpans.add((start: m.start, end: m.end));
-      }
-    }
-
-    final protectedRanges = <({int start, int end, String text})>[];
-    for (final sm in styledMatches) {
-      final insideQuote = quoteSpans.any(
-        (q) => sm.start >= q.start && sm.end <= q.end,
-      );
-      if (!insideQuote) {
-        protectedRanges.add((start: sm.start, end: sm.end, text: sm[0]!));
-      }
-    }
-    protectedRanges.sort((a, b) => a.start.compareTo(b.start));
-
-    final buffer = StringBuffer();
-    int cursor = 0;
-    for (final range in protectedRanges) {
-      if (range.start > cursor) {
-        buffer.write(_applyQuoteHighlight(content.substring(cursor, range.start)));
-      }
-      buffer.write(range.text);
-      cursor = range.end;
-    }
-    if (cursor < content.length) {
-      buffer.write(_applyQuoteHighlight(content.substring(cursor)));
-    }
-    String text = buffer.toString();
-
-    if (widget.searchQuery.isEmpty || !widget.isSearchMatch) return text;
-    final lowerContent = text.toLowerCase();
-    final lowerQuery = widget.searchQuery.toLowerCase();
-    final searchBuffer = StringBuffer();
-    int startIndex = 0;
-    int currentMatchIndex = 0;
-
-    while (true) {
-      final idx = lowerContent.indexOf(lowerQuery, startIndex);
-      if (idx == -1) {
-        searchBuffer.write(text.substring(startIndex));
-        break;
-      }
-      searchBuffer.write(text.substring(startIndex, idx));
-      final originalText = text.substring(idx, idx + lowerQuery.length);
-      if (currentMatchIndex == widget.activeMatchIndex) {
-        searchBuffer.write('==active==$originalText==');
-      } else {
-        searchBuffer.write('==mark==$originalText==');
-      }
-      currentMatchIndex++;
-      startIndex = idx + lowerQuery.length;
-    }
-    return searchBuffer.toString();
-  }
-
-  void _triggerHighlight() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_activePhraseKey.currentContext != null) {
-        Scrollable.ensureVisible(
-          _activePhraseKey.currentContext!,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          alignment: 0.5,
-        );
-      } else {
-        Scrollable.ensureVisible(
-          context,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          alignment: 0.5,
-        );
-      }
-      setState(() => _highlighted = true);
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _highlighted = false);
-      });
-    });
   }
 
   @override
@@ -601,9 +414,7 @@ class _MessageState extends ConsumerState<Message>
       margin: EdgeInsets.symmetric(horizontal: isStandard ? 16 : 12, vertical: isStandard ? 8 : 4),
       padding: isStandard ? const EdgeInsets.all(0) : const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _highlighted
-            ? context.cs.primary.withValues(alpha: 0.15)
-            : style.bg == Colors.transparent
+        color: style.bg == Colors.transparent
                 ? null
                 : style.bg.withValues(alpha: style.elementOpacity),
         borderRadius: isStandard ? BorderRadius.zero : BorderRadius.circular(16),
@@ -720,9 +531,7 @@ class _MessageState extends ConsumerState<Message>
               () {
                 var mdContent = _markdownCache.get(_cacheKey);
                 if (mdContent == null) {
-                  mdContent = _highlightPhrases(
-                    ensureLineBreaks(hasHtmlTags(displayContent) ? htmlToMarkdown(displayContent) : displayContent),
-                  );
+                  mdContent = ensureLineBreaks(hasHtmlTags(displayContent) ? htmlToMarkdown(displayContent) : displayContent);
                   _markdownCache.put(_cacheKey, mdContent);
                 }
                 if (ImageContentRenderer.hasImageMarkers(mdContent)) {
@@ -787,7 +596,7 @@ class _MessageState extends ConsumerState<Message>
                     MarkMd(
                       textColor: quoteColor,
                     ),
-                    ActiveMarkMd(activeKey: _activePhraseKey),
+                    ActiveMarkMd(),
                     TableMd(),
                     StrikeMd(),
                     ColoredBoldMd(color: style.italicColor),
@@ -1174,100 +983,6 @@ class _BubbleStyle {
       borderWidth: bw,
       borderColor: bc,
       borderOpacity: preset.borderOpacity,
-    );
-  }
-}
-
-class _DetailsBlock extends StatefulWidget {
-  final String summary;
-  final String body;
-  final GptMarkdownConfig config;
-  const _DetailsBlock({required this.summary, required this.body, required this.config});
-
-  @override
-  State<_DetailsBlock> createState() => _DetailsBlockState();
-}
-
-class _DetailsBlockState extends State<_DetailsBlock> with SingleTickerProviderStateMixin {
-  bool _expanded = false;
-  late final AnimationController _ctrl;
-  late final Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 250));
-    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    setState(() => _expanded = !_expanded);
-    if (_expanded) {
-      _ctrl.forward();
-    } else {
-      _ctrl.reverse();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: _toggle,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Row(
-                children: [
-                  AnimatedRotation(
-                    turns: _expanded ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      widget.summary,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onSurface),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          ClipRect(
-            child: SizeTransition(
-              sizeFactor: _anim,
-              axisAlignment: -1.0,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-                child: MdWidget(
-                  context,
-                  widget.body.trim(),
-                  true,
-                  config: widget.config,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

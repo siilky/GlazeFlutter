@@ -2,6 +2,8 @@ class Bridge {
   constructor(renderer, virtualList) {
     this.renderer = renderer;
     this.virtualList = virtualList;
+    this._pendingRequests = new Map();
+    this._requestCounter = 0;
     this._setupSmoothScroll();
     this._setupScrollListener();
     this._setupInteractionListener();
@@ -13,12 +15,45 @@ class Bridge {
     }
   }
 
+  _requestToFlutter(name, args, timeoutMs = 60000) {
+    return new Promise((resolve, reject) => {
+      const requestId = `${name}_${++this._requestCounter}`;
+      const timer = setTimeout(() => {
+        this._pendingRequests.delete(requestId);
+        reject(new Error(`Bridge request "${name}" timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this._pendingRequests.set(requestId, { resolve, reject, timer });
+      this._sendToFlutter(name, [requestId, ...args]);
+    });
+  }
+
+  _resolveRequest(requestId, result) {
+    const pending = this._pendingRequests.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this._pendingRequests.delete(requestId);
+    pending.resolve(result);
+  }
+
+  _rejectRequest(requestId, error) {
+    const pending = this._pendingRequests.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this._pendingRequests.delete(requestId);
+    pending.reject(new Error(error));
+  }
+
   _setupSmoothScroll() {
     const container = this.virtualList.container;
     let scrollTarget = null;
     let isScrolling = false;
 
     container.addEventListener('wheel', (e) => {
+      const target = e.target;
+      if (target && target.closest) {
+        if (target.closest('textarea, input, [contenteditable="true"]')) return;
+      }
       e.preventDefault();
 
       const delta = e.deltaY;
@@ -38,9 +73,11 @@ class Bridge {
             container.scrollTop = scrollTarget;
             isScrolling = false;
             scrollTarget = null;
+            this.virtualList._scheduleUpdate();
             return;
           }
           container.scrollTop = current + diff * 0.3;
+          this.virtualList._scheduleUpdate();
           requestAnimationFrame(animate);
         };
         requestAnimationFrame(animate);
@@ -91,6 +128,13 @@ class Bridge {
         const action = swipeBtn.dataset.action;
         const id = swipeBtn.dataset.messageId;
         this._sendToFlutter('onSwipe', [JSON.stringify({ id, direction: action === 'swipe-right' ? 'right' : 'left' })]);
+        return;
+      }
+
+      const regenBtn = e.target.closest('.regen-btn');
+      if (regenBtn) {
+        const id = regenBtn.dataset.messageId;
+        this._sendToFlutter('onRegenerate', [id]);
         return;
       }
 
@@ -171,11 +215,13 @@ class Bridge {
     }
 
     const messages = JSON.parse(messagesJson);
-    this.virtualList.clear();
-    messages.forEach(msg => {
-      const el = this.renderer.renderMessage(msg);
-      this.virtualList.append(msg.id, el);
-    });
+    const ids = [];
+    const elements = [];
+    for (const msg of messages) {
+      ids.push(msg.id);
+      elements.push(this.renderer.renderMessage(msg));
+    }
+    this.virtualList.setMessagesBatch(ids, elements);
 
     requestAnimationFrame(() => {
       this.virtualList.scrollToBottom();
@@ -234,6 +280,30 @@ class Bridge {
     this.renderer.setSearch(query, activeIndex);
   }
 
+  setChatFont(fontFamily, fontDataUrl, fontSize, letterSpacing) {
+    const root = document.documentElement;
+    if (fontSize != null) root.style.setProperty('--font-size', fontSize + 'px');
+    if (letterSpacing != null) root.style.setProperty('--letter-spacing', letterSpacing + 'px');
+
+    let fontFace = document.getElementById('custom-font-face');
+    if (fontDataUrl) {
+      if (!fontFace) {
+        fontFace = document.createElement('style');
+        fontFace.id = 'custom-font-face';
+        document.head.appendChild(fontFace);
+      }
+      fontFace.textContent = `@font-face { font-family: '${fontFamily || 'CustomChatFont'}'; src: url('${fontDataUrl}'); font-display: swap; }`;
+      root.style.setProperty('--font-family', `'${fontFamily || 'CustomChatFont'}', sans-serif`);
+    } else {
+      if (fontFace) fontFace.remove();
+      if (fontFamily) {
+        root.style.setProperty('--font-family', fontFamily);
+      } else {
+        root.style.removeProperty('--font-family');
+      }
+    }
+  }
+
   applyTheme(themeJson) {
     const theme = JSON.parse(themeJson);
     const container = document.getElementById('chat-container') || document.body;
@@ -263,6 +333,7 @@ class Bridge {
   }
 
   startEdit(messageId) {
+    const scrollPos = this.virtualList.container.scrollTop;
     const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!msgEl) return;
 
@@ -295,31 +366,55 @@ class Bridge {
 
     const metaRow = msgEl.querySelector('.message-meta-right');
     if (metaRow) {
+      metaRow.dataset.originalHtml = metaRow.innerHTML;
       metaRow.innerHTML = '';
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'edit-btn edit-cancel-btn';
-      cancelBtn.textContent = '\u2716';
+      cancelBtn.textContent = '✖';
       cancelBtn.dataset.messageId = messageId;
-      cancelBtn.addEventListener('click', () => {
-        this._sendToFlutter('onEditCancel', [messageId]);
-      });
+      cancelBtn.addEventListener('click', () => this._sendToFlutter('onEditCancel', [messageId]));
       metaRow.appendChild(cancelBtn);
 
       const saveBtn = document.createElement('button');
       saveBtn.className = 'edit-btn edit-save-btn';
-      saveBtn.textContent = '\u2714';
+      saveBtn.textContent = '✔';
       saveBtn.dataset.messageId = messageId;
       saveBtn.addEventListener('click', () => {
-        const text = textarea.value.trim();
+        const text = textarea.value;
         this._sendToFlutter('onEditSave', [messageId, text]);
       });
       metaRow.appendChild(saveBtn);
     }
+
+    this.virtualList.container.scrollTop = scrollPos;
   }
 
   stopEdit(messageId) {
     const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!msgEl) return;
     msgEl.classList.remove('message-editing');
+    const metaRow = msgEl.querySelector('.message-meta-right');
+    if (metaRow && metaRow.dataset.originalHtml !== undefined) {
+      metaRow.innerHTML = metaRow.dataset.originalHtml;
+      delete metaRow.dataset.originalHtml;
+    }
+  }
+
+  setBackgroundImage(url, blur, opacity) {
+    let bg = document.getElementById('bg-layer');
+    if (!bg) {
+      bg = document.createElement('div');
+      bg.id = 'bg-layer';
+      document.body.insertBefore(bg, document.body.firstChild);
+    }
+    if (url) {
+      bg.style.backgroundImage = `url('${url}')`;
+      bg.style.display = 'block';
+    } else {
+      bg.style.backgroundImage = '';
+      bg.style.display = 'none';
+    }
+    bg.style.filter = `blur(${blur || 0}px)`;
+    bg.style.opacity = opacity != null ? opacity : 1;
   }
 }

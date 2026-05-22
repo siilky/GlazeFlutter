@@ -7,6 +7,11 @@ class ChatState {
   final String? error;
   final String? lastRawResponse;
   final DateTime? generationStartTime;
+  final int visibleStartIndex;
+  final bool isLoadingOlder;
+
+  static const int initialPageSize = 50;
+  static const int olderPageSize = 30;
 
   const ChatState({
     this.session,
@@ -15,7 +20,19 @@ class ChatState {
     this.error,
     this.lastRawResponse,
     this.generationStartTime,
+    this.visibleStartIndex = 0,
+    this.isLoadingOlder = false,
   });
+
+  bool get hasMoreOlder => visibleStartIndex > 0;
+
+  List<ChatMessage> get messages => session?.messages ?? [];
+
+  List<ChatMessage> get visibleMessages {
+    final all = messages;
+    if (visibleStartIndex >= all.length) return all;
+    return all.sublist(visibleStartIndex);
+  }
 
   ChatState copyWith({
     ChatSession? session,
@@ -24,6 +41,8 @@ class ChatState {
     String? error,
     String? lastRawResponse,
     DateTime? generationStartTime,
+    int? visibleStartIndex,
+    bool? isLoadingOlder,
   }) {
     return ChatState(
       session: session ?? this.session,
@@ -32,10 +51,10 @@ class ChatState {
       error: error,
       lastRawResponse: lastRawResponse ?? this.lastRawResponse,
       generationStartTime: generationStartTime ?? this.generationStartTime,
+      visibleStartIndex: visibleStartIndex ?? this.visibleStartIndex,
+      isLoadingOlder: isLoadingOlder ?? this.isLoadingOlder,
     );
   }
-
-  List<ChatMessage> get messages => session?.messages ?? [];
 }
 
 class StreamingState {

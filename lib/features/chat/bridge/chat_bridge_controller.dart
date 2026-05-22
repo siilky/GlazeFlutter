@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -6,6 +7,7 @@ import '../../../core/models/chat_message.dart';
 
 class ChatBridgeController {
   final InAppWebViewController _controller;
+  final Map<String, Completer<dynamic>> _pendingRequests = {};
 
   String? currentCharName;
   String? currentCharColor;
@@ -16,6 +18,27 @@ class ChatBridgeController {
 
   ChatBridgeController(this._controller) {
     _setupHandlers();
+  }
+
+  void resolveRequest(String requestId, dynamic result) {
+    final completer = _pendingRequests.remove(requestId);
+    completer?.complete(result);
+  }
+
+  void rejectRequest(String requestId, String error) {
+    final completer = _pendingRequests.remove(requestId);
+    completer?.completeError(Exception(error));
+  }
+
+  Future<dynamic> requestFromJs(String requestId, Duration timeout) {
+    final completer = Completer<dynamic>();
+    _pendingRequests[requestId] = completer;
+    Future.delayed(timeout, () {
+      if (_pendingRequests.remove(requestId) != null) {
+        completer.completeError(TimeoutException('Bridge request timed out'));
+      }
+    });
+    return completer.future;
   }
 
   Future<void> setIdentity({
@@ -71,9 +94,13 @@ class ChatBridgeController {
   void Function(String url)? onImageClick;
   void Function(String id, bool isUser, bool isSystem, String content)? onMessageContext;
   void Function(String id, String direction)? onSwipe;
+  void Function(String id)? onRegenerate;
   void Function(String action, String text)? onSelectionAction;
   void Function(String id, String text)? onEditSave;
   void Function(String id)? onEditCancel;
+  void Function(String id, String guidanceText)? onGuidedSwipe;
+  void Function(String id)? onMemoryClick;
+  void Function(String id)? onToggleHidden;
 
   void _setupHandlers() {
     _controller.addJavaScriptHandler(
@@ -131,6 +158,13 @@ class ChatBridgeController {
     );
 
     _controller.addJavaScriptHandler(
+      handlerName: 'onRegenerate',
+      callback: (args) {
+        if (args.isNotEmpty) onRegenerate?.call(args[0] as String);
+      },
+    );
+
+    _controller.addJavaScriptHandler(
       handlerName: 'onSelectionAction',
       callback: (args) {
         if (args.isEmpty) return;
@@ -159,10 +193,54 @@ class ChatBridgeController {
         onEditCancel?.call(args[0] as String);
       },
     );
+
+    _controller.addJavaScriptHandler(
+      handlerName: 'onGuidedSwipe',
+      callback: (args) {
+        if (args.length < 2) return;
+        onGuidedSwipe?.call(args[0] as String, args[1] as String);
+      },
+    );
+
+    _controller.addJavaScriptHandler(
+      handlerName: 'onMemoryClick',
+      callback: (args) {
+        if (args.isEmpty) return;
+        onMemoryClick?.call(args[0] as String);
+      },
+    );
+
+    _controller.addJavaScriptHandler(
+      handlerName: 'onToggleHidden',
+      callback: (args) {
+        if (args.isEmpty) return;
+        onToggleHidden?.call(args[0] as String);
+      },
+    );
+
+    _controller.addJavaScriptHandler(
+      handlerName: 'onBridgeResolve',
+      callback: (args) {
+        if (args.length < 2) return;
+        resolveRequest(args[0] as String, args[1]);
+      },
+    );
+
+    _controller.addJavaScriptHandler(
+      handlerName: 'onBridgeReject',
+      callback: (args) {
+        if (args.length < 2) return;
+        rejectRequest(args[0] as String, args[1].toString());
+      },
+    );
   }
 
   Future<void> setMessages(List<ChatMessage> messages) {
-    final json = jsonEncode(messages.map(_toMap).toList());
+    final List<Map<String, dynamic>> mapped = [];
+    for (int i = 0; i < messages.length; i++) {
+      mapped.add(_toMap(messages[i], isLast: i == messages.length - 1, messageIndex: i));
+    }
+    final json = jsonEncode(mapped);
     return _callJs('setMessages', json);
   }
 
@@ -221,6 +299,23 @@ class ChatBridgeController {
     return _eval('window.bridge?.stopEdit("${_escape(messageId)}")');
   }
 
+  Future<void> setBackgroundImage(String? filePath, int blur, double opacity) {
+    if (filePath == null || filePath.isEmpty) {
+      return _eval('window.bridge?.setBackgroundImage(null, 0, 1)');
+    }
+    var url = filePath.replaceAll('\\', '/');
+    if (!url.startsWith('file://')) {
+      url = 'file:///$url';
+    }
+    return _eval('window.bridge?.setBackgroundImage("${_escape(url)}", $blur, $opacity)');
+  }
+
+  Future<void> setChatFont({String? fontName, String? fontDataUrl, required double fontSize, required double letterSpacing}) {
+    final name = fontName != null ? '"${_escape(fontName)}"' : 'null';
+    final url = fontDataUrl != null ? '"${_escape(fontDataUrl)}"' : 'null';
+    return _eval('window.bridge?.setChatFont($name, $url, ${fontSize.toStringAsFixed(1)}, ${letterSpacing.toStringAsFixed(2)})');
+  }
+
   Future<void> updateMessageContent(String messageId, String text, bool isUser) {
     final json = jsonEncode({'id': messageId, 'text': text, 'isUser': isUser});
     return _callJs('updateMessage', json);
@@ -247,7 +342,7 @@ class ChatBridgeController {
     return '"${jsonEncode(s).substring(1, jsonEncode(s).length - 1)}"';
   }
 
-  Map<String, dynamic> _toMap(ChatMessage m) {
+  Map<String, dynamic> _toMap(ChatMessage m, {bool isLast = false, int? messageIndex}) {
     final isAssistant = m.role == 'assistant' || m.role == 'character';
     final isUser = m.role == 'user';
 
@@ -264,6 +359,20 @@ class ChatBridgeController {
       avatarUrl = _personaAvatarDataUrl;
     } else {
       displayName = m.personaName ?? 'System';
+    }
+
+    String? memoryStatus;
+    if (m.memoryCoverage.isNotEmpty) {
+      final needsRebuild = m.memoryCoverage['needsRebuild'] as bool? ?? false;
+      final stale = m.memoryCoverage['stale'] as bool? ?? false;
+      final entryIds = m.memoryCoverage['entryIds'] as List?;
+      if (needsRebuild) {
+        memoryStatus = 'REBUILD';
+      } else if (stale) {
+        memoryStatus = 'STALE';
+      } else if (entryIds != null && entryIds.isNotEmpty) {
+        memoryStatus = 'MEM';
+      }
     }
 
     return {
@@ -286,9 +395,15 @@ class ChatBridgeController {
       if (m.isError) 'isError': true,
       if (m.isTyping) 'isTyping': true,
       if (m.reasoning != null && m.reasoning!.isNotEmpty) 'reasoning': m.reasoning,
-      if (m.triggeredLorebooks.isNotEmpty) 'triggeredLorebooks': m.triggeredLorebooks.length,
-      if (m.triggeredMemories.isNotEmpty) 'triggeredMemories': m.triggeredMemories.length,
       if (m.isHidden) 'isHidden': true,
+      if (isLast) 'isLast': true,
+      if (messageIndex != null) 'messageIndex': messageIndex,
+      if (m.guidanceText != null && m.guidanceText!.isNotEmpty) 'guidanceText': m.guidanceText,
+      if (m.guidanceType != 'GENERATION') 'guidanceType': m.guidanceType,
+      if (m.greetingIndex != null) 'greetingIndex': m.greetingIndex,
+      if (memoryStatus != null) 'memoryStatus': memoryStatus,
+      if (m.triggeredLorebooks.isNotEmpty) 'triggeredLorebooks': m.triggeredLorebooks.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList(),
+      if (m.triggeredMemories.isNotEmpty) 'triggeredMemories': m.triggeredMemories.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList(),
     };
   }
 }

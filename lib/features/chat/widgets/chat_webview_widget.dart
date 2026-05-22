@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../bridge/chat_bridge_controller.dart';
 import '../bridge/chat_webview_keep_alive.dart';
@@ -13,43 +14,69 @@ import '../../../../shared/theme/app_colors.dart';
 const String _kStreamingId = '__streaming__';
 
 class ChatWebViewWidget extends ConsumerStatefulWidget {
-  final List<ChatMessage> messages;
   final String charId;
-  final bool isGenerating;
-  final double bottomInset;
-  final String searchQuery;
-  final int searchCurrentIndex;
   final String? charName;
   final String? charColor;
   final String? personaName;
-  final String? chatLayout;
+  final String? personaColor;
   final String? charAvatarPath;
   final String? personaAvatarPath;
+  final String? bgImagePath;
+  final double bgBlur;
+  final double bgOpacity;
+  final List<ChatMessage> messages;
+  final bool isGenerating;
+  final double bottomInset;
+  final String? searchQuery;
+  final int searchCurrentIndex;
+  final String? chatLayout;
   final void Function(int index, bool isUser, bool isSystem, String content)? onMessageContext;
   final void Function(String id, String direction)? onSwipe;
+  final void Function(String id)? onRegenerate;
   final void Function(String action, String text)? onSelectionAction;
   final void Function(String id, String text)? onEditSave;
   final void Function(String id)? onEditCancel;
+  final void Function(String imageUrl)? onImageClick;
+  final void Function(String id, String guidanceText)? onGuidedSwipe;
+  final void Function(String id)? onMemoryClick;
+  final void Function(String id)? onToggleHidden;
+  final String? chatFontName;
+  final String? chatFontDataUrl;
+  final double chatFontSize;
+  final double chatLetterSpacing;
 
   const ChatWebViewWidget({
     super.key,
-    required this.messages,
     required this.charId,
-    required this.isGenerating,
-    this.bottomInset = 0,
-    this.searchQuery = '',
-    this.searchCurrentIndex = 0,
     this.charName,
     this.charColor,
     this.personaName,
-    this.chatLayout,
+    this.personaColor,
     this.charAvatarPath,
     this.personaAvatarPath,
+    this.bgImagePath,
+    this.bgBlur = 0.0,
+    this.bgOpacity = 1.0,
+    required this.messages,
+    required this.isGenerating,
+    this.bottomInset = 0,
+    this.searchQuery,
+    this.searchCurrentIndex = 0,
+    this.chatLayout,
     this.onMessageContext,
     this.onSwipe,
+    this.onRegenerate,
     this.onSelectionAction,
     this.onEditSave,
     this.onEditCancel,
+    this.onImageClick,
+    this.onGuidedSwipe,
+    this.onMemoryClick,
+    this.onToggleHidden,
+    this.chatFontName,
+    this.chatFontDataUrl,
+    this.chatFontSize = 15.0,
+    this.chatLetterSpacing = 0.0,
   });
 
   @override
@@ -67,20 +94,18 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
   bool get wantKeepAlive => true;
 
   Future<void> _initWebView() async {
-    if (_bridge == null) return;
+    final bridge = _bridge;
+    if (bridge == null) return;
 
-    await _bridge!.setIdentity(
+    await bridge.setIdentity(
       charName: widget.charName,
       charColor: widget.charColor,
       personaName: widget.personaName,
       layout: widget.chatLayout,
-      charAvatarPath: widget.charAvatarPath,
-      personaAvatarPath: widget.personaAvatarPath,
     );
 
     final glaze = context.colors;
     final cs = context.cs;
-
     await _bridge!.applyTheme({
       'bg-color': _colorHex(cs.surface),
       'text-color': _colorHex(cs.onSurface),
@@ -88,26 +113,63 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       'assistant-bg': _colorHex(glaze.charBubble),
       'user-text': _colorHex(glaze.userText ?? cs.onSurface),
       'assistant-text': _colorHex(glaze.charText ?? cs.onSurface),
+      'system-bg': _colorHex(cs.surfaceContainerHighest),
+      'system-text': _colorHex(cs.onSurfaceVariant),
       'user-quote-color': _colorHex(glaze.userQuote ?? cs.primary),
       'char-quote-color': _colorHex(glaze.charQuote ?? cs.primary),
-      'user-italic-color': _colorHex(glaze.userItalic ?? cs.onSurfaceVariant),
-      'char-italic-color': _colorHex(glaze.charItalic ?? cs.onSurfaceVariant),
+      'user-italic-color': _colorHex(glaze.userItalic ?? cs.primary),
+      'char-italic-color': _colorHex(glaze.charItalic ?? cs.primary),
       'primary-color': _colorHex(cs.primary),
-      'border-color': _colorHex(cs.outline),
+      'error-color': _colorHex(cs.error),
+      'font-size': '${widget.chatFontSize}px',
       'chat-layout': widget.chatLayout ?? 'bubble',
     });
 
-    await _bridge!.setMessages(widget.messages);
-    await _bridge!.setBottomPadding(widget.bottomInset);
-    await _bridge!.scrollToBottom();
+    await _bridge!.setBackgroundImage(widget.bgImagePath, widget.bgBlur.toInt(), widget.bgOpacity);
+    
+    await _bridge!.setChatFont(
+      fontName: widget.chatFontName,
+      fontDataUrl: widget.chatFontDataUrl,
+      fontSize: widget.chatFontSize,
+      letterSpacing: widget.chatLetterSpacing,
+    );
 
-    setState(() => _ready = true);
+    await _bridge!.setMessages(widget.messages);
+    if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
+      await _bridge!.setSearch(query: widget.searchQuery!, activeIndex: widget.searchCurrentIndex);
+    }
+    await _bridge!.scrollToBottom();
   }
 
   @override
   void didUpdateWidget(ChatWebViewWidget old) {
     super.didUpdateWidget(old);
     if (!_ready || _bridge == null) return;
+
+    // Check if charId changed (switching chats)
+    if (widget.charId != old.charId) {
+      // Full reset: update identity, theme, bg, font, clear, set messages, scroll
+      _bridge!.setIdentity(
+        charName: widget.charName,
+        charColor: widget.charColor,
+        personaName: widget.personaName,
+        layout: widget.chatLayout,
+        charAvatarPath: widget.charAvatarPath,
+        personaAvatarPath: widget.personaAvatarPath,
+      );
+      _bridge!.applyTheme({'chat-layout': widget.chatLayout ?? 'bubble'});
+      _bridge!.setBackgroundImage(widget.bgImagePath, widget.bgBlur.toInt(), widget.bgOpacity);
+      _bridge!.setChatFont(
+        fontName: widget.chatFontName,
+        fontDataUrl: widget.chatFontDataUrl,
+        fontSize: widget.chatFontSize,
+        letterSpacing: widget.chatLetterSpacing,
+      );
+      _bridge!.clearAll();
+      _bridge!.setMessages(widget.messages);
+      _bridge!.scrollToBottom();
+      return;
+    }
 
     if (widget.charName != old.charName ||
         widget.charColor != old.charColor ||
@@ -122,6 +184,24 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
         personaAvatarPath: widget.personaAvatarPath,
       );
       _bridge!.applyTheme({'chat-layout': widget.chatLayout ?? 'bubble'});
+    }
+
+    if (widget.bgImagePath != old.bgImagePath ||
+        widget.bgBlur != old.bgBlur ||
+        widget.bgOpacity != old.bgOpacity) {
+      _bridge!.setBackgroundImage(widget.bgImagePath, widget.bgBlur.toInt(), widget.bgOpacity);
+    }
+
+    if (widget.chatFontName != old.chatFontName ||
+        widget.chatFontDataUrl != old.chatFontDataUrl ||
+        widget.chatFontSize != old.chatFontSize ||
+        widget.chatLetterSpacing != old.chatLetterSpacing) {
+      _bridge!.setChatFont(
+        fontName: widget.chatFontName,
+        fontDataUrl: widget.chatFontDataUrl,
+        fontSize: widget.chatFontSize,
+        letterSpacing: widget.chatLetterSpacing,
+      );
     }
 
     if (widget.bottomInset != old.bottomInset) {
@@ -175,7 +255,11 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       }
       final o = oldMsgs[i];
       final n = widget.messages[i];
-      if (o.content != n.content || o.swipeId != n.swipeId) {
+      if (o.content != n.content ||
+          o.swipeId != n.swipeId ||
+          o.isHidden != n.isHidden ||
+          o.guidanceText != n.guidanceText ||
+          o.greetingIndex != n.greetingIndex) {
         _bridge?.updateMessage(n);
       }
     }
@@ -243,12 +327,16 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
           onWebViewCreated: (controller) async {
             _bridge = ChatBridgeController(controller);
             _bridge!.onMessageContext = (id, isUser, isSystem, content) {
-              final idx = widget.messages.indexWhere((m) => m.id == id);
+              final allMsgs = ref.read(chatProvider(widget.charId)).value?.messages ?? [];
+              final idx = allMsgs.indexWhere((m) => m.id == id);
               if (idx < 0) return;
               widget.onMessageContext?.call(idx, isUser, isSystem, content);
             };
             _bridge!.onSwipe = (id, direction) {
               widget.onSwipe?.call(id, direction);
+            };
+            _bridge!.onRegenerate = (id) {
+              widget.onRegenerate?.call(id);
             };
             _bridge!.onSelectionAction = (action, text) {
               widget.onSelectionAction?.call(action, text);
@@ -258,6 +346,24 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
             };
             _bridge!.onEditCancel = (id) {
               widget.onEditCancel?.call(id);
+            };
+            _bridge!.onImageClick = (imageUrl) {
+              widget.onImageClick?.call(imageUrl);
+            };
+            _bridge!.onGuidedSwipe = (id, guidanceText) {
+              widget.onGuidedSwipe?.call(id, guidanceText);
+            };
+            _bridge!.onMemoryClick = (id) {
+              widget.onMemoryClick?.call(id);
+            };
+            _bridge!.onToggleHidden = (id) {
+              widget.onToggleHidden?.call(id);
+            };
+            _bridge!.onLinkClick = (url) {
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+            };
+            _bridge!.onLoadMore = () {
+              ref.read(chatProvider(widget.charId).notifier).loadOlderMessages();
             };
 
             final isAlive = await controller.isLoading() == false;

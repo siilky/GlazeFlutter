@@ -33,9 +33,27 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   Future<ChatState> build(String arg) async {
     ref.keepAlive();
     final existing = await _sessionSvc.findExistingSession(arg);
-    if (existing != null) return ChatState(session: existing);
+    if (existing != null) {
+      final start = existing.messages.length > ChatState.initialPageSize
+          ? existing.messages.length - ChatState.initialPageSize
+          : 0;
+      return ChatState(session: existing, visibleStartIndex: start);
+    }
     final session = await _sessionSvc.createInitialSession(arg);
     return ChatState(session: session);
+  }
+
+  void loadOlderMessages() {
+    final current = state.value;
+    if (current == null || !current.hasMoreOlder || current.isLoadingOlder) return;
+
+    final newStart = current.visibleStartIndex > ChatState.olderPageSize
+        ? current.visibleStartIndex - ChatState.olderPageSize
+        : 0;
+    state = AsyncData(current.copyWith(
+      visibleStartIndex: newStart,
+      isLoadingOlder: false,
+    ));
   }
 
   CancelToken? _cancelToken;

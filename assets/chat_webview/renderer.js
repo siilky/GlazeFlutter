@@ -133,6 +133,66 @@ class Renderer {
           padding: 2px 4px;
           border-radius: 4px;
         }
+        .glaze-message .chat-quote-unclosed {
+          color: var(--current-quote-color, var(--quote-color, #7996CE));
+          opacity: 0.7;
+        }
+        .glaze-message .code-block-wrapper {
+          position: relative;
+          margin: 8px 0;
+        }
+        .glaze-message .code-lang {
+          position: absolute;
+          top: 4px;
+          right: 8px;
+          font-size: 10px;
+          opacity: 0.4;
+          text-transform: uppercase;
+          font-family: monospace;
+        }
+        .glaze-message .janitor-img-wrapper {
+          display: inline-block;
+          max-width: 100%;
+          margin: 4px 0;
+        }
+        .glaze-message .janitor-img-wrapper .janitor-img {
+          max-width: 100%;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+        .reasoning-block {
+          margin: 8px 0;
+          border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+          border-radius: 8px;
+          overflow: hidden;
+          font-size: 0.9em;
+          opacity: 0.85;
+        }
+        .reasoning-summary {
+          padding: 8px 12px;
+          cursor: pointer;
+          background: rgba(0,0,0,0.05);
+          font-weight: 500;
+          list-style: none;
+        }
+        .reasoning-summary::-webkit-details-marker {
+          display: none;
+        }
+        .reasoning-summary::before {
+          content: '▶';
+          display: inline-block;
+          margin-right: 6px;
+          transition: transform 0.2s;
+          font-size: 0.8em;
+        }
+        .reasoning-block[open] > .reasoning-summary::before {
+          transform: rotate(90deg);
+        }
+        .reasoning-content {
+          padding: 8px 12px;
+          border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));
+          font-style: italic;
+        }
         .edit-textarea {
           width: 100%;
           min-height: 80px;
@@ -304,6 +364,15 @@ class Renderer {
       right.appendChild(swipe);
     }
 
+    if (messageData.role === 'assistant' && messageData.isLast) {
+      const regenBtn = document.createElement('button');
+      regenBtn.className = 'regen-btn';
+      regenBtn.dataset.messageId = id;
+      regenBtn.textContent = '↻';
+      regenBtn.title = 'Regenerate';
+      right.appendChild(regenBtn);
+    }
+
     const menuBtn = document.createElement('button');
     menuBtn.className = 'meta-menu-btn';
     menuBtn.dataset.messageId = id;
@@ -349,7 +418,7 @@ class Renderer {
     let matchIndex = 0;
 
     const escapedQuery = this.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+    const regex = new RegExp(`(${escapedQuery})(?![^<]*>)`, 'gi');
 
     return html.replace(regex, (match) => {
       const isActive = matchIndex === this.activeSearchIndex;
@@ -370,23 +439,34 @@ class Renderer {
       if (content && content.shadowRoot) {
         const messageContent = content.shadowRoot.querySelector('.glaze-message');
         if (messageContent) {
-          const text = messageContent.textContent;
+          const rawText = messageEl.dataset.rawText || '';
           const isUser = messageEl.classList.contains('message-user');
-          const formatted = this.formatter.format(text, isUser);
+          const formatted = this.formatter.format(rawText, isUser);
           const highlighted = this._applySearchHighlight(formatted);
           messageContent.innerHTML = highlighted;
         }
       }
     });
+
+    if (activeIndex >= 0) {
+      this._scrollToActiveMatch();
+    }
+  }
+
+  _scrollToActiveMatch() {
+    const messages = document.querySelectorAll('.message-content');
+    for (const msgContent of messages) {
+      if (msgContent.shadowRoot) {
+        const active = msgContent.shadowRoot.querySelector('.search-highlight.active');
+        if (active) {
+          active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+      }
+    }
   }
 
   scrollToSearchMatch(index) {
-    this.activeSearchIndex = index;
     this.setSearch(this.searchQuery, index);
-
-    const activeMatch = document.querySelector('.search-highlight.active');
-    if (activeMatch) {
-      activeMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
   }
 }

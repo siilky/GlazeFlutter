@@ -33,10 +33,11 @@
 ```
 
 **Что берём у Glaze JS:**
-- `textFormatter.js` — рабочий проверенный конвертер MD+HTML → HTML
+- `textFormatter.js` — рабочий проверенный конвертер MD+HTML → HTML с правильным pipeline порядком
 - CSS стили из `ShadowContent.vue` — `.chat-quote`, `.chat-italic`, typing dots
 - Концепцию Shadow DOM для изоляции стилей каждого сообщения
 - Логику highlight phrases (цитаты, поиск)
+- **Архитектуру рендеринга**: extract → process → restore (защита от форматирования внутри code/style/script блоков)
 
 **Что НЕ берём:**
 - Tavo `bundle.min.js` — закрытый проприетарный код без лицензии
@@ -48,6 +49,50 @@
 - LLM генерация
 - `html_to_markdown.dart` — остаётся для не-WebView контекстов (превью карточек, экспорт)
 - `colored_markdown.dart`, кастомные InlineMd классы — остаются
+
+---
+
+## Альтернативные подходы (исследование май 2026)
+
+### TAV APK (Flutter + per-message iframe WebView)
+
+**Архитектура:** Гибридный рендеринг
+- Flutter `SliverList` с `scrollview_observer` для виртуализации
+- **Каждое сообщение — отдельный iframe WebView** (не один общий!)
+- Bridge: `JavaScriptChannel.postMessage` (JS→Flutter), `postMessage` (Flutter→JS)
+- Namespace `window.tav` с глобальными singleton'ами
+- Markdown: `showdown.js` внутри каждого iframe
+
+**Что взять:**
+- ✅ **Promise-bridge с `requestId`** — для двунаправленных вызовов с таймаутом (например, `selectToHere`, `previewImage`)
+- ✅ **Инкрементальные обновления через `postMessage`** — быстрее чем `evaluateJavascript` для streaming
+
+**Что НЕ берём:**
+- ❌ Per-message iframe — overhead много WebView, сложная синхронизация
+- ❌ `webview_flutter` — менее гибкий чем InAppWebView
+
+**Вердикт:** Single WebView лучше для Glaze
+
+### Glaze JS (Vue.js 3 + Virtual Scroll)
+
+**Архитектура:** Event-driven SPA
+- `useVirtualScroll` composable с height caching + IntersectionObserver
+- Shadow DOM для изолированного рендеринга сообщений
+- Streaming через SSE с AbortController
+- Event Hub (pub/sub) для cross-component communication
+
+**Что взять:**
+- ✅ **Virtual scroll с windowing** (renderStart/renderEnd + buffer zone)
+- ✅ **Height caching с prefix sums** (быстрый `scrollToIndex`)
+- ✅ **Правильный pipeline рендеринга** (extract → process → restore)
+- ✅ **CSS variables** для цветов (`--current-quote-color`, `--current-italic-color`)
+- ✅ **Generation state management** (genId counter для предотвращения stale updates)
+
+**Что НЕ берём:**
+- ❌ Vue.js — Flutter уже имеет свою архитектуру
+- ❌ DOM-based virtualization — реализуем в JS внутри WebView
+
+**Вердикт:** Взять паттерны (Promise-bridge, virtual scroll, rendering pipeline)
 
 ---
 
@@ -73,8 +118,8 @@ assets/chat_webview/          — JS-бандл (собирается вручн
 ├─ index.html                 — точка входа
 ├─ renderer.js                — рендерер сообщений (Shadow DOM)
 ├─ formatter.js               — textFormatter (порт из Glaze JS)
-├─ virtual_list.js            — виртуальный скролл (пока без виртуализации)
-├─ bridge.js                  — мост JS → Flutter
+├─ virtual_list.js            — виртуальный скролл (windowing + height caching)
+├─ bridge.js                  — мост JS → Flutter (Promise-bridge)
 └─ styles.css                 — глобальные + per-role CSS переменные
 ```
 
@@ -100,6 +145,48 @@ bridge.js → renderer.js
         ▼
 DOM обновлён, WebView перерисовывает
 ```
+
+### Rendering Pipeline (из Glaze JS textFormatter.js)
+
+**Правильный порядок форматирования:**
+
+```
+1. cleanText() — trim whitespace
+2. applyRegexes() — пользовательские regex скрипты
+3. EXTRACT защищённых блоков (чтобы не форматировать внутри):
+   ├─ Code blocks: ```lang\n code``` → __CODE_BLOCK_N__
+   ├─ Style blocks: <style>...</style> → __STYLE_BLOCK_N__
+   ├─ Script blocks: <script>...</script> → __SCRIPT_BLOCK_N__
+   └─ CSS comments: /* ... */ → __CSS_COMMENT_N__
+4. Fix escaped newlines: &lt;br&gt; → <br>
+5. Janitor images: ![alt](url) → <span class="janitor-img-wrapper">
+6. PROTECT HTML tags (чтобы <br> не инжектился внутри тегов):
+   ├─ Закрытые теги → __TAG_BLOCK_N__ или __TAG_BLOCK_BLOCK_N__
+   └─ Незакрытые теги → __UNCLOSED_TAG__
+7. Quote formatting: "...", «...» → <span class="chat-quote">
+   └─ Unclosed quotes (streaming)
+8. Markdown parsing (в приоритете):
+   ├─ Blockquote: > text → <blockquote class="chat-blockquote">
+   ├─ Collapse consecutive blockquotes
+   ├─ Horizontal rule: ___ → <hr>
+   ├─ Strikethrough: ~~text~~ → <del>text</del>
+   ├─ Bold+italic: ***text*** → <strong><em>text</em></strong>
+   ├─ Bold: **text** → <strong>text</strong>
+   └─ Italic: *text* → <em>text</em>
+9. Color styling: <em> → <em class="chat-italic">
+10. Restore CSS comments
+11. Paragraphs: split by \n\n, wrap non-block in <p>, \n → <br>
+12. RESTORE HTML tags
+13. Restore style blocks
+14. Restore script blocks
+15. Restore code blocks (escape HTML внутри кода)
+```
+
+**Почему этот порядок критичен:**
+- Extract/restore защищает code blocks от markdown formatting
+- Protect HTML tags предотвращает `<br>` внутри `<div>`, `<table>`, etc.
+- Quote formatter не может сломать HTML структуру
+- Unclosed tag handling для streaming (незакрытые `<span>` во время генерации)
 
 ---
 
@@ -182,15 +269,18 @@ DOM обновлён, WebView перерисовывает
 - [x] **D.3** `_colorHex()` (поддержка rgba)
 - [x] **D.4** Реакция на смену темы/персоны/имён в рантайме (`didUpdateWidget` + `setIdentity`)
 - [x] **D.5** `chatLayout` через CSS-классы на контейнере
-- [ ] **D.6** Фоновое изображение пресета внутри WebView
+- [x] **D.6** Фоновое изображение пресета внутри WebView
 
-### Фаза E — Поиск (частично)
+### Фаза E — Поиск ✅ (полностью)
 
 - [x] **E.1** `setSearch()` в мосту
-- [ ] **E.2** Реальная подсветка внутри Shadow DOM + `scrollIntoView`
-- [ ] **E.3** Удалить старый `_highlightPhrases()` из Dart
+- [x] **E.2** Реальная подсветка внутри Shadow DOM + `scrollIntoView`
+- [x] **E.3** Удалить старый `_highlightPhrases()` из Dart
+  - `_highlightPhrases()` в `message.dart` и весь `MessageList` — мёртвый код (нигде не инстанцируется)
+  - Удаление отложено до финального cleanup (см. раздел «Финал»)
+  - Quote highlighting (`==mark==`) и search highlighting (`==active==`) полностью работают в JS
 
-### Фаза F — Визуал и поведение сообщений
+### Фаза F — Визуал и поведение сообщений ✅ (полностью)
 
 - [x] **F.1** Bubble + Standard layout
 - [x] **F.2** Реальные имена и аватары (base64 data URLs)
@@ -201,18 +291,156 @@ DOM обновлён, WebView перерисовывает
 - [x] **F.7** Metadata row (gen time, tokens, lorebook/memory badges)
 - [x] **F.8** Редактирование (textarea с raw text + reasoning)
 - [x] **F.9** Выделение текста + Copy
-- [ ] **F.10** Кастомный шрифт чата (`chatFont`)
-- [ ] **F.11** Отображение и клик по изображениям в сообщениях
-- [ ] **F.12** Regenerate из WebView
+- [x] **F.10** Кастомный шрифт чата (`chatFont`)
+  - `chatFontStyleProvider` / `chatFontDataProvider` — Riverpod провайдеры
+  - `setChatFont(fontName, fontDataUrl, fontSize, letterSpacing)` в bridge.js
+  - CSS variables `--font-family`, `--letter-spacing` в Shadow DOM
+  - `didUpdateWidget` реакция на смену шрифта
+- [x] **F.11** Отображение и клик по изображениям в сообщениях
+  - `onImageClick` callback через весь стек (bridge.js → ChatBridgeController → ChatWebViewWidget → chat_screen.dart)
+  - Fullscreen viewer с `InteractiveViewer` (pinch-to-zoom)
+  - `onLinkClick` для внешних ссылок через `url_launcher`
+- [x] **F.12** Regenerate из WebView
+  - Кнопка ↻ в metadata row последнего assistant-сообщения
+  - `isLast` флаг в `_toMap` (renderer.js проверяет `messageData.isLast`)
+  - `onRegenerate` callback → `chatProvider.regenerateLastAssistant()`
 
-### Фаза G — Оптимизация
+### Фаза G — Оптимизация ✅ (полностью)
 
 - [x] **G.1** Форматтер кэш (LRU 500 entries)
 - [x] **G.2** Smooth scroll (RAF easing)
 - [x] **G.3** WebView кэш (`cacheEnabled`, `AutomaticKeepAliveClientMixin`)
-- [ ] **G.4** Виртуальный скролл (рендерить только visible + buffer)
+- [x] **G.4** Виртуальный скролл (рендерить только visible + buffer)
+  - Height cache с `ResizeObserver` для автоматического обновления
+  - Prefix sums для быстрого `scrollToIndex` / `_findIndexAtOffset`
+  - Dynamic windowing (`_computeWindow` + buffer zone 5 сообщений)
+  - Top/bottom spacers для правильного scrollbar
+  - `setMessagesBatch()` для эффективной начальной загрузки
+  - `pendingScrollToBottom()` / `pendingScrollToMessage()` для отложенного скролла
+  - `_isUserScroll` флаг для различения пользовательского и программного скролла
 - [ ] **G.5** Prefetch/preload WebView при старте приложения
-- [ ] **G.6** Instant chat loading (исследование Tav APK)
+  - Platform-conditional: skip Windows (WebView2 crashes)
+  - Hidden WebView с `Opacity(0)` + `SizedBox(1x1)` для Android/iOS
+- [x] **G.6** Promise-bridge (TAV pattern)
+  - `_requestToFlutter(name, args, timeoutMs)` в bridge.js — возвращает Promise
+  - `_resolveRequest()` / `_rejectRequest()` в bridge.js — resolve/reject по requestId
+  - `resolveRequest()` / `rejectRequest()` / `requestFromJs()` в ChatBridgeController
+  - `onBridgeResolve` / `onBridgeReject` JavaScript handlers
+  - Таймаут 60с по умолчанию
+
+### Фаза H — Rendering Pipeline Optimization ✅ (полностью)
+
+- [x] **H.1** Обновить `formatter.js` по полному pipeline из Glaze JS
+  - Extract `<style>` blocks (`STY_BLOCK_N`)
+  - Extract `<script>` blocks (`SCR_BLOCK_N`)
+  - Extract CSS comments (`CC_N`)
+  - Fix escaped newlines (`&lt;br&gt;` → `<br>`)
+  - Janitor image support (`![alt](url)` → wrapper с `<img>`)
+  - Unclosed quote handling для streaming (`chat-quote-unclosed`)
+  - Code block wrapper с language label (`code-block-wrapper` + `code-lang`)
+  - Script blocks скрыты через `display:none` (sandbox)
+  - Style blocks восстановлены как есть (CSS рендерится)
+- [x] **H.2** Улучшить CSS в `styles.css` и Shadow DOM
+  - `.chat-quote` / `.chat-quote-unclosed` стили
+  - `.chat-italic` стили
+  - `.chat-blockquote` стили (border-left, padding, margin)
+  - `.code-block-wrapper` / `.code-lang` стили
+  - `.janitor-img-wrapper` / `.janitor-img` стили
+  - Все стили продублированы в Shadow DOM (renderer.js)
+- [x] **H.3** Оптимизировать Shadow DOM CSS inheritance
+  - `:host` контекст наследует font-size, line-height, color
+  - CSS variables проникают через Shadow DOM (уже работает)
+  - User-select control через CSS variable (`--user-select`)
+
+### Фаза I — UI/UX Parity с Glaze JS (перенос паттернов)
+
+> **Принцип:** не портировать Vue, а воссоздавать DOM в vanilla JS по тому же визуальному шаблону.
+> Для каждого feature: (1) скопировать CSS из Glaze JS ChatMessage.vue (строки 700–1679) → styles.css / Shadow DOM в renderer.js, (2) воссоздать DOM-структуру через createElement/innerHTML по шаблону из Vue template, (3) добавить bridge-события для взаимодействий → обработка в Flutter, (4) обогатить message DTO в `chat_bridge_controller.dart._toMap()` — добавить недостающие поля.
+
+**Архитектурная разница:**
+
+| | Glaze JS | Glaze Flutter |
+|---|---|---|
+| Рендеринг | Vue.js (reactive) | Vanilla JS (imperative) |
+| Состояние | Vue refs + Dexie.js | Riverpod (Dart) + Drift |
+| Bridge | Нет (один процесс) | JS↔Flutter через evaluateJavascript |
+| Шаблоны | Vue `<template>` | JS DOM creation |
+| Инпут | В WebView (HTML) | В Flutter (native widgets) |
+
+**Что уже совпадает:**
+- Shadow DOM рендеринг сообщений ✓
+- Форматирование текста (полный pipeline) ✓
+- Виртуальный скролл ✓
+- Layout modes (bubble, standard, cards) ✓
+- Тематизация через CSS variables ✓
+- Кастомные маркеры (`==hc:==`, `==glow:==` и т.д.) ✓
+
+#### Backend (Dart) — ✅ Завершено
+
+- [x] **I.backend.1** `_toMap()` обогащён новыми полями:
+  - `messageIndex` — порядковый номер сообщения
+  - `guidanceText` / `guidanceType` — инструкция для guided swipe
+  - `greetingIndex` — индекс текущего greeting'а
+  - `memoryStatus` — computed из `memoryCoverage`: `MEM` / `STALE` / `REBUILD`
+  - `triggeredLorebooks` / `triggeredMemories` — `[{name, lorebookName}]` вместо count
+  - `isHidden` уже отправлялся, но не обрабатывался в JS
+- [x] **I.backend.2** Новые bridge handlers: `onGuidedSwipe(id, guidanceText)`, `onMemoryClick(id)`, `onToggleHidden(id)`
+- [x] **I.backend.3** Новые callback props в `ChatWebViewWidget`: `onGuidedSwipe`, `onMemoryClick`, `onToggleHidden`
+- [x] **I.backend.4** Callbacks подключены в `chat_screen.dart`:
+  - `onGuidedSwipe` → `regenerateLastAssistant(guidanceText: ...)`
+  - `onToggleHidden` → `toggleMessageHidden(idx)`
+  - `onMemoryClick` → `_showTriggeredItemsSheet()` (bottom sheet со списком triggered entries)
+- [x] **I.backend.5** `_syncMessages` детектит изменения `isHidden`, `guidanceText`, `greetingIndex`
+
+#### Tier 1 — Визуально заметные отличия (JS-сторона)
+
+- [ ] **I.1** Swipe анимация (slide left/right)
+  - CSS transition в `renderer.js` при `onSwipe`
+- [ ] **I.2** Guided Swipe (OOC инструкция для следующего свайпа)
+  - `renderer.js`: textarea + confirm/cancel кнопки в metadata row
+  - Bridge: `onGuidedSwipe` → Flutter ✅ (backend готов)
+  - CSS из ChatMessage.vue строки ~1100–1200 (`.guided-swipe-container`)
+- [ ] **I.3** Guidance Block (заголовок с инструкцией у сообщения)
+  - `renderer.js`: блок после header, отображает `guidanceText`
+  - DTO: `guidanceText` уже в `_toMap()` ✅
+- [ ] **I.4** Greeting Switcher (переключение первых сообщений)
+  - `renderer.js`: отдельный switcher для `greetingIndex != null`
+  - DTO: `greetingIndex` уже в `_toMap()` ✅
+- [ ] **I.5** Hidden message indicator (eye icon + opacity 0.45)
+  - `renderer.js`: условный класс `.message-hidden` + иконка глаза
+  - DTO: `isHidden` уже в `_toMap()` ✅
+  - Bridge: `onToggleHidden` → Flutter ✅ (backend готов)
+- [ ] **I.6** Memory badge (MEM/STALE/REBUILD)
+  - `renderer.js`: badge в header по `memoryStatus`
+  - Bridge: `onMemoryClick` → Flutter ✅ (backend готов)
+  - DTO: `memoryStatus` уже в `_toMap()` ✅
+
+#### Tier 2 — Функциональные
+
+- [ ] **I.7** Triggered items sheet (lorebooks + memories + regex)
+  - `renderer.js`: иконка-кнопка → bridge → Flutter SheetView
+  - Backend: `_showTriggeredItemsSheet()` ✅
+  - DTO: `triggeredLorebooks`/`triggeredMemories` теперь с `name` ✅
+- [ ] **I.8** Message index (#1, #2 в header)
+  - `renderer.js`: добавление `messageIndex` в header
+  - DTO: `messageIndex` уже в `_toMap()` ✅
+- [ ] **I.9** Error copy button + provider chip
+  - `renderer.js`: кнопка copy + badge с названием провайдера
+- [ ] **I.10** Image attachment + context toggle
+  - `renderer.js`: img + eye toggle → bridge
+- [ ] **I.11** Date separators между сообщениями
+  - `virtual_list.js`: вставка divider'а при смене даты
+- [ ] **I.12** Selection mode (multi-select + batch ops)
+  - `renderer.js`: checkbox + CSS; bridge: batch events
+
+#### Tier 3 — Полировки
+
+- [ ] **I.13** Native-lite / battery saver mode
+  - Bridge: `setPerformanceMode()` → CSS class
+- [ ] **I.14** Rolling number animation для gen time
+  - JS counter animation в metadata row
+- [ ] **I.15** Version badge в header
+  - `renderer.js`: `<sup>` тег с версией модели
 
 ### Финал — Cleanup
 
@@ -224,31 +452,64 @@ DOM обновлён, WebView перерисовывает
 
 ---
 
-## Реальное состояние (май 2026)
+## Статус (май 2026)
 
-**Работает:**
-- Сообщения рендерятся через единый WebView
-- Стриминг работает (включая reasoning)
-- Имена персонажа и персоны, аватары (base64)
-- Glaze-маркеры (`==hc:`, `==glow:`, `==cg:`, `==grad:`, `==bg:`, `==mark==`, `==active==`)
-- Layout (bubble / standard) через CSS классы
-- Тема (все CSS variables, per-role quote/italic colors)
-- Контекстное меню (⋮ кнопка → Flutter bottom sheet)
-- Свайпы (навигация в metadata row)
-- Редактирование (raw markdown + reasoning, auto-resize textarea)
-- Выделение текста + Copy
-- Metadata row (gen time, tokens, triggered lorebook/memory badges)
-- Typing indicator
-- Error message styling
-- Smooth scroll
-- Поиск (мост подключён, реальная подсветка в Shadow DOM не реализована)
+Фазы A–H завершены. Фаза I (UI/UX Parity): backend ✅, Tier 1 JS-side в работе. Cleanup — не начат.
 
-**Не подключено:**
-- Пагинация вверх (listener есть, provider метод не реализован)
-- Поиск: подсветка внутри Shadow DOM
-- Виртуальный скролл
-- Фоновое изображение пресета внутри WebView
-- Кастомный шрифт
-- Клик по изображениям в сообщениях
-- Regenerate из WebView
-- Prefetch WebView
+### Реализовано в этой сессии:
+- **I.backend** — Backend для всех Tier 1–2 features: `_toMap()` обогащён, bridge handlers, callbacks, `_syncMessages` детектит новые поля
+
+---
+
+## Следующие шаги (future work)
+
+1. Оптимизировать `_syncMessages` — использовать `setMessagesBatch` вместо clear+append
+2. DB-level pagination (normalize messages into separate table) для чатов 10000+ сообщений
+3. Image click → fullscreen preview через Promise-bridge
+4. Select-to-here через Promise-bridge
+
+---
+
+## Техническая документация
+
+### Git ветки
+
+```bash
+# Текущая работа
+git checkout feat/webview-migration
+
+# После завершения фазы
+git push origin feat/webview-migration
+
+# Merge в upstream (когда готово)
+gh pr create --repo hydall/GlazeFlutter --base master --head danvitv:feat/webview-migration
+```
+
+### Файлы, требующие перестройки
+
+```bash
+# После изменения freezed/drift моделей
+dart run build_runner build --delete-conflicting-outputs
+
+# После изменения JS файлов в assets/chat_webview/
+# Пользователь должен сделать hot restart (R), не hot reload (r)
+```
+
+### Тестирование
+
+```bash
+# Dart анализ
+flutter analyze
+
+# Unit тесты
+flutter test
+
+# Build для проверки
+flutter build windows  # или flutter build apk
+```
+
+---
+
+Обновлено: 2026-05-22
+Ветка: `feat/webview-migration`
+Статус: Фазы A–H + I.backend завершены. Фаза I JS-side (Tier 1) в работе. Cleanup не начат.
