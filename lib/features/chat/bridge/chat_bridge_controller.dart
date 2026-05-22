@@ -16,7 +16,8 @@ class ChatBridgeController {
   String? _charAvatarDataUrl;
   String? _personaAvatarDataUrl;
   bool isGenerating = false;
-  int lastProcessedMessageCount = 0;
+  final Set<String> _pendingMemoryIds = {};
+  final Set<String> _draftMemoryIds = {};
 
   ChatBridgeController(this._controller) {
     _setupHandlers();
@@ -258,10 +259,10 @@ class ChatBridgeController {
     );
   }
 
-  Future<void> setMessages(List<ChatMessage> messages, {int offset = 0}) {
+  Future<void> setMessages(List<ChatMessage> messages) {
     final List<Map<String, dynamic>> mapped = [];
     for (int i = 0; i < messages.length; i++) {
-      mapped.add(_toMap(messages[i], isLast: i == messages.length - 1, messageIndex: offset + i));
+      mapped.add(_toMap(messages[i], isLast: i == messages.length - 1));
     }
     final json = jsonEncode(mapped);
     return _callJs('setMessages', json);
@@ -393,19 +394,24 @@ class ChatBridgeController {
     }
 
     String? memoryStatus;
-    final isCovered = messageIndex != null && messageIndex < lastProcessedMessageCount;
     if (m.memoryCoverage.isNotEmpty) {
       final needsRebuild = m.memoryCoverage['needsRebuild'] as bool? ?? false;
       final stale = m.memoryCoverage['stale'] as bool? ?? false;
+      final entryIds = m.memoryCoverage['entryIds'];
+      final hasEntries = entryIds is List && entryIds.isNotEmpty;
       if (needsRebuild) {
         memoryStatus = 'REBUILD';
       } else if (stale) {
         memoryStatus = 'STALE';
-      } else if (isCovered) {
+      } else if (hasEntries) {
         memoryStatus = 'MEM';
       }
-    } else if (isCovered) {
-      memoryStatus = 'MEM';
+    }
+    if (memoryStatus == null && isPendingMemory(m.id)) {
+      memoryStatus = 'PENDING';
+    }
+    if (memoryStatus == null && isDraftMemory(m.id)) {
+      memoryStatus = 'DRAFT';
     }
 
     return {
@@ -452,5 +458,35 @@ class ChatBridgeController {
     result = result.replaceAll(_thinkingTagRegex, '');
     result = result.replaceAll(_thinkingTagAltRegex, '');
     return result.trim();
+  }
+
+  bool isPendingMemory(String messageId) => _pendingMemoryIds.contains(messageId);
+  bool isDraftMemory(String messageId) => _draftMemoryIds.contains(messageId);
+
+  void updateMemoryBookData({
+    required List<Map<String, dynamic>> entries,
+    required List<Map<String, dynamic>> pendingDrafts,
+  }) {
+    _pendingMemoryIds.clear();
+    _draftMemoryIds.clear();
+    for (final entry in entries) {
+      final status = entry['status'] as String?;
+      if (status == 'pending_generation') {
+        final ids = entry['messageIds'];
+        if (ids is List) {
+          for (final id in ids) {
+            _pendingMemoryIds.add(id.toString());
+          }
+        }
+      }
+    }
+    for (final draft in pendingDrafts) {
+      final ids = draft['messageIds'];
+      if (ids is List) {
+        for (final id in ids) {
+          _draftMemoryIds.add(id.toString());
+        }
+      }
+    }
   }
 }

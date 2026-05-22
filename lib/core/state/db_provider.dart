@@ -11,6 +11,7 @@ import '../db/repositories/lorebook_repo.dart';
 import '../db/repositories/embedding_repo.dart';
 import '../db/repositories/summary_repo.dart';
 import '../db/repositories/memory_book_repo.dart';
+import '../models/memory_book.dart';
 import '../services/character_importer.dart';
 import '../services/image_storage_service.dart';
 import '../services/migration_service.dart';
@@ -82,8 +83,7 @@ final memoryBookRepoProvider = Provider<MemoryBookRepo>((ref) {
   return MemoryBookRepo(ref.watch(appDbProvider), ref);
 });
 
-final memoryProcessedCountProvider = FutureProvider.family<int, String>((ref, sessionId) async {
+final memoryBookProvider = FutureProvider.family<MemoryBook?, String>((ref, sessionId) async {
   final repo = ref.watch(memoryBookRepoProvider);
-  final book = await repo.getBySessionId(sessionId);
-  return book?.lastProcessedMessageCount ?? 0;
+  return repo.getBySessionId(sessionId);
 });

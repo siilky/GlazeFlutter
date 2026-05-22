@@ -106,18 +106,39 @@
 }
 
 .memory-badge-mem {
-  background: rgba(0, 150, 136, 0.2);
-  color: #4db6ac;
+  background: rgba(30, 200, 255, 0.12);
+  color: #1ec8ff;
+  border: 1px solid rgba(30, 200, 255, 0.35);
+}
+
+.memory-badge-pending {
+  background: rgba(255, 215, 0, 0.12);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  animation: pending-pulse 2s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.memory-badge-draft {
+  background: rgba(199, 156, 255, 0.12);
+  color: #c79cff;
+  border: 1px solid rgba(199, 156, 255, 0.35);
 }
 
 .memory-badge-stale {
-  background: rgba(255, 152, 0, 0.2);
-  color: #ffb74d;
+  background: rgba(255, 123, 123, 0.12);
+  color: #ff7b7b;
+  border: 1px solid rgba(255, 123, 123, 0.35);
 }
 
 .memory-badge-rebuild {
-  background: rgba(244, 67, 54, 0.2);
-  color: #ef5350;
+  background: rgba(255, 179, 71, 0.12);
+  color: #ffb347;
+  border: 1px solid rgba(255, 179, 71, 0.35);
 }
 
 .hidden-indicator {

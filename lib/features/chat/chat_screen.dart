@@ -639,7 +639,7 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                       child: Builder(builder: (context) {
                         final character = ref.watch(characterByIdProvider(widget.charId));
                         final effectivePersona = ref.watch(effectivePersonaForChatProvider(widget.charId));
-                        final memProcessed = ref.watch(memoryProcessedCountProvider(widget.state.session?.id ?? ''));
+                        final memBook = ref.watch(memoryBookProvider(widget.state.session?.id ?? ''));
                         return ChatWebViewWidget(
                           messages: widget.state.visibleMessages,
                           charId: widget.charId,
@@ -658,8 +658,8 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                           chatFontDataUrl: fontDataUrl,
                           chatFontSize: fontStyle.fontSize,
                           chatLetterSpacing: fontStyle.letterSpacing,
-                          lastProcessedMessageCount: memProcessed.valueOrNull ?? 0,
-                          visibleStartIndex: widget.state.visibleStartIndex,
+                          memoryEntries: memBook.valueOrNull?.entries ?? [],
+                          memoryDrafts: memBook.valueOrNull?.pendingDrafts ?? [],
                           onMessageContext: (index, messageId, isUser, isSystem, content) {
                             showMessageContextMenu(
                               context: context,

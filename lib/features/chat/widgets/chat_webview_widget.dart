@@ -45,8 +45,8 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
   final String? chatFontDataUrl;
   final double chatFontSize;
   final double chatLetterSpacing;
-  final int lastProcessedMessageCount;
-  final int visibleStartIndex;
+  final List<dynamic> memoryEntries;
+  final List<dynamic> memoryDrafts;
 
   const ChatWebViewWidget({
     super.key,
@@ -81,8 +81,8 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
     this.chatFontDataUrl,
     this.chatFontSize = 15.0,
     this.chatLetterSpacing = 0.0,
-    this.lastProcessedMessageCount = 0,
-    this.visibleStartIndex = 0,
+    this.memoryEntries = const [],
+    this.memoryDrafts = const [],
   });
 
   @override
@@ -142,8 +142,11 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       letterSpacing: widget.chatLetterSpacing,
     );
 
-    await _bridge!.setMessages(widget.messages, offset: widget.visibleStartIndex);
-    _bridge!.lastProcessedMessageCount = widget.lastProcessedMessageCount;
+    await _bridge!.setMessages(widget.messages);
+    _bridge!.updateMemoryBookData(
+      entries: widget.memoryEntries.map((e) => {'status': e.status, 'messageIds': e.messageIds}).toList(),
+      pendingDrafts: widget.memoryDrafts.map((e) => {'messageIds': e.messageIds}).toList(),
+    );
     if (widget.bottomInset > 0) {
       await _bridge!.setBottomPadding(widget.bottomInset);
     }
@@ -159,8 +162,11 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     super.didUpdateWidget(old);
     if (!_ready || _bridge == null) return;
 
-    if (widget.lastProcessedMessageCount != old.lastProcessedMessageCount) {
-      _bridge!.lastProcessedMessageCount = widget.lastProcessedMessageCount;
+    if (widget.memoryEntries != old.memoryEntries || widget.memoryDrafts != old.memoryDrafts) {
+      _bridge!.updateMemoryBookData(
+        entries: widget.memoryEntries.map((e) => {'status': e.status, 'messageIds': e.messageIds}).toList(),
+        pendingDrafts: widget.memoryDrafts.map((e) => {'messageIds': e.messageIds}).toList(),
+      );
     }
 
     // Check if charId changed (switching chats)
@@ -183,7 +189,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
         letterSpacing: widget.chatLetterSpacing,
       );
       _bridge!.clearAll();
-      _bridge!.setMessages(widget.messages, offset: widget.visibleStartIndex);
+      _bridge!.setMessages(widget.messages);
       _bridge!.scrollToBottom();
       return;
     }
@@ -246,7 +252,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
 
     if (newIds.length < oldIds.length) {
       _bridge?.clearAll();
-      _bridge?.setMessages(widget.messages, offset: widget.visibleStartIndex);
+      _bridge?.setMessages(widget.messages);
     }
 
     if (newIds.length > oldIds.length) {
@@ -268,7 +274,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       if (i >= newIds.length) break;
       if (newIds[i] != oldIds[i]) {
         _bridge?.clearAll();
-        _bridge?.setMessages(widget.messages, offset: widget.visibleStartIndex);
+        _bridge?.setMessages(widget.messages);
         return;
       }
       final o = oldMsgs[i];

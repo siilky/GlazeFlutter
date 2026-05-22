@@ -285,22 +285,26 @@ class Renderer {
           font-weight: 500;
           list-style: none !important;
           display: flex !important;
-          align-items: center;
+          align-items: center !important;
           gap: 6px;
+          line-height: 1.4;
         }
         .glaze-message details summary::-webkit-details-marker {
           display: none !important;
         }
         .glaze-message details summary::marker {
-          display: none !important;
-          content: '';
+          content: '' !important;
         }
         .glaze-message details summary::before {
           content: '▶';
-          display: inline-block !important;
-          font-size: 0.8em;
+          font-size: 0.75em;
           transition: transform 0.2s;
           flex-shrink: 0;
+          line-height: 1;
+          vertical-align: middle;
+        }
+        .glaze-message details summary > * {
+          margin: 0;
         }
         .glaze-message details[open] > summary::before {
           transform: rotate(90deg);
