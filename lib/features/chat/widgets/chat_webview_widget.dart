@@ -264,23 +264,35 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       return;
     }
 
-    if (newIds.length < oldIds.length) {
-      _bridge?.clearAll();
-      _bridge?.setMessages(widget.messages);
-    }
-
     if (newIds.length > oldIds.length) {
-      final oldLastId = oldIds.last;
-      final newIdx = newIds.indexOf(oldLastId);
+      final oldFirstId = oldIds.first;
+      final newIdx = newIds.indexOf(oldFirstId);
       if (newIdx > 0) {
         _bridge?.prependMessages(widget.messages.sublist(0, newIdx));
-      } else if (newLen > oldIds.length) {
+        return;
+      }
+      if (newLen > oldIds.length) {
         final appends = widget.messages.sublist(
           oldIds.length,
           newLen,
         );
         _bridge?.appendMessages(appends);
+        return;
       }
+    }
+
+    if (newIds.length < oldIds.length) {
+      final newFirstId = newIds.first;
+      final oldIdx = oldIds.indexOf(newFirstId);
+      if (oldIdx > 0) {
+        for (int i = 0; i < oldIdx; i++) {
+          _bridge?.removeMessage(oldIds[i]);
+        }
+        return;
+      }
+      _bridge?.clearAll();
+      _bridge?.setMessages(widget.messages);
+      return;
     }
 
     final minLen = newLen < oldIds.length ? newLen : oldIds.length;

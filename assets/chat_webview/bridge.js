@@ -300,17 +300,19 @@ class Bridge {
   prependMessages(messagesJson) {
     const messages = JSON.parse(messagesJson);
     const scrollBefore = this.virtualList.container.scrollHeight;
-    messages.forEach(msg => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
       const rendered = this.renderer.renderMessage(msg);
       if (Array.isArray(rendered)) {
-        for (const el of rendered) {
+        for (let j = rendered.length - 1; j >= 0; j--) {
+          const el = rendered[j];
           const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
           this.virtualList.prepend(id, el);
         }
       } else {
         this.virtualList.prepend(msg.id, rendered);
       }
-    });
+    }
     const scrollAfter = this.virtualList.container.scrollHeight;
     this.virtualList.container.scrollTop = scrollAfter - scrollBefore;
     this._hideLoadingScreen();
