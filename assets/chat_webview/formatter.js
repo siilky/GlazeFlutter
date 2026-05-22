@@ -136,12 +136,34 @@ class Formatter {
 
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
+    // 10b. Markdown lists
+    const listBlocks = [];
+    html = html.replace(/((?:^|\n)((?:[-*] .+(?:\n|$))+))/g, (match) => {
+      const id = this._ph('LB_', listBlocks.length, true);
+      const items = match.trim().split('\n')
+        .filter(line => line.match(/^[-*] /))
+        .map(line => `<li>${line.replace(/^[-*] /, '')}</li>`)
+        .join('');
+      listBlocks.push(`<ul class="chat-list">${items}</ul>`);
+      return '\n\n' + id + '\n\n';
+    });
+    html = html.replace(/((?:^|\n)((?:\d+\. .+(?:\n|$))+))/g, (match) => {
+      const id = this._ph('LB_', listBlocks.length, true);
+      const items = match.trim().split('\n')
+        .filter(line => line.match(/^\d+\. /))
+        .map(line => `<li>${line.replace(/^\d+\. /, '')}</li>`)
+        .join('');
+      listBlocks.push(`<ol class="chat-list">${items}</ol>`);
+      return '\n\n' + id + '\n\n';
+    });
+
     // 11. Paragraphs — isolate block placeholders, don't wrap in <p>
     const blockPh = '\x01T_BLOCK_\\d+\x01';
     const codePh = '\x01CB_\\d+\x01';
     const stylePh = '\x01STY_BLOCK_\\d+\x01';
     const scriptPh = '\x01SCR_BLOCK_\\d+\x01';
-    const allBlockPh = `${codePh}|${blockPh}|${stylePh}|${scriptPh}`;
+    const listPh = '\x01LB_BLOCK_\\d+\x01';
+    const allBlockPh = `${codePh}|${blockPh}|${stylePh}|${scriptPh}|${listPh}`;
     html = html.replace(new RegExp(`\\n?(${allBlockPh})\\n?`, 'g'), '\n\n$1\n\n');
 
     const paragraphs = html.split(/\n\n+/);
@@ -163,6 +185,9 @@ class Formatter {
 
     // 12. Restore HTML Tags
     html = html.replace(/\x01T_(?:BLOCK_)?(\d+)\x01/g, (_, i) => tagBlocks[parseInt(i)]);
+
+    // 12b. Restore list blocks
+    html = html.replace(/\x01LB_BLOCK_(\d+)\x01/g, (_, i) => listBlocks[parseInt(i)]);
 
     // 13. Restore CSS comments
     html = html.replace(/\x01CC_(\d+)\x01/g, (_, i) => cssComments[parseInt(i)]);

@@ -30,7 +30,7 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
   final String? searchQuery;
   final int searchCurrentIndex;
   final String? chatLayout;
-  final void Function(int index, bool isUser, bool isSystem, String content)? onMessageContext;
+  final void Function(int index, String messageId, bool isUser, bool isSystem, String content)? onMessageContext;
   final void Function(String id, String direction)? onSwipe;
   final void Function(String id)? onRegenerate;
   final void Function(String action, String text)? onSelectionAction;
@@ -104,6 +104,8 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
       charColor: widget.charColor,
       personaName: widget.personaName,
       layout: widget.chatLayout,
+      charAvatarPath: widget.charAvatarPath,
+      personaAvatarPath: widget.personaAvatarPath,
     );
 
     final glaze = context.colors;
@@ -276,18 +278,19 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
   Widget build(BuildContext context) {
     super.build(context);
 
-    ref.listen<int?>(
-      editingMessageIndexProvider(widget.charId),
+    ref.listen<String?>(
+      editingMessageIdProvider(widget.charId),
       (prev, next) {
         if (!_ready || _bridge == null) return;
-        if (prev != null && prev != next && prev < widget.messages.length) {
-          final oldMsg = widget.messages[prev];
-          _bridge!.stopEdit(oldMsg.id);
-          _bridge!.updateMessageContent(oldMsg.id, oldMsg.content, oldMsg.role == 'user');
+        if (prev != null && prev != next) {
+          _bridge!.stopEdit(prev);
+          final oldMsg = widget.messages.where((m) => m.id == prev).firstOrNull;
+          if (oldMsg != null) {
+            _bridge!.updateMessageContent(oldMsg.id, oldMsg.content, oldMsg.role == 'user');
+          }
         }
-        if (next != null && next < widget.messages.length) {
-          final newMsg = widget.messages[next];
-          _bridge!.startEdit(newMsg.id);
+        if (next != null) {
+          _bridge!.startEdit(next);
         }
       },
     );
@@ -337,7 +340,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
               final allMsgs = ref.read(chatProvider(widget.charId)).value?.messages ?? [];
               final idx = allMsgs.indexWhere((m) => m.id == id);
               if (idx < 0) return;
-              widget.onMessageContext?.call(idx, isUser, isSystem, content);
+              widget.onMessageContext?.call(idx, id, isUser, isSystem, content);
             };
             _bridge!.onSwipe = (id, direction) {
               widget.onSwipe?.call(id, direction);

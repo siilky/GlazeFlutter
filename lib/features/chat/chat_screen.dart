@@ -546,49 +546,57 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
             const SizedBox(height: 12),
             Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: context.cs.onSurface)),
             const SizedBox(height: 8),
-            ...entries.map((e) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(e.name,
-                      style: TextStyle(fontSize: 13, color: context.cs.onSurface),
-                      overflow: TextOverflow.ellipsis,
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: entries.map((e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(e.name,
+                            style: TextStyle(fontSize: 13, color: context.cs.onSurface),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (e.lorebookName.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Text(e.lorebookName,
+                            style: TextStyle(fontSize: 11, color: context.cs.onSurfaceVariant.withValues(alpha: 0.6)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: e.source == 'vector'
+                                ? Colors.purple.withValues(alpha: 0.15)
+                                : e.source == 'memory'
+                                    ? Colors.teal.withValues(alpha: 0.15)
+                                    : context.cs.primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            e.source == 'vector' ? 'vector' : e.source == 'memory' ? 'memory' : 'keyword',
+                            style: TextStyle(
+                              fontSize: 10, fontWeight: FontWeight.w500,
+                              color: e.source == 'vector'
+                                  ? Colors.purple
+                                  : e.source == 'memory'
+                                      ? Colors.teal
+                                      : context.cs.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  if (e.lorebookName.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Text(e.lorebookName,
-                      style: TextStyle(fontSize: 11, color: context.cs.onSurfaceVariant.withValues(alpha: 0.6)),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: e.source == 'vector'
-                          ? Colors.purple.withValues(alpha: 0.15)
-                          : e.source == 'memory'
-                              ? Colors.teal.withValues(alpha: 0.15)
-                              : context.cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      e.source == 'vector' ? 'vector' : e.source == 'memory' ? 'memory' : 'keyword',
-                      style: TextStyle(
-                        fontSize: 10, fontWeight: FontWeight.w500,
-                        color: e.source == 'vector'
-                            ? Colors.purple
-                            : e.source == 'memory'
-                                ? Colors.teal
-                                : context.cs.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
+                  )).toList(),
+                ),
               ),
-            )),
+            ),
           ],
         ),
       ),
@@ -648,13 +656,14 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                           chatFontDataUrl: fontDataUrl,
                           chatFontSize: fontStyle.fontSize,
                           chatLetterSpacing: fontStyle.letterSpacing,
-                          onMessageContext: (index, isUser, isSystem, content) {
+                          onMessageContext: (index, messageId, isUser, isSystem, content) {
                             showMessageContextMenu(
                               context: context,
                               ref: ref,
                               charId: widget.charId,
                               content: content,
                               messageIndex: index,
+                              messageId: messageId,
                               isUser: isUser,
                               isTyping: widget.state.isGenerating && index == widget.state.messages.length - 1,
                               isError: false,
@@ -688,10 +697,10 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                             if (idx >= 0 && text.isNotEmpty) {
                               ref.read(chatProvider(widget.charId).notifier).editMessage(idx, text);
                             }
-                            ref.read(editingMessageIndexProvider(widget.charId).notifier).state = null;
+                            ref.read(editingMessageIdProvider(widget.charId).notifier).state = null;
                           },
                           onEditCancel: (id) {
-                            ref.read(editingMessageIndexProvider(widget.charId).notifier).state = null;
+                            ref.read(editingMessageIdProvider(widget.charId).notifier).state = null;
                           },
                           onImageClick: (imageUrl) {
                             _showImageViewer(context, imageUrl);

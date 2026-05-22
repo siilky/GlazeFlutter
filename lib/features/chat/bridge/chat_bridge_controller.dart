@@ -400,7 +400,7 @@ class ChatBridgeController {
         memoryStatus = 'REBUILD';
       } else if (stale) {
         memoryStatus = 'STALE';
-      } else if (entryIds != null && entryIds.isNotEmpty) {
+      } else if (entryIds != null && entryIds.isNotEmpty && m.triggeredMemories.isNotEmpty) {
         memoryStatus = 'MEM';
       }
     }
