@@ -199,8 +199,34 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final regenTargetId = prevAssistant.id;
     _restorationMessage = prevAssistant;
 
+    final swipes = prevAssistant.swipes.isNotEmpty
+        ? [...prevAssistant.swipes, '']
+        : [prevAssistant.content, ''];
+    final newSwipeId = swipes.length - 1;
+    final swipesMeta = prevAssistant.swipesMeta.isNotEmpty
+        ? [...prevAssistant.swipesMeta, <String, dynamic>{}]
+        : [<String, dynamic>{'genTime': prevAssistant.genTime, 'reasoning': prevAssistant.reasoning, 'tokens': prevAssistant.tokens}, <String, dynamic>{}];
+
+    final clearedMsg = prevAssistant.copyWith(
+      content: '',
+      reasoning: null,
+      isTyping: true,
+      swipes: swipes,
+      swipeId: newSwipeId,
+      swipesMeta: swipesMeta,
+      genTime: null,
+      tokens: null,
+      isError: false,
+    );
+    final clearedMessages = [...current.messages];
+    clearedMessages[lastIdx] = clearedMsg;
+    final clearedSession = current.session!.copyWith(
+      messages: clearedMessages,
+      updatedAt: currentTimestampSeconds(),
+    );
+
     state = AsyncData(ChatState(
-      session: current.session,
+      session: clearedSession,
       isGenerating: true,
       generationStartTime: DateTime.now(),
       regenTargetId: regenTargetId,
@@ -441,6 +467,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
 
   void abortGeneration() {
     _activeGenId++;
+    final partialStreaming = ref.read(streamingStateProvider(arg));
     _cancelToken?.cancel();
     _cancelToken = null;
     _imgGenCancelToken?.cancel();
@@ -455,30 +482,41 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       if (regenId != null && restoration != null) {
         final idx = current.messages.indexWhere((m) => m.id == regenId);
         if (idx >= 0) {
-          final restored = current.messages[idx].copyWith(
-            content: restoration.content,
-            swipeId: restoration.swipeId,
-            swipes: restoration.swipes,
-            reasoning: restoration.reasoning,
-            genTime: restoration.genTime,
-            tokens: restoration.tokens,
-            swipesMeta: restoration.swipesMeta,
-            swipeDirection: restoration.swipeDirection,
+          final partialText = partialStreaming.text;
+          final keptSwipes = List<String>.from(restoration.swipes.isNotEmpty ? restoration.swipes : [restoration.content]);
+          final keptSwipesMeta = List<Map<String, dynamic>>.from(restoration.swipesMeta.isNotEmpty ? restoration.swipesMeta : [<String, dynamic>{'genTime': restoration.genTime, 'reasoning': restoration.reasoning, 'tokens': restoration.tokens}]);
+          if (partialText.isNotEmpty) {
+            keptSwipes.add(partialText);
+            keptSwipesMeta.add(<String, dynamic>{});
+          }
+          final newSwipeId = keptSwipes.length - 1;
+          final updated = current.messages[idx].copyWith(
+            content: partialText.isNotEmpty ? partialText : restoration.content,
+            swipeId: partialText.isNotEmpty ? newSwipeId : restoration.swipeId,
+            swipes: keptSwipes,
+            swipesMeta: keptSwipesMeta,
+            reasoning: partialText.isNotEmpty ? partialStreaming.reasoning : restoration.reasoning,
+            genTime: partialText.isNotEmpty ? null : restoration.genTime,
+            tokens: partialText.isNotEmpty ? null : restoration.tokens,
+            isTyping: false,
+            isError: false,
+            swipeDirection: partialText.isNotEmpty ? 'right' : restoration.swipeDirection,
           );
-          final restoredMessages = [...current.messages];
-          restoredMessages[idx] = restored;
-          final restoredSession = current.session?.copyWith(
-            messages: restoredMessages,
+          final updatedMessages = [...current.messages];
+          updatedMessages[idx] = updated;
+          final updatedSession = current.session?.copyWith(
+            messages: updatedMessages,
             updatedAt: currentTimestampSeconds(),
           );
-          if (restoredSession != null) {
-            ref.read(chatRepoProvider).put(restoredSession);
-            ChatSessionService.updateCache(restoredSession);
+          if (updatedSession != null) {
+            ref.read(chatRepoProvider).put(updatedSession);
+            ChatSessionService.updateCache(updatedSession);
           }
           state = AsyncData(ChatState(
-            session: restoredSession ?? current.session,
+            session: updatedSession ?? current.session,
             isGenerating: false,
             isGeneratingImage: false,
+            regenTargetId: null,
           ));
         } else {
           state = AsyncData(ChatState(
@@ -580,18 +618,23 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       if (result.regenTargetId == regenTargetId) {
         final finalState = result.copyWith(isGenerating: false, regenTargetId: null);
         state = AsyncData(finalState);
-      } else {
+      } else if (_restorationMessage != null) {
+        final originalMsg = _restorationMessage!;
+        final rollbackSwipes = originalMsg.swipes.isNotEmpty ? originalMsg.swipes : [originalMsg.content];
+        final rollbackSwipesMeta = originalMsg.swipesMeta.isNotEmpty ? originalMsg.swipesMeta : [<String, dynamic>{'genTime': originalMsg.genTime, 'reasoning': originalMsg.reasoning, 'tokens': originalMsg.tokens}];
         final idx = session.messages.indexWhere((m) => m.id == regenTargetId);
-        if (idx >= 0 && _restorationMessage != null) {
+        if (idx >= 0) {
           final restored = session.messages[idx].copyWith(
-            content: _restorationMessage!.content,
-            swipeId: _restorationMessage!.swipeId,
-            swipes: _restorationMessage!.swipes,
-            reasoning: _restorationMessage!.reasoning,
-            genTime: _restorationMessage!.genTime,
-            tokens: _restorationMessage!.tokens,
-            swipesMeta: _restorationMessage!.swipesMeta,
-            swipeDirection: _restorationMessage!.swipeDirection,
+            content: originalMsg.content,
+            swipeId: originalMsg.swipeId,
+            swipes: rollbackSwipes,
+            reasoning: originalMsg.reasoning,
+            genTime: originalMsg.genTime,
+            tokens: originalMsg.tokens,
+            swipesMeta: rollbackSwipesMeta,
+            swipeDirection: originalMsg.swipeDirection,
+            isTyping: false,
+            isError: false,
           );
           final restoredMessages = [...session.messages];
           restoredMessages[idx] = restored;
@@ -606,10 +649,13 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
             session: restoredSession,
             isGenerating: false,
             error: result.error,
+            regenTargetId: null,
           ));
         } else {
           state = AsyncData(result.copyWith(isGenerating: false, regenTargetId: null));
         }
+      } else {
+        state = AsyncData(result.copyWith(isGenerating: false, regenTargetId: null));
       }
     } else if (result.session?.messages.length == session.messages.length) {
       // No new message was saved (cancelled or failed)
