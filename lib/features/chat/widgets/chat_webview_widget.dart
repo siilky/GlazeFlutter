@@ -275,7 +275,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     if (anyGenerating != oldAnyGenerating || widget.isGenerating != old.isGenerating) {
       _bridge!.isGenerating = widget.isGenerating;
       _bridge!.isGeneratingImage = widget.isGeneratingImage;
-      _bridge!.evalJs('if (window.bridge) { window.bridge.isGenerating = ${widget.isGenerating}; window.bridge.isGeneratingImage = ${widget.isGeneratingImage}; }');
+      _bridge!.evalJs('if (window.bridge) { window.bridge.setGenerating(${widget.isGenerating}); window.bridge.isGeneratingImage = ${widget.isGeneratingImage}; }');
       if (!anyGenerating && widget.messages.isNotEmpty) {
         // Generation finished → show regen button on last user message
         final lastUser = widget.messages.lastWhereOrNull((m) => m.role == 'user');
@@ -471,6 +471,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
           content: next.text,
           reasoning: next.reasoning,
           timestamp: DateTime.now().millisecondsSinceEpoch,
+          isTyping: true,
         );
 
         if (!_streamingSent) {
