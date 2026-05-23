@@ -95,7 +95,6 @@ class ChatBridgeController {
   Future<String> _resolveImgResults(String text) async {
     final matches = _imgResultRegex.allMatches(text).toList();
     if (matches.isEmpty) return text;
-    final sw = Stopwatch()..start();
     final uncached = <int, String>{};
     for (int i = 0; i < matches.length; i++) {
       final payload = matches[i].group(1) ?? '';
@@ -106,7 +105,6 @@ class ChatBridgeController {
       }
     }
     if (uncached.isNotEmpty) {
-      debugPrint('[PERF] _resolveImgResults: ${uncached.length} uncached images to read');
       await Future.wait(uncached.entries.map((e) async {
         final path = e.value;
         try {
@@ -124,7 +122,6 @@ class ChatBridgeController {
           }
         } catch (_) {}
       }));
-      debugPrint('[PERF] _resolveImgResults disk read: ${sw.elapsedMilliseconds}ms');
     }
     final result = text.replaceAllMapped(_imgResultRegex, (m) {
       final payload = m.group(1) ?? '';
@@ -137,7 +134,6 @@ class ChatBridgeController {
       }
       return m.group(0)!;
     });
-    debugPrint('[PERF] _resolveImgResults total: ${sw.elapsedMilliseconds}ms (cached=${matches.length - uncached.length}/${matches.length})');
     return result;
   }
 
@@ -372,7 +368,6 @@ class ChatBridgeController {
   }
 
   Future<void> appendMessage(ChatMessage message) async {
-    debugPrint('[JS_BRIDGE] appendMessage id=${message.id}');
     final map = _toMap(message);
     map['text'] = await _resolveImgResults(map['text'] as String);
     final json = jsonEncode(map);
@@ -408,14 +403,9 @@ class ChatBridgeController {
   }
 
   Future<void> updateMessage(ChatMessage message) async {
-    debugPrint('[JS_BRIDGE] updateMessage id=${message.id} isTyping=${message.isTyping}');
-    final sw = Stopwatch()..start();
     final map = _toMap(message);
-    debugPrint('[PERF] updateMessage _toMap: ${sw.elapsedMilliseconds}ms');
     map['text'] = await _resolveImgResults(map['text'] as String);
-    debugPrint('[PERF] updateMessage after resolve: ${sw.elapsedMilliseconds}ms');
     final json = jsonEncode(map);
-    debugPrint('[PERF] updateMessage total (json ${json.length} chars): ${sw.elapsedMilliseconds}ms');
     return _callJs('updateMessage', json);
   }
 
@@ -424,7 +414,6 @@ class ChatBridgeController {
   }
 
   Future<void> setLastMessage(String? messageId) {
-    debugPrint('[JS_BRIDGE] setLastMessage id=$messageId');
     if (messageId != null) {
       return _eval('window.bridge?.setLastMessage("${_escape(messageId)}")');
     } else {
@@ -485,7 +474,6 @@ class ChatBridgeController {
   }
 
   Future<void> updateMessageContent(String messageId, String text, bool isUser) async {
-    debugPrint('[JS_BRIDGE] updateMessageContent id=$messageId isUser=$isUser textLen=${text.length}');
     final resolved = await _resolveImgResults(text);
     final json = jsonEncode({'id': messageId, 'text': resolved, 'isUser': isUser});
     return _callJs('updateMessage', json);
@@ -505,24 +493,11 @@ class ChatBridgeController {
   }
 
   Future<void> _callJs(String method, String arg) {
-    debugPrint('[JS_BRIDGE] >> $method (payload: ${arg.length} chars)');
     return _eval('window.bridge?.$method(${_escapeJsonStr(arg)})');
   }
 
   Future<void> _eval(String source) async {
-    final sw = Stopwatch()..start();
-    try {
-      final result = await _controller.evaluateJavascript(source: source);
-      final snippet = source.length > 150 ? '${source.substring(0, 150)}...' : source;
-      final resultStr = result?.toString() ?? 'null';
-      final shortResult = resultStr.length > 200 ? '${resultStr.substring(0, 200)}...' : resultStr;
-      debugPrint('[JS_BRIDGE] OK $snippet => $shortResult (${sw.elapsedMilliseconds}ms)');
-    } catch (e, st) {
-      final snippet = source.length > 150 ? '${source.substring(0, 150)}...' : source;
-      debugPrint('[JS_BRIDGE] ERR $snippet => $e (${sw.elapsedMilliseconds}ms)');
-      debugPrint('$st');
-      rethrow;
-    }
+    await _controller.evaluateJavascript(source: source);
   }
 
   Future<void> evalJs(String source) async {
