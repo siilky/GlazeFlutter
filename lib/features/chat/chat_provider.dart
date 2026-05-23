@@ -233,8 +233,15 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       regenTargetId: regenTargetId,
     ));
 
+    final promptMessages = [...current.messages];
+    promptMessages.removeAt(lastIdx);
+    final promptSession = current.session!.copyWith(
+      messages: promptMessages,
+      updatedAt: currentTimestampSeconds(),
+    );
+
     await _runGeneration(
-      current.session!, current,
+      promptSession, current,
       guidanceText: guidanceText,
       regenTargetId: regenTargetId,
       previousSwipes: prevAssistant.swipes.isNotEmpty
