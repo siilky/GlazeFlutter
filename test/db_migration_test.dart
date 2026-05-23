@@ -26,7 +26,7 @@ class _TestImageStorage extends ImageStorageService {
 }
 
 void main() {
-  group('_ensureSchema idempotency', () {
+  group('Backup importer schema safety', () {
     late AppDatabase db;
     late ImageStorageService imageStorage;
 
