@@ -431,7 +431,6 @@ class ChatBridgeController {
       return _eval('window.bridge?.setLastMessage(null)');
     }
   }
-  }
 
   Future<void> clearAll() {
     return _eval('window.bridge?.clearAll()');
