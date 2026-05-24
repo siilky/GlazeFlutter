@@ -17,6 +17,8 @@ class ChatSessionService {
   static final Map<String, ChatSession> _cache = {};
   static final List<String> _cacheAccessOrder = [];
 
+  static int get cacheSize => _cache.length;
+
   ChatSessionService(this._ref);
 
   static void _touchCacheKey(String key) {
