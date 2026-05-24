@@ -148,7 +148,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     } else {
       HapticFeedback.selectionClick();
       _activeDrawerHeight = _lastKeyboardHeight;
-      
+
       final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
       if (keyboardHeight > 0 || _inputFocus.hasFocus) {
         setState(() => _switchingToDrawer = true);
@@ -210,7 +210,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ? 'Session #${chatState!.session!.sessionIndex + 1}'
         : 'Loading...';
     final sessionIndex = chatState?.session?.sessionIndex ?? 0;
-    
+
     final appSettings = ref.watch(appSettingsProvider).valueOrNull;
     final virtualKeyboardSend = appSettings?.virtualKeyboardSend ?? false;
     final enterToSend = appSettings?.enterToSend ?? true;
@@ -222,15 +222,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _tempMaxHeight = keyboardHeight;
         _heightTimer?.cancel();
         _heightTimer = Timer(const Duration(milliseconds: 300), () {
-          if (mounted && _tempMaxHeight > 200 && _tempMaxHeight != _lastKeyboardHeight) {
+          if (mounted &&
+              _tempMaxHeight > 200 &&
+              _tempMaxHeight != _lastKeyboardHeight) {
             setState(() {
               _lastKeyboardHeight = _tempMaxHeight;
               _persistKeyboardHeight(_lastKeyboardHeight);
             });
           }
         });
-  }
-}
+      }
+    }
 
     if (!_inputFocus.hasFocus && _tempMaxHeight != 0) {
       _tempMaxHeight = 0;
@@ -254,17 +256,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       });
     }
 
-    // Safe area bottom padding is only needed when no panel (keyboard/drawer) 
+    // Safe area bottom padding is only needed when no panel (keyboard/drawer)
     // is active. When active, they sit at the very bottom above the system nav bar.
     final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final isIdle = keyboardHeight == 0 && !_drawerOpen && !_switchingToDrawer && _drawerAnimController.value == 0;
+    final isIdle =
+        keyboardHeight == 0 &&
+        !_drawerOpen &&
+        !_switchingToDrawer &&
+        _drawerAnimController.value == 0;
     final bottomPadding = isIdle ? safeBottom : 0.0;
 
     // Final (post-animation) inset for layout-only consumers.
     // Animated visual positioning of the input + drawer is driven by
     // _drawerAnim inside _ChatBody so list paddings don't churn each frame.
-    final targetDrawerInset = (_drawerOpen || _switchingToDrawer) ? _activeDrawerHeight : 0.0;
-    final targetBottomPanelInset = math.max(targetDrawerInset, keyboardHeight) + bottomPadding;
+    final targetDrawerInset = (_drawerOpen || _switchingToDrawer)
+        ? _activeDrawerHeight
+        : 0.0;
+    final targetBottomPanelInset =
+        math.max(targetDrawerInset, keyboardHeight) + bottomPadding;
 
     return SessionLifecycleTracker(
       charId: charId,
@@ -296,125 +305,156 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           resizeToAvoidBottomInset: false,
           hideHeader: _isHeaderHidden,
           title: title,
-        titleWidget: _showSearch
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: TextStyle(color: context.cs.onSurface, fontSize: 16),
-                decoration: InputDecoration(
-                  hintText: 'Search messages...',
-                  hintStyle: TextStyle(color: context.cs.onSurfaceVariant.withValues(alpha: 0.5)),
-                  border: InputBorder.none,
-                  isDense: true,
-                  suffixIcon: _searchQuery.isNotEmpty 
-                      ? IconButton(
-                          icon: Icon(Icons.close, color: context.cs.onSurface, size: 20),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {
-                              _searchQuery = '';
-                              _searchMatches = [];
-                              _searchCurrentIndex = 0;
-                            });
-                          },
-                        )
-                      : null,
-                ),
-                onChanged: (q) {
-                  final matches = <SearchMatch>[];
-                  if (q.isNotEmpty && chatState != null) {
-                    final lower = q.toLowerCase();
-                    for (int i = 0; i < chatState.messages.length; i++) {
-                      final content = chatState.messages[i].content.toLowerCase();
-                      int startIndex = 0;
-                      int matchIndex = 0;
-                      while (true) {
-                        final idx = content.indexOf(lower, startIndex);
-                        if (idx == -1) break;
-                        matches.add(SearchMatch(i, matchIndex));
-                        matchIndex++;
-                        startIndex = idx + lower.length;
-  }
-  }
-}
+          titleWidget: _showSearch
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: TextStyle(color: context.cs.onSurface, fontSize: 16),
+                  decoration: InputDecoration(
+                    hintText: 'Search messages...',
+                    hintStyle: TextStyle(
+                      color: context.cs.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(
+                              Icons.close,
+                              color: context.cs.onSurface,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _searchQuery = '';
+                                _searchMatches = [];
+                                _searchCurrentIndex = 0;
+                              });
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (q) {
+                    final matches = <SearchMatch>[];
+                    if (q.isNotEmpty && chatState != null) {
+                      final lower = q.toLowerCase();
+                      for (int i = 0; i < chatState.messages.length; i++) {
+                        var raw = chatState.messages[i].content;
+                        if (raw.contains('<think')) {
+                          raw = raw.replaceAll(RegExp(r'<think\b[^>]*>[\s\S]*?<\/think\b[^>]*>', caseSensitive: false), '');
+                          raw = raw.replaceAll(RegExp(r'<think\b([^>]*?)(?:>|\n)([\s\S]*?)<\/think\b', caseSensitive: false), '');
+                        }
+                        if (raw.contains('<thinking')) {
+                          raw = raw.replaceAll(RegExp(r'<thinking\b[^>]*>[\s\S]*?<\/thinking\b[^>]*>', caseSensitive: false), '');
+                          raw = raw.replaceAll(RegExp(r'<thinking\b([^>]*?)(?:>|\n)([\s\S]*?)<\/thinking\b', caseSensitive: false), '');
+                        }
+                        raw = raw.trim();
+                        final content = raw.toLowerCase();
+                        
+                        final reasoning = chatState.messages[i].reasoning?.toLowerCase() ?? '';
+                        
+                        int matchIndex = 0;
+                        
+                        if (reasoning.isNotEmpty) {
+                          int startIndex = 0;
+                          while (true) {
+                            final idx = reasoning.indexOf(lower, startIndex);
+                            if (idx == -1) break;
+                            matches.add(SearchMatch(i, matchIndex));
+                            matchIndex++;
+                            startIndex = idx + lower.length;
+                          }
+                        }
+                        
+                        int startIndex = 0;
+                        while (true) {
+                          final idx = content.indexOf(lower, startIndex);
+                          if (idx == -1) break;
+                          matches.add(SearchMatch(i, matchIndex));
+                          matchIndex++;
+                          startIndex = idx + lower.length;
+                        }
+                      }
+                    }
 
-                  setState(() {
-                    _searchQuery = q;
-                    _searchMatches = matches;
-                    _searchCurrentIndex = 0;
-                  });
-                },
-              )
-            : (character != null
-                ? ChatHeader(
-                    character: character,
-                    sessionName: sessionName,
-                    currentSessionIndex: sessionIndex,
-                  )
-                : null),
-        onBack: () {
-          if (_showSearch) {
-            _searchController.clear();
-            setState(() {
-              _showSearch = false;
-              _searchQuery = '';
-              _searchMatches = [];
-              _searchCurrentIndex = 0;
-            });
-          } else {
-            context.go('/');
-          }
-        },
-        actions: _showSearch
-            ? const []
-            : [
-          IconButton(
-            icon: const Icon(Icons.search),
-            color: context.cs.primary,
-            onPressed: () {
+                    setState(() {
+                      _searchQuery = q;
+                      _searchMatches = matches;
+                      _searchCurrentIndex = 0;
+                    });
+                  },
+                )
+              : (character != null
+                    ? ChatHeader(
+                        character: character,
+                        sessionName: sessionName,
+                        currentSessionIndex: sessionIndex,
+                      )
+                    : null),
+          onBack: () {
+            if (_showSearch) {
+              _searchController.clear();
               setState(() {
-                _showSearch = true;
+                _showSearch = false;
                 _searchQuery = '';
                 _searchMatches = [];
                 _searchCurrentIndex = 0;
-                _searchController.clear();
               });
-            },
-          ),
-        ],
-        body: chatStateAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
-          data: (state) => _ChatBody(
-            charId: charId,
-            state: state,
-            inputFocus: _inputFocus,
-            drawerOpen: _drawerOpen,
-            isSwitchingToDrawer: _switchingToDrawer,
-            drawerHeight: _activeDrawerHeight,
-            keyboardHeight: keyboardHeight,
-            targetBottomPanelInset: targetBottomPanelInset,
-            drawerAnim: _drawerAnim,
-            showSearchControls: _showSearch,
-            searchQuery: _searchQuery,
-            searchMatches: _searchMatches,
-            searchCurrentIndex: _searchCurrentIndex,
-            onSearchPrev: _searchCurrentIndex > 0
-                ? () => setState(() => _searchCurrentIndex--)
-                : null,
-            onSearchNext: _searchCurrentIndex < _searchMatches.length - 1
-                ? () => setState(() => _searchCurrentIndex++)
-                : null,
-            onCloseDrawer: _closeDrawer,
-            onToggleDrawer: _toggleDrawer,
-            onScrollDirection: _onScrollDirection,
-            virtualKeyboardSend: virtualKeyboardSend,
-            enterToSend: enterToSend,
+            } else {
+              context.go('/');
+            }
+          },
+          actions: _showSearch
+              ? const []
+              : [
+                  IconButton(
+                    icon: const Icon(Icons.search),
+                    color: context.cs.primary,
+                    onPressed: () {
+                      setState(() {
+                        _showSearch = true;
+                        _searchQuery = '';
+                        _searchMatches = [];
+                        _searchCurrentIndex = 0;
+                        _searchController.clear();
+                      });
+                    },
+                  ),
+                ],
+          body: chatStateAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (state) => _ChatBody(
+              charId: charId,
+              state: state,
+              inputFocus: _inputFocus,
+              drawerOpen: _drawerOpen,
+              isSwitchingToDrawer: _switchingToDrawer,
+              drawerHeight: _activeDrawerHeight,
+              keyboardHeight: keyboardHeight,
+              targetBottomPanelInset: targetBottomPanelInset,
+              drawerAnim: _drawerAnim,
+              showSearchControls: _showSearch,
+              searchQuery: _searchQuery,
+              searchMatches: _searchMatches,
+              searchCurrentIndex: _searchCurrentIndex,
+              onSearchPrev: _searchCurrentIndex > 0
+                  ? () => setState(() => _searchCurrentIndex--)
+                  : null,
+              onSearchNext: _searchCurrentIndex < _searchMatches.length - 1
+                  ? () => setState(() => _searchCurrentIndex++)
+                  : null,
+              onCloseDrawer: _closeDrawer,
+              onToggleDrawer: _toggleDrawer,
+              onScrollDirection: _onScrollDirection,
+              virtualKeyboardSend: virtualKeyboardSend,
+              enterToSend: enterToSend,
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -478,6 +518,10 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
   double _inputBarHeight = 130.0;
   final GlobalKey _inputBarKey = GlobalKey();
 
+  bool _isSelectionMode = false;
+  Set<String> _selectedMessageIds = {};
+  final GlobalKey<ChatWebViewWidgetState> _webViewStateKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -511,9 +555,22 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
               minScale: 0.5,
               maxScale: 4.0,
               child: Center(
-                child: Image.network(imageUrl, fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Image.file(File(imageUrl.replaceFirst('file:///', '').replaceFirst('file://', '')),
-                    fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 64, color: Colors.white54)),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Image.file(
+                    File(
+                      imageUrl
+                          .replaceFirst('file:///', '')
+                          .replaceFirst('file://', ''),
+                    ),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.broken_image,
+                      size: 64,
+                      color: Colors.white54,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -550,7 +607,8 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
           children: [
             Center(
               child: Container(
-                width: 32, height: 4,
+                width: 32,
+                height: 4,
                 decoration: BoxDecoration(
                   color: context.cs.outlineVariant.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
@@ -558,56 +616,84 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
               ),
             ),
             const SizedBox(height: 12),
-            Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: context.cs.onSurface)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: context.cs.onSurface,
+              ),
+            ),
             const SizedBox(height: 8),
             Flexible(
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: entries.map((e) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(e.name,
-                            style: TextStyle(fontSize: 13, color: context.cs.onSurface),
-                            overflow: TextOverflow.ellipsis,
+                  children: entries
+                      .map(
+                        (e) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  e.name,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: context.cs.onSurface,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (e.lorebookName.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  e.lorebookName,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: context.cs.onSurfaceVariant
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: e.source == 'vector'
+                                      ? Colors.purple.withValues(alpha: 0.15)
+                                      : e.source == 'memory'
+                                      ? Colors.teal.withValues(alpha: 0.15)
+                                      : context.cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  e.source == 'vector'
+                                      ? 'vector'
+                                      : e.source == 'memory'
+                                      ? 'memory'
+                                      : 'keyword',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: e.source == 'vector'
+                                        ? Colors.purple
+                                        : e.source == 'memory'
+                                        ? Colors.teal
+                                        : context.cs.onPrimaryContainer,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        if (e.lorebookName.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Text(e.lorebookName,
-                            style: TextStyle(fontSize: 11, color: context.cs.onSurfaceVariant.withValues(alpha: 0.6)),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: e.source == 'vector'
-                                ? Colors.purple.withValues(alpha: 0.15)
-                                : e.source == 'memory'
-                                    ? Colors.teal.withValues(alpha: 0.15)
-                                    : context.cs.primaryContainer,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            e.source == 'vector' ? 'vector' : e.source == 'memory' ? 'memory' : 'keyword',
-                            style: TextStyle(
-                              fontSize: 10, fontWeight: FontWeight.w500,
-                              color: e.source == 'vector'
-                                  ? Colors.purple
-                                  : e.source == 'memory'
-                                      ? Colors.teal
-                                      : context.cs.onPrimaryContainer,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )).toList(),
+                      )
+                      .toList(),
                 ),
               ),
             ),
@@ -628,193 +714,278 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
     // Top inset for the chat list: safe area + GlazeScaffold wrap padding (10)
     // + GlazeAppBar height (56). Matches the floating header above the webview.
     final messageListTop = MediaQuery.paddingOf(context).top + 10 + 56;
-            // ...
-            final targetDrawerInset = widget.drawerOpen ? widget.drawerHeight : 0.0;
-            final panelHeight = math.max(targetDrawerInset, widget.keyboardHeight);
-            final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
-            final effectiveBottomInset = panelHeight + (safeBottom * (1 - factor));
-            final messageListBottom = _inputBarHeight + effectiveBottomInset;
+    // ...
+    final targetDrawerInset = widget.drawerOpen ? widget.drawerHeight : 0.0;
+    final panelHeight = math.max(targetDrawerInset, widget.keyboardHeight);
+    final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
+    final effectiveBottomInset = panelHeight + (safeBottom * (1 - factor));
+    final messageListBottom = _inputBarHeight + effectiveBottomInset;
 
-            final bgBlur = preset.bgBlur > 0 ? preset.bgBlur : 0.0;
-            final bgOpacity = preset.bgOpacity.clamp(0.0, 1.0);
-            final bgPath = ref.watch(bgImageProvider).valueOrNull;
-            final fontStyle = ref.watch(chatFontStyleProvider);
-            final fontDataUrl = ref.watch(chatFontDataProvider).valueOrNull;
+    final bgBlur = preset.bgBlur > 0 ? preset.bgBlur : 0.0;
+    final bgOpacity = preset.bgOpacity.clamp(0.0, 1.0);
+    final bgPath = ref.watch(bgImageProvider).valueOrNull;
+    final fontStyle = ref.watch(chatFontStyleProvider);
+    final fontDataUrl = ref.watch(chatFontDataProvider).valueOrNull;
 
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: NotificationListener<UserScrollNotification>(
-                    onNotification: (notification) {
-                      if (widget.onScrollDirection != null) {
-                        widget.onScrollDirection!(notification.direction);
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: NotificationListener<UserScrollNotification>(
+            onNotification: (notification) {
+              if (widget.onScrollDirection != null) {
+                widget.onScrollDirection!(notification.direction);
+              }
+              return false;
+            },
+            child: RepaintBoundary(
+              child: Builder(
+                builder: (context) {
+                  final character = ref.watch(
+                    characterByIdProvider(widget.charId),
+                  );
+                  final effectivePersona = ref.watch(
+                    effectivePersonaForChatProvider(widget.charId),
+                  );
+                  final memBook = ref.watch(
+                    memoryBookProvider(widget.state.session?.id ?? ''),
+                  );
+                  final greetingTotal = character == null
+                      ? 0
+                      : ((character.firstMes?.isNotEmpty == true ? 1 : 0) +
+                            character.alternateGreetings
+                                .where((g) => g.isNotEmpty)
+                                .length);
+                  return ChatWebViewWidget(
+                    key: _webViewStateKey,
+                    messages: widget.state.visibleMessages,
+                    charId: widget.charId,
+                    isGenerating: widget.state.isGenerating,
+                    isGeneratingImage: widget.state.isGeneratingImage,
+                    regenTargetId: widget.state.regenTargetId,
+                    bottomInset: messageListBottom,
+                    topInset: messageListTop,
+                    charName: character?.name,
+                    charColor: character?.color,
+                    personaName: effectivePersona?.name,
+                    greetingTotal: greetingTotal,
+                    chatLayout: appSettings?.chatLayout ?? 'default',
+                    charAvatarPath: character?.avatarPath,
+                    personaAvatarPath: effectivePersona?.avatarPath,
+                    bgImagePath: bgPath,
+                    bgBlur: bgBlur,
+                    bgOpacity: bgOpacity,
+                    chatFontName: fontStyle.fontFamily,
+                    chatFontDataUrl: fontDataUrl,
+                    chatFontSize: fontStyle.fontSize,
+                    chatLetterSpacing: fontStyle.letterSpacing,
+                    memoryEntries: memBook.valueOrNull?.entries ?? [],
+                    memoryDrafts: memBook.valueOrNull?.pendingDrafts ?? [],
+                    sessionId: widget.state.session?.id,
+                    visibleStartIndex: widget.state.visibleStartIndex,
+                    onMessageContext:
+                        (index, messageId, isUser, isSystem, content) {
+                          showMessageContextMenu(
+                            context: context,
+                            ref: ref,
+                            charId: widget.charId,
+                            content: content,
+                            messageIndex: index,
+                            messageId: messageId,
+                            isUser: isUser,
+                            isTyping:
+                                widget.state.isGenerating &&
+                                index == widget.state.messages.length - 1,
+                            isError: false,
+                            isLast: index == widget.state.messages.length - 1,
+                            isGenerating: widget.state.isGenerating,
+                            isHidden: widget.state.messages[index].isHidden,
+                          );
+                        },
+                    onSelectionChange: (ids) {
+                      if (mounted) {
+                        setState(() {
+                          _selectedMessageIds = ids.toSet();
+                          _isSelectionMode = _selectedMessageIds.isNotEmpty;
+                        });
                       }
-                      return false;
                     },
-                    child: RepaintBoundary(
-                      child: Builder(builder: (context) {
-                        final character = ref.watch(characterByIdProvider(widget.charId));
-                        final effectivePersona = ref.watch(effectivePersonaForChatProvider(widget.charId));
-                        final memBook = ref.watch(memoryBookProvider(widget.state.session?.id ?? ''));
-                        final greetingTotal = character == null
-                            ? 0
-                            : ((character.firstMes?.isNotEmpty == true ? 1 : 0) +
-                                character.alternateGreetings.where((g) => g.isNotEmpty).length);
-                        return ChatWebViewWidget(
-                          messages: widget.state.visibleMessages,
-                          charId: widget.charId,
-                          isGenerating: widget.state.isGenerating,
-                          isGeneratingImage: widget.state.isGeneratingImage,
-                          regenTargetId: widget.state.regenTargetId,
-                          bottomInset: messageListBottom,
-                          topInset: messageListTop,
-                          charName: character?.name,
-                          charColor: character?.color,
-                          personaName: effectivePersona?.name,
-                          greetingTotal: greetingTotal,
-                          chatLayout: appSettings?.chatLayout ?? 'default',
-                          charAvatarPath: character?.avatarPath,
-                          personaAvatarPath: effectivePersona?.avatarPath,
-                          bgImagePath: bgPath,
-                          bgBlur: bgBlur,
-                          bgOpacity: bgOpacity,
-                          chatFontName: fontStyle.fontFamily,
-                          chatFontDataUrl: fontDataUrl,
-                          chatFontSize: fontStyle.fontSize,
-                          chatLetterSpacing: fontStyle.letterSpacing,
-                          memoryEntries: memBook.valueOrNull?.entries ?? [],
-                          memoryDrafts: memBook.valueOrNull?.pendingDrafts ?? [],
-                          sessionId: widget.state.session?.id,
-                          visibleStartIndex: widget.state.visibleStartIndex,
-                          onMessageContext: (index, messageId, isUser, isSystem, content) {
-                            showMessageContextMenu(
-                              context: context,
-                              ref: ref,
-                              charId: widget.charId,
-                              content: content,
-                              messageIndex: index,
-                              messageId: messageId,
-                              isUser: isUser,
-                              isTyping: widget.state.isGenerating && index == widget.state.messages.length - 1,
-                              isError: false,
-                              isLast: index == widget.state.messages.length - 1,
-                              isGenerating: widget.state.isGenerating,
-                              isHidden: false,
+                    isSelectionMode: _isSelectionMode,
+                    onSwipe: (id, direction) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx < 0) return;
+                      final dir = direction == 'right' ? 1 : -1;
+                      ref
+                          .read(chatProvider(widget.charId).notifier)
+                          .changeSwipe(idx, dir, fromSwipe: true);
+                    },
+                    onHeaderScroll: (hidden) {
+                      if (widget.onScrollDirection == null) return;
+                      // Reuse the existing scroll-direction wiring on the parent
+                      // (reverse = down/hide, forward = up/show).
+                      widget.onScrollDirection!(
+                        hidden
+                            ? ScrollDirection.reverse
+                            : ScrollDirection.forward,
+                      );
+                    },
+                    onChangeGreeting: (id, dir) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx < 0) return;
+                      ref
+                          .read(chatProvider(widget.charId).notifier)
+                          .setGreeting(idx, dir);
+                    },
+                    onRegenerate: (id) {
+                      ref
+                          .read(chatProvider(widget.charId).notifier)
+                          .regenerateLastAssistant();
+                    },
+                    onStop: () {
+                      final notifier = ref.read(
+                        chatProvider(widget.charId).notifier,
+                      );
+                      if (widget.state.isGeneratingImage &&
+                          !widget.state.isGenerating) {
+                        notifier.abortImageGeneration();
+                      } else {
+                        notifier.abortGeneration();
+                      }
+                    },
+                    onImgRetry: (instruction, messageId) {
+                      final allMsgs = widget.state.messages;
+                      final idx = allMsgs.indexWhere((m) => m.id == messageId);
+                      if (idx >= 0) {
+                        ref
+                            .read(chatProvider(widget.charId).notifier)
+                            .retryImageGenerationForMessage(idx);
+                      }
+                    },
+                    onImgFind: (instruction, messageId) {
+                      ref
+                          .read(chatProvider(widget.charId).notifier)
+                          .findImageOnDisk(messageId, instruction);
+                    },
+                    onImgRegen: (instruction, messageId) {
+                      final allMsgs = widget.state.messages;
+                      final idx = allMsgs.indexWhere((m) => m.id == messageId);
+                      if (idx >= 0) {
+                        ref
+                            .read(chatProvider(widget.charId).notifier)
+                            .retryImageGenerationForMessage(idx);
+                      }
+                    },
+                    onImgCancel: () {
+                      ref
+                          .read(chatProvider(widget.charId).notifier)
+                          .cancelImageGeneration();
+                    },
+                    onSelectionAction: (action, text) {
+                      if (action == 'copy') {
+                        Clipboard.setData(ClipboardData(text: text));
+                      }
+                    },
+                    onEditSave: (id, text) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx >= 0 && text.isNotEmpty) {
+                        ref
+                            .read(chatProvider(widget.charId).notifier)
+                            .editMessage(idx, text);
+                      }
+                      ref
+                              .read(
+                                editingMessageIdProvider(
+                                  widget.charId,
+                                ).notifier,
+                              )
+                              .state =
+                          null;
+                    },
+                    onEditCancel: (id) {
+                      ref
+                              .read(
+                                editingMessageIdProvider(
+                                  widget.charId,
+                                ).notifier,
+                              )
+                              .state =
+                          null;
+                    },
+                    onImageClick: (imageUrl) {
+                      _showImageViewer(context, imageUrl);
+                    },
+                    onGuidedSwipe: (id, guidanceText) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx < 0) return;
+                      final msg = widget.state.messages[idx];
+                      final isLastAssistant =
+                          msg.role == 'assistant' &&
+                          idx == widget.state.messages.length - 1;
+                      if (isLastAssistant) {
+                        ref
+                            .read(chatProvider(widget.charId).notifier)
+                            .regenerateLastAssistant(
+                              guidanceText: guidanceText,
                             );
-                          },
-                          onSwipe: (id, direction) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx < 0) return;
-                            final dir = direction == 'right' ? 1 : -1;
-                            ref.read(chatProvider(widget.charId).notifier)
-                                .changeSwipe(idx, dir, fromSwipe: true);
-                          },
-                          onHeaderScroll: (hidden) {
-                            if (widget.onScrollDirection == null) return;
-                            // Reuse the existing scroll-direction wiring on the parent
-                            // (reverse = down/hide, forward = up/show).
-                            widget.onScrollDirection!(
-                              hidden ? ScrollDirection.reverse : ScrollDirection.forward,
-                            );
-                          },
-                          onChangeGreeting: (id, dir) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx < 0) return;
-                            ref.read(chatProvider(widget.charId).notifier)
-                                .setGreeting(idx, dir);
-                          },
-                          onRegenerate: (id) {
-                            ref.read(chatProvider(widget.charId).notifier).regenerateLastAssistant();
-                          },
-                          onStop: () {
-                            final notifier = ref.read(chatProvider(widget.charId).notifier);
-                            if (widget.state.isGeneratingImage && !widget.state.isGenerating) {
-                              notifier.abortImageGeneration();
-                            } else {
-                              notifier.abortGeneration();
-                            }
-                          },
-                          onImgRetry: (instruction, messageId) {
-                            final allMsgs = widget.state.messages;
-                            final idx = allMsgs.indexWhere((m) => m.id == messageId);
-                            if (idx >= 0) {
-                              ref.read(chatProvider(widget.charId).notifier).retryImageGenerationForMessage(idx);
-                            }
-                          },
-                          onImgFind: (instruction, messageId) {
-                            ref.read(chatProvider(widget.charId).notifier).findImageOnDisk(messageId, instruction);
-                          },
-                          onImgRegen: (instruction, messageId) {
-                            final allMsgs = widget.state.messages;
-                            final idx = allMsgs.indexWhere((m) => m.id == messageId);
-                            if (idx >= 0) {
-                              ref.read(chatProvider(widget.charId).notifier).retryImageGenerationForMessage(idx);
-                            }
-                          },
-                          onImgCancel: () {
-                            ref.read(chatProvider(widget.charId).notifier).cancelImageGeneration();
-                          },
-                          onSelectionAction: (action, text) {
-                            if (action == 'copy') {
-                              Clipboard.setData(ClipboardData(text: text));
-                            }
-                          },
-                          onEditSave: (id, text) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx >= 0 && text.isNotEmpty) {
-                              ref.read(chatProvider(widget.charId).notifier).editMessage(idx, text);
-                            }
-                            ref.read(editingMessageIdProvider(widget.charId).notifier).state = null;
-                          },
-                          onEditCancel: (id) {
-                            ref.read(editingMessageIdProvider(widget.charId).notifier).state = null;
-                          },
-                          onImageClick: (imageUrl) {
-                            _showImageViewer(context, imageUrl);
-                          },
-                          onGuidedSwipe: (id, guidanceText) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx < 0) return;
-                            final msg = widget.state.messages[idx];
-                            final isLastAssistant = msg.role == 'assistant' &&
-                                idx == widget.state.messages.length - 1;
-                            if (isLastAssistant) {
-                              ref.read(chatProvider(widget.charId).notifier)
-                                  .regenerateLastAssistant(guidanceText: guidanceText);
-                            }
-                          },
-                          onToggleHidden: (id) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx >= 0) {
-                              ref.read(chatProvider(widget.charId).notifier).toggleMessageHidden(idx);
-                            }
-                          },
-                          onMemoryClick: (id) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx < 0) return;
-                            final msg = widget.state.messages[idx];
-                            if (msg.triggeredMemories.isNotEmpty) {
-                              _showTriggeredItemsSheet(
-                                context,
-                                msg.triggeredMemories,
-                                'Memories',
-                              );
-                            }
-                          },
-                          onInjectClick: (id) {
-                            final idx = widget.state.messages.indexWhere((m) => m.id == id);
-                            if (idx < 0) return;
-                            final msg = widget.state.messages[idx];
-                            final all = [...msg.triggeredLorebooks, ...msg.triggeredMemories];
-                            if (all.isNotEmpty) {
-                              _showTriggeredItemsSheet(context, all, 'Triggered Entries');
-                            }
-                          },
+                      }
+                    },
+                    onToggleHidden: (id) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx >= 0) {
+                        ref
+                            .read(chatProvider(widget.charId).notifier)
+                            .toggleMessageHidden(idx);
+                      }
+                    },
+                    onMemoryClick: (id) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx < 0) return;
+                      final msg = widget.state.messages[idx];
+                      if (msg.triggeredMemories.isNotEmpty) {
+                        _showTriggeredItemsSheet(
+                          context,
+                          msg.triggeredMemories,
+                          'Memories',
                         );
-                      }),
-                    ),
-                  ),
-                ),
+                      }
+                    },
+                    searchQuery: widget.searchQuery,
+                    searchCurrentIndex: widget.searchCurrentIndex,
+                    onInjectClick: (id) {
+                      final idx = widget.state.messages.indexWhere(
+                        (m) => m.id == id,
+                      );
+                      if (idx < 0) return;
+                      final msg = widget.state.messages[idx];
+                      final all = [
+                        ...msg.triggeredLorebooks,
+                        ...msg.triggeredMemories,
+                      ];
+                      if (all.isNotEmpty) {
+                        _showTriggeredItemsSheet(
+                          context,
+                          all,
+                          'Triggered Entries',
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
         // Top gradient for fade effect under the header
         Positioned(
           top: 0,
@@ -856,123 +1027,262 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
         // bar tracks the same reveal so they move as one piece.
         Positioned.fill(
           child: AnimatedBuilder(
-          animation: widget.drawerAnim,
-          builder: (context, _) {
-            final progress = widget.drawerAnim.value;
-            final bool drawerActive = widget.drawerOpen || widget.isSwitchingToDrawer;
-            final double targetPanelInset = drawerActive ? widget.drawerHeight : 0.0;
-            final int durationMs = widget.isSwitchingToDrawer ? 0 : 260;
+            animation: widget.drawerAnim,
+            builder: (context, _) {
+              final progress = widget.drawerAnim.value;
+              final bool drawerActive =
+                  widget.drawerOpen || widget.isSwitchingToDrawer;
+              final double targetPanelInset = drawerActive
+                  ? widget.drawerHeight
+                  : 0.0;
+              final int durationMs = widget.isSwitchingToDrawer ? 0 : 260;
 
-            return TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: targetPanelInset, end: targetPanelInset),
-              duration: Duration(milliseconds: durationMs),
-              curve: Curves.easeOutCubic,
-              builder: (context, animatedInset, _) {
-                final panelHeight = math.max(animatedInset, widget.keyboardHeight);
-                
-                // Smoothly transition from safe area to panel height.
-                // This prevents a 24px jump when the animation starts.
-                final safeBottom = MediaQuery.paddingOf(context).bottom;
-                final factor = math.min(1.0, panelHeight / math.max(1.0, safeBottom));
-                final animatedBottomPanelInset = panelHeight + (safeBottom * (1 - factor));
+              return TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  begin: targetPanelInset,
+                  end: targetPanelInset,
+                ),
+                duration: Duration(milliseconds: durationMs),
+                curve: Curves.easeOutCubic,
+                builder: (context, animatedInset, _) {
+                  final panelHeight = math.max(
+                    animatedInset,
+                    widget.keyboardHeight,
+                  );
 
-                // Keep the panel mounted while the close animation runs out.
-                final renderDrawer = widget.drawerOpen || progress > 0.001;
+                  // Smoothly transition from safe area to panel height.
+                  // This prevents a 24px jump when the animation starts.
+                  final safeBottom = MediaQuery.paddingOf(context).bottom;
+                  final factor = math.min(
+                    1.0,
+                    panelHeight / math.max(1.0, safeBottom),
+                  );
+                  final animatedBottomPanelInset =
+                      panelHeight + (safeBottom * (1 - factor));
 
-                return Stack(
-                  children: [
-                    if (renderDrawer)
+                  // Keep the panel mounted while the close animation runs out.
+                  final renderDrawer = widget.drawerOpen || progress > 0.001;
+
+                  return Stack(
+                    children: [
+                      if (renderDrawer)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: -widget.drawerHeight * (1 - progress),
+                          height: widget.drawerHeight,
+                          child: MagicDrawerPanel(
+                            charId: widget.charId,
+                            onClose: widget.onCloseDrawer,
+                          ),
+                        ),
                       Positioned(
                         left: 0,
                         right: 0,
-                        bottom: -widget.drawerHeight * (1 - progress),
-                        height: widget.drawerHeight,
-                        child: MagicDrawerPanel(
-                          charId: widget.charId,
-                          onClose: widget.onCloseDrawer,
-                        ),
-                      ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: animatedBottomPanelInset,
-                      child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      NotificationListener<SizeChangedLayoutNotification>(
-                        onNotification: (n) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) => _checkHeight());
-                          return true;
-                        },
-                        child: SizeChangedLayoutNotifier(
-                          child: Container(
-                            key: _inputBarKey,
-                            child: ChatInputBar(
-                              focusNode: widget.inputFocus,
-                              initialDraft: widget.state.session?.draft ?? '',
-                              batterySaver: appSettings?.batterySaver ?? false,
-                              onDraftChanged: (text) {
-                                ref.read(chatProvider(widget.charId).notifier).saveDraft(text);
+                        bottom: animatedBottomPanelInset,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            NotificationListener<SizeChangedLayoutNotification>(
+                              onNotification: (n) {
+                                WidgetsBinding.instance.addPostFrameCallback(
+                                  (_) => _checkHeight(),
+                                );
+                                return true;
                               },
-                              showSearchControls: widget.showSearchControls,
-                              searchQuery: widget.searchQuery,
-                              searchMatchCount: widget.searchMatches.length,
-                              searchCurrentIndex: widget.searchCurrentIndex,
-                              onSearchNext: widget.onSearchNext,
-                              onSearchPrev: widget.onSearchPrev,
-                              isDrawerOpen: widget.drawerOpen || widget.isSwitchingToDrawer,
-                              virtualKeyboardSend: widget.virtualKeyboardSend,
-                              enterToSend: widget.enterToSend,
-                              onSend: (text) {
-                                if (text.trim().isEmpty) return;
-                                ref
-                                    .read(chatProvider(widget.charId).notifier)
-                                    .sendMessage(text);
-                              },
-                              onSendWithGuidance: (text, guidance) {
-                                if (text.trim().isEmpty) return;
-                                ref
-                                    .read(chatProvider(widget.charId).notifier)
-                                    .sendMessage(text, guidanceText: guidance);
-                              },
-                              isGenerating: widget.state.isGenerating,
-                              isGeneratingImage: widget.state.isGeneratingImage,
-                              onStop: (widget.state.isGenerating || widget.state.isGeneratingImage)
-                                  ? () {
-                                      final notifier = ref.read(chatProvider(widget.charId).notifier);
-                                      if (widget.state.isGeneratingImage && !widget.state.isGenerating) {
-                                        notifier.abortImageGeneration();
-                                      } else {
-                                        notifier.abortGeneration();
-                                      }
-                                    }
-                                  : null,
-                              onMagicDrawer: widget.onToggleDrawer,
-                              onAttach: () => GlazeBottomSheet.show(
-                                context,
-                                child: const ImageGenSheet(),
+                              child: SizeChangedLayoutNotifier(
+                                child: Container(
+                                  key: _inputBarKey,
+                                  child: Builder(
+                                    builder: (context) {
+                                      final allSelectedHidden =
+                                          _selectedMessageIds.isNotEmpty &&
+                                          _selectedMessageIds.every((id) {
+                                            final idx = widget.state.messages
+                                                .indexWhere((m) => m.id == id);
+                                            return idx >= 0 &&
+                                                widget
+                                                    .state
+                                                    .messages[idx]
+                                                    .isHidden;
+                                          });
+                                      return ChatInputBar(
+                                        focusNode: widget.inputFocus,
+                                        initialDraft:
+                                            widget.state.session?.draft ?? '',
+                                        batterySaver:
+                                            appSettings?.batterySaver ?? false,
+                                        onDraftChanged: (text) {
+                                          ref
+                                              .read(
+                                                chatProvider(
+                                                  widget.charId,
+                                                ).notifier,
+                                              )
+                                              .saveDraft(text);
+                                        },
+                                        showSearchControls:
+                                            widget.showSearchControls,
+                                        searchQuery: widget.searchQuery,
+                                        searchMatchCount:
+                                            widget.searchMatches.length,
+                                        searchCurrentIndex:
+                                            widget.searchCurrentIndex,
+                                        onSearchNext: widget.onSearchNext,
+                                        onSearchPrev: widget.onSearchPrev,
+                                        isSelectionMode: _isSelectionMode,
+                                        selectedCount:
+                                            _selectedMessageIds.length,
+                                        allSelectedHidden: allSelectedHidden,
+                                        onCancelSelection: () {
+                                          setState(() {
+                                            _isSelectionMode = false;
+                                            _selectedMessageIds.clear();
+                                          });
+                                        },
+                                        onHideSelected: () {
+                                          final notifier = ref.read(
+                                            chatProvider(
+                                              widget.charId,
+                                            ).notifier,
+                                          );
+                                          for (final id
+                                              in _selectedMessageIds) {
+                                            final idx = widget.state.messages
+                                                .indexWhere((m) => m.id == id);
+                                            if (idx >= 0) {
+                                              notifier.toggleMessageHidden(idx);
+                                            }
+                                          }
+                                          setState(() {
+                                            _isSelectionMode = false;
+                                            _selectedMessageIds.clear();
+                                          });
+                                        },
+                                        onDeleteSelected: () {
+                                          final notifier = ref.read(
+                                            chatProvider(
+                                              widget.charId,
+                                            ).notifier,
+                                          );
+                                          // Sort indices in descending order so deleting doesn't shift remaining indices
+                                          final indices =
+                                              _selectedMessageIds
+                                                  .map(
+                                                    (id) => widget
+                                                        .state
+                                                        .messages
+                                                        .indexWhere(
+                                                          (m) => m.id == id,
+                                                        ),
+                                                  )
+                                                  .where((idx) => idx >= 0)
+                                                  .toList()
+                                                ..sort(
+                                                  (a, b) => b.compareTo(a),
+                                                );
+                                          for (final idx in indices) {
+                                            notifier.deleteMessage(idx);
+                                          }
+                                          setState(() {
+                                            _isSelectionMode = false;
+                                            _selectedMessageIds.clear();
+                                          });
+                                        },
+                                        isDrawerOpen:
+                                            widget.drawerOpen ||
+                                            widget.isSwitchingToDrawer,
+                                        virtualKeyboardSend:
+                                            widget.virtualKeyboardSend,
+                                        enterToSend: widget.enterToSend,
+                                        onSend: (text) {
+                                          if (text.trim().isEmpty) return;
+                                          ref
+                                              .read(
+                                                chatProvider(
+                                                  widget.charId,
+                                                ).notifier,
+                                              )
+                                              .sendMessage(text);
+                                        },
+                                        onSendWithGuidance: (text, guidance) {
+                                          if (text.trim().isEmpty) return;
+                                          ref
+                                              .read(
+                                                chatProvider(
+                                                  widget.charId,
+                                                ).notifier,
+                                              )
+                                              .sendMessage(
+                                                text,
+                                                guidanceText: guidance,
+                                              );
+                                        },
+                                        isGenerating: widget.state.isGenerating,
+                                        isGeneratingImage:
+                                            widget.state.isGeneratingImage,
+                                        onStop:
+                                            (widget.state.isGenerating ||
+                                                widget.state.isGeneratingImage)
+                                            ? () {
+                                                final notifier = ref.read(
+                                                  chatProvider(
+                                                    widget.charId,
+                                                  ).notifier,
+                                                );
+                                                if (widget
+                                                        .state
+                                                        .isGeneratingImage &&
+                                                    !widget
+                                                        .state
+                                                        .isGenerating) {
+                                                  notifier
+                                                      .abortImageGeneration();
+                                                } else {
+                                                  notifier.abortGeneration();
+                                                }
+                                              }
+                                            : null,
+                                        onMagicDrawer: widget.onToggleDrawer,
+                                        onAttach: () => showModalBottomSheet(
+                                          context: context,
+                                          useRootNavigator: true,
+                                          isScrollControlled: true,
+                                          backgroundColor: Colors.transparent,
+                                          builder: (_) => const ImageGenSheet(),
+                                        ),
+                                        onFullScreen:
+                                            () {}, // Add your full screen logic here
+                                        onContinue: () => ref
+                                            .read(
+                                              chatProvider(
+                                                widget.charId,
+                                              ).notifier,
+                                            )
+                                            .continueMessage(),
+                                        onImpersonate: () => ref
+                                            .read(
+                                              chatProvider(
+                                                widget.charId,
+                                              ).notifier,
+                                            )
+                                            .regenerateLastAssistant(),
+                                      );
+                                    },
+                                  ),
+                                ),
                               ),
-                              onFullScreen: () {}, // Add your full screen logic here
-                              onContinue: () => ref
-                                  .read(chatProvider(widget.charId).notifier)
-                                  .continueMessage(),
-                              onImpersonate: () => ref
-                                  .read(chatProvider(widget.charId).notifier)
-                                  .regenerateLastAssistant(),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ],
-            );
-              },
-            );
-          },
+                  );
+                },
+              );
+            },
+          ),
         ),
-         ),
       ],
     );
   }

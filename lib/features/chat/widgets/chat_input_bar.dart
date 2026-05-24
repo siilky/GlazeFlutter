@@ -38,6 +38,13 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onSearchNext;
   final VoidCallback? onSearchPrev;
 
+  final bool isSelectionMode;
+  final int selectedCount;
+  final VoidCallback? onCancelSelection;
+  final VoidCallback? onHideSelected;
+  final VoidCallback? onDeleteSelected;
+  final bool allSelectedHidden;
+
   const ChatInputBar({
     super.key,
     required this.onSend,
@@ -63,6 +70,12 @@ class ChatInputBar extends StatefulWidget {
     this.searchCurrentIndex = 0,
     this.onSearchNext,
     this.onSearchPrev,
+    this.isSelectionMode = false,
+    this.selectedCount = 0,
+    this.onCancelSelection,
+    this.onHideSelected,
+    this.onDeleteSelected,
+    this.allSelectedHidden = false,
   });
 
   @override
@@ -197,6 +210,68 @@ class _ChatInputBarState extends State<ChatInputBar> {
             elevation: 0,
             borderRadius: BorderRadius.circular(28),
             child: searchContent,
+          ),
+        ),
+      );
+    }
+
+    if (widget.isSelectionMode) {
+      final selectionContent = Container(
+        constraints: const BoxConstraints(minHeight: 56),
+        decoration: BoxDecoration(
+          color: context.cs.surface.withValues(alpha: widget.batterySaver ? 1.0 : 0.8),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.05),
+          ),
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            _CircleBtn(
+              icon: Icons.close,
+              onTap: widget.onCancelSelection,
+              batterySaver: widget.batterySaver,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '${widget.selectedCount} Selected',
+                style: TextStyle(
+                  color: context.cs.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            _CircleBtn(
+              icon: widget.allSelectedHidden ? Icons.visibility : Icons.visibility_off,
+              onTap: widget.selectedCount > 0 ? widget.onHideSelected : null,
+              color: widget.selectedCount > 0 ? context.cs.primary : context.cs.onSurface.withValues(alpha: 0.3),
+              batterySaver: widget.batterySaver,
+            ),
+            const SizedBox(width: 8),
+            _CircleBtn(
+              icon: Icons.delete,
+              onTap: widget.selectedCount > 0 ? widget.onDeleteSelected : null,
+              color: widget.selectedCount > 0 ? Colors.redAccent : context.cs.onSurface.withValues(alpha: 0.3),
+              batterySaver: widget.batterySaver,
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+      );
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Material(
+            color: Colors.transparent,
+            elevation: 0,
+            borderRadius: BorderRadius.circular(28),
+            child: selectionContent,
           ),
         ),
       );

@@ -527,6 +527,10 @@ class ChatBridgeController {
     return _eval('window.bridge?.setSelectionMode(${enabled})');
   }
 
+  Future<void> toggleMessageSelection(String id) {
+    return _eval('window.bridge?.renderer?.toggleMessageSelection("${_escape(id)}")');
+  }
+
   Future<void> _callJs(String method, String arg) {
     return _eval('window.bridge?.$method(${_escapeJsonStr(arg)})');
   }
@@ -606,7 +610,7 @@ class ChatBridgeController {
       'isError': m.isError,
       if (m.isTyping) 'isTyping': true,
       if (m.reasoning != null && m.reasoning!.isNotEmpty) 'reasoning': m.reasoning,
-      if (m.isHidden) 'isHidden': true,
+      'isHidden': m.isHidden,
       if (isLast) 'isLast': true,
       if (messageIndex != null) 'messageIndex': messageIndex,
       if (m.guidanceText != null && m.guidanceText!.isNotEmpty) 'guidanceText': m.guidanceText,

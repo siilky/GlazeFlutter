@@ -61,6 +61,8 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
   final String? sessionId;
   final int visibleStartIndex;
   final String? regenTargetId;
+  final bool isSelectionMode;
+  final void Function(List<String> ids)? onSelectionChange;
 
   const ChatWebViewWidget({
     super.key,
@@ -110,13 +112,15 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
     this.sessionId,
     this.visibleStartIndex = 0,
     this.regenTargetId,
+    this.isSelectionMode = false,
+    this.onSelectionChange,
   });
 
   @override
-  ConsumerState<ChatWebViewWidget> createState() => _ChatWebViewState();
+  ConsumerState<ChatWebViewWidget> createState() => ChatWebViewWidgetState();
 }
 
-class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
+class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     with AutomaticKeepAliveClientMixin {
   ChatBridgeController? _bridge;
   bool _ready = false;
@@ -186,6 +190,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
       await _bridge!.setSearch(query: widget.searchQuery!, activeIndex: widget.searchCurrentIndex);
     }
+    await _bridge!.setSelectionMode(widget.isSelectionMode);
     await _bridge!.scrollToBottom();
     final initialAnyGen = widget.isGenerating || widget.isGeneratingImage;
     _bridge!.isGenerating = initialAnyGen;
@@ -270,6 +275,18 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
         fontSize: widget.chatFontSize,
         letterSpacing: widget.chatLetterSpacing,
       );
+    }
+
+    if (widget.isSelectionMode != old.isSelectionMode) {
+      _bridge!.setSelectionMode(widget.isSelectionMode);
+    }
+
+    if (widget.searchQuery != old.searchQuery || widget.searchCurrentIndex != old.searchCurrentIndex) {
+      if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
+        _bridge!.setSearch(query: widget.searchQuery!, activeIndex: widget.searchCurrentIndex);
+      } else {
+        _bridge!.setSearch(query: '', activeIndex: -1);
+      }
     }
 
     if (widget.bottomInset != old.bottomInset) {
@@ -537,6 +554,9 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
             _bridge!.onSelectionAction = (action, text) {
               widget.onSelectionAction?.call(action, text);
             };
+            _bridge!.onSelectionChange = (ids) {
+              widget.onSelectionChange?.call(ids);
+            };
             _bridge!.onEditSave = (id, text) {
               widget.onEditSave?.call(id, text);
             };
@@ -648,5 +668,11 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     final b = _bridge;
     if (b == null) return Future.value();
     return b.setSearch(query: q, activeIndex: i);
+  }
+
+  Future<void> toggleMessageSelection(String id) {
+    final b = _bridge;
+    if (b == null) return Future.value();
+    return b.toggleMessageSelection(id);
   }
 }

@@ -1053,34 +1053,17 @@
 }
 
 /* ============================================================
- * Selection mode (checkbox)
+ * Selection mode
  * ============================================================ */
 .message-section.selection-mode {
-  padding-left: 8px;
-}
-.selection-checkbox {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
   cursor: pointer;
-  margin: 6px 8px 0 0;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s;
-  align-self: flex-start;
+  -webkit-tap-highlight-color: transparent;
 }
-.selection-checkbox:checked {
-  background: var(--primary-color, #7996CE);
-  border-color: var(--primary-color, #7996CE);
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 14 14' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11.5 3.5L5.5 10.5L2.5 7' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-size: 12px;
-  background-position: center;
-  background-repeat: no-repeat;
+.message-section.selected {
+  background: rgba(var(--primary-rgb, 121, 150, 206), 0.15);
+  border-radius: 8px;
+  transition: background 0.15s ease;
 }
-.selection-checkbox:hover { border-color: var(--primary-color, #7996CE); }
 
 /* ============================================================
  * Date separator

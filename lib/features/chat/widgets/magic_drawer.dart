@@ -47,11 +47,7 @@ class MagicDrawerPanel extends ConsumerStatefulWidget {
   /// it to hide us instead of popping a route.
   final VoidCallback? onClose;
 
-  const MagicDrawerPanel({
-    super.key,
-    required this.charId,
-    this.onClose,
-  });
+  const MagicDrawerPanel({super.key, required this.charId, this.onClose});
 
   @override
   ConsumerState<MagicDrawerPanel> createState() => _MagicDrawerPanelState();
@@ -184,7 +180,9 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
   Future<void> _loadTokenStats() async {
     if (!mounted) return;
     setState(() => _loadingTokens = true);
-    final updated = await MagicDrawerStatsService(ref).computeTokenStats(widget.charId, _stats);
+    final updated = await MagicDrawerStatsService(
+      ref,
+    ).computeTokenStats(widget.charId, _stats);
     if (!mounted) return;
     setState(() {
       _stats = updated;
@@ -230,7 +228,9 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       'context' =>
         _stats.promptTokens > 0 && _stats.contextSize > 0
             ? '${_stats.promptTokens}/${_stats.contextSize} tokens'
-            : _loadingTokens ? 'Calculating...' : null,
+            : _loadingTokens
+            ? 'Calculating...'
+            : null,
       'summary' =>
         _stats.summaryChars > 0
             ? '${_stats.summaryChars} chars'
@@ -255,7 +255,11 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
             ? '${_stats.activePreset!.name} • ${_stats.presetTokens} tokens'
             : _stats.activePreset!.name,
       'preview' =>
-        _stats.promptTokens > 0 ? '${_stats.promptTokens} tokens' : _loadingTokens ? 'Calculating...' : null,
+        _stats.promptTokens > 0
+            ? '${_stats.promptTokens} tokens'
+            : _loadingTokens
+            ? 'Calculating...'
+            : null,
       'coverage' =>
         _stats.lorebookEntryCount > 0
             ? '${_stats.lorebookEntryCount} entries'
@@ -263,7 +267,8 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       'personas' => _stats.activePersona?.name ?? 'Default',
       'image-gen' => _stats.imageGenEnabled ? 'On' : 'Off',
       'authors-note' =>
-        _stats.session?.authorsNote != null && _stats.session!.authorsNote!.content.isNotEmpty
+        _stats.session?.authorsNote != null &&
+                _stats.session!.authorsNote!.content.isNotEmpty
             ? '${_stats.session!.authorsNote!.content.length} chars'
             : 'Empty',
       _ => null,
@@ -422,15 +427,21 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         return;
       case 'image-gen':
         widget.onClose?.call();
-        GlazeBottomSheet.show(context, child: const ImageGenSheet());
+        if (mounted) {
+          showModalBottomSheet(
+            context: context,
+            useRootNavigator: true,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => const ImageGenSheet(),
+          );
+        }
         return;
       case 'authors-note':
         showAuthorsNoteSheet(context, widget.charId);
         return;
     }
   }
-
-
 
   Future<void> _showMemoryBooks() async {
     final session = ref.read(chatProvider(widget.charId)).value?.session;
@@ -557,7 +568,9 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           if (val.trim().isNotEmpty) {
             final updatedVars = Map<String, String>.from(session.sessionVars);
             updatedVars['sessionName'] = val.trim();
-            await ref.read(chatRepoProvider).put(session.copyWith(sessionVars: updatedVars));
+            await ref
+                .read(chatRepoProvider)
+                .put(session.copyWith(sessionVars: updatedVars));
             ref.invalidate(chatProvider(widget.charId));
           }
         },
@@ -581,11 +594,13 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         final importResult = importChatFromJsonlString(
           utf8.decode(file.bytes!),
         );
-        count = await ChatActionsService(ref)
-            .importChatFromResult(widget.charId, importResult);
+        count = await ChatActionsService(
+          ref,
+        ).importChatFromResult(widget.charId, importResult);
       } else if (filePath != null) {
-        count = await ChatActionsService(ref)
-            .importChat(widget.charId, filePath);
+        count = await ChatActionsService(
+          ref,
+        ).importChat(widget.charId, filePath);
       } else {
         return;
       }
@@ -603,9 +618,6 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
     }
   }
 
-
-
-
   @override
   Widget build(BuildContext context) {
     ref.listen(chatProvider(widget.charId), (prev, next) {
@@ -614,12 +626,16 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       if (prevSession?.id != nextSession?.id ||
           prevSession?.messages.length != nextSession?.messages.length) {
         _debounceTimer?.cancel();
-        _debounceTimer = Timer(const Duration(milliseconds: 500), _refreshStats);
+        _debounceTimer = Timer(
+          const Duration(milliseconds: 500),
+          _refreshStats,
+        );
       }
     });
 
     final items = _displayItems;
-    final batterySaver = ref.watch(appSettingsProvider).valueOrNull?.batterySaver ?? false;
+    final batterySaver =
+        ref.watch(appSettingsProvider).valueOrNull?.batterySaver ?? false;
 
     final scrollable = RawScrollbar(
       controller: _scrollController,
@@ -654,8 +670,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
                   final card = MagicCard(
                     item: item,
                     editing: _editing,
-                    hovered:
-                        _hoverIndex == index && _draggingIndex != index,
+                    hovered: _hoverIndex == index && _draggingIndex != index,
                     onTap: () => _handleTap(item.def),
                     onDelete: () => _removeItem(item.def.id),
                   );
@@ -699,8 +714,10 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
                               child: Opacity(opacity: 0.92, child: card),
                             ),
                           ),
-                          childWhenDragging:
-                              Opacity(opacity: 0.25, child: card),
+                          childWhenDragging: Opacity(
+                            opacity: 0.25,
+                            child: card,
+                          ),
                           child: card,
                         );
                       },
@@ -730,15 +747,16 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
                         type: EdgeType.topEdge,
                         size: 68,
                         sigma: 24,
-                        tintColor:
-                            context.cs.surface.withValues(alpha: 0.4),
+                        tintColor: context.cs.surface.withValues(alpha: 0.4),
                         controlPoints: [
                           ControlPoint(
-                              position: 0.5,
-                              type: ControlPointType.visible),
+                            position: 0.5,
+                            type: ControlPointType.visible,
+                          ),
                           ControlPoint(
-                              position: 1.0,
-                              type: ControlPointType.transparent),
+                            position: 1.0,
+                            type: ControlPointType.transparent,
+                          ),
                         ],
                       ),
                     ],
@@ -797,7 +815,8 @@ class _SessionsSheetContent extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_SessionsSheetContent> createState() => _SessionsSheetContentState();
+  ConsumerState<_SessionsSheetContent> createState() =>
+      _SessionsSheetContentState();
 }
 
 class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
@@ -811,7 +830,9 @@ class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
   }
 
   Future<void> _load() async {
-    final sessions = await ref.read(chatProvider(widget.charId).notifier).getSessions();
+    final sessions = await ref
+        .read(chatProvider(widget.charId).notifier)
+        .getSessions();
     if (mounted) {
       setState(() {
         _sessions = sessions;
@@ -821,7 +842,9 @@ class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
   }
 
   String _formatRelativeTime(int updatedAtSeconds) {
-    final updated = DateTime.fromMillisecondsSinceEpoch(updatedAtSeconds * 1000);
+    final updated = DateTime.fromMillisecondsSinceEpoch(
+      updatedAtSeconds * 1000,
+    );
     final diff = DateTime.now().difference(updated);
     if (diff.inMinutes < 1) return 'now';
     if (diff.inHours < 1) return '${diff.inMinutes}m';
@@ -844,7 +867,10 @@ class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
       );
     }
 
-    final currentSession = ref.watch(chatProvider(widget.charId)).value?.session;
+    final currentSession = ref
+        .watch(chatProvider(widget.charId))
+        .value
+        ?.session;
     final currentSessionId = currentSession?.id;
 
     return GlazeSessionList(
@@ -878,4 +904,3 @@ class _SessionsSheetContentState extends ConsumerState<_SessionsSheetContent> {
     );
   }
 }
-

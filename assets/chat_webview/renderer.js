@@ -104,6 +104,18 @@ const SHADOW_STYLE = `
   .glaze-message .janitor-img-wrapper .janitor-img {
     max-width: 100%; border-radius: 8px; cursor: pointer;
   }
+  .glaze-message table tbody tr:nth-child(even) { background-color: rgba(255,255,255,0.02); }
+  .glaze-message table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .search-highlight-text {
+    background-color: rgba(255, 215, 0, 0.4);
+    color: #fff;
+    border-radius: 4px;
+    padding: 0 2px;
+  }
+  .search-highlight-text.active-search-match {
+    background-color: rgba(244, 67, 54, 0.8);
+    color: #fff;
+  }
   .glaze-message details {
     margin: 8px 0;
     border: 1px solid rgba(255,255,255,0.08);
@@ -183,17 +195,6 @@ class Renderer {
     if (!enabled) this._selectedIds.clear();
     document.querySelectorAll('.message-section').forEach(msgEl => {
       msgEl.classList.toggle('selection-mode', this._selectionMode);
-      const cb = msgEl.querySelector('.selection-checkbox');
-      if (enabled && !cb) {
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'selection-checkbox';
-        checkbox.dataset.messageId = msgEl.dataset.messageId;
-        checkbox.checked = this._selectedIds.has(msgEl.dataset.messageId);
-        msgEl.insertBefore(checkbox, msgEl.firstChild);
-      } else if (!enabled && cb) {
-        cb.remove();
-      }
       msgEl.classList.toggle('selected', this._selectedIds.has(msgEl.dataset.messageId));
     });
   }
@@ -204,8 +205,6 @@ class Renderer {
     const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
     if (msgEl) {
       msgEl.classList.toggle('selected', this._selectedIds.has(messageId));
-      const cb = msgEl.querySelector('.selection-checkbox');
-      if (cb) cb.checked = this._selectedIds.has(messageId);
     }
   }
 
@@ -255,15 +254,6 @@ class Renderer {
     if (this._selectionMode) classes.push('selection-mode');
     if (this._selectedIds.has(id)) classes.push('selected');
     section.className = classes.join(' ');
-
-    if (this._selectionMode) {
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.className = 'selection-checkbox';
-      cb.dataset.messageId = id;
-      cb.checked = this._selectedIds.has(id);
-      section.appendChild(cb);
-    }
 
     /* --- Header --- */
     section.appendChild(this._createHeader(messageData));
@@ -1026,6 +1016,26 @@ class Renderer {
         badge.textContent = msg.memoryStatus;
       }
     }
+
+    if (msg.isHidden !== undefined) {
+      const nameEl = sectionEl.querySelector('.msg-name');
+      if (nameEl) {
+        let hi = nameEl.querySelector('.msg-name-badge[data-action="toggle-hidden"]');
+        if (msg.isHidden) {
+          if (!hi) {
+            hi = document.createElement('div');
+            hi.className = 'msg-name-badge';
+            hi.innerHTML = ICON.hidden;
+            hi.firstChild.classList.add('msg-hidden-badge');
+            hi.dataset.action = 'toggle-hidden';
+            hi.dataset.messageId = msg.id;
+            nameEl.appendChild(hi);
+          }
+        } else {
+          if (hi) hi.remove();
+        }
+      }
+    }
   }
 
   /* ----- Helpers ----- */
@@ -1095,16 +1105,17 @@ class Renderer {
 
   resetDateTracking() { this._lastTimestamps = { date: null, idx: -1 }; }
 
-  _applySearchHighlight(html) {
+  _applySearchHighlight(html, globalState) {
     if (!this.searchQuery) return html;
-    this.searchMatches = [];
-    let matchIndex = 0;
     const escapedQuery = this.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${escapedQuery})(?![^<]*>)`, 'gi');
     return html.replace(regex, (match) => {
-      const isActive = matchIndex === this.activeSearchIndex;
-      this.searchMatches.push(matchIndex);
-      matchIndex++;
+      let isActive = false;
+      if (globalState) {
+        isActive = globalState.matchIndex === this.activeSearchIndex;
+        this.searchMatches.push(globalState.matchIndex);
+        globalState.matchIndex++;
+      }
       return `<span class="search-highlight-text${isActive ? ' active-search-match' : ''}">${match}</span>`;
     });
   }
@@ -1112,19 +1123,50 @@ class Renderer {
   setSearch(query, activeIndex = -1) {
     this.searchQuery = query;
     this.activeSearchIndex = activeIndex;
-    document.querySelectorAll('.message-section').forEach(section => {
-      const host = section.querySelector('.msg-body .message-content');
-      if (host && host.shadowRoot) {
-        const root = host.shadowRoot.querySelector('.glaze-message');
-        if (root) {
-          const rawText = section.dataset.rawText || '';
-          const isUser = section.classList.contains('user');
-          const formatted = this.formatter.format(rawText, isUser);
-          root.innerHTML = this._applySearchHighlight(formatted);
+    this.searchMatches = [];
+    const globalState = { matchIndex: 0 };
+    
+    const items = (window.bridge && window.bridge.virtualList) 
+      ? window.bridge.virtualList.items.map(it => it.el) 
+      : document.querySelectorAll('.message-section');
+      
+    let activeMessageId = null;
+
+    items.forEach(section => {
+      const isUser = section.classList.contains('user');
+      
+      const processHost = (host, rawText) => {
+        if (host && host.shadowRoot) {
+          const root = host.shadowRoot.querySelector('.glaze-message');
+          if (root) {
+            const formatted = this.formatter.format(rawText, isUser);
+            const prevMatchIndex = globalState.matchIndex;
+            root.innerHTML = this._applySearchHighlight(formatted, globalState);
+            
+            if (activeIndex >= prevMatchIndex && activeIndex < globalState.matchIndex) {
+              activeMessageId = section.dataset.messageId || section.dataset.vlId;
+            }
+          }
         }
+      };
+
+      const reasoningHost = section.querySelector('.msg-reasoning-inner .message-content');
+      if (reasoningHost) {
+        processHost(reasoningHost, section.dataset.reasoning || '');
+      }
+
+      const bodyHost = section.querySelector('.msg-body .message-content');
+      if (bodyHost) {
+        processHost(bodyHost, section.dataset.rawText || '');
       }
     });
-    if (activeIndex >= 0) this._scrollToActiveMatch();
+
+    if (activeMessageId && window.bridge) {
+      window.bridge.scrollToMessage(activeMessageId);
+      setTimeout(() => this._scrollToActiveMatch(), 150);
+    } else {
+      this._scrollToActiveMatch();
+    }
   }
 
   _scrollToActiveMatch() {

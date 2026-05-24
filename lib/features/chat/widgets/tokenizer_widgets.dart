@@ -179,83 +179,43 @@ class TokenizerLayout extends StatelessWidget {
     final emptyTokens = contextSize - totalMain - totalReserve;
     final ctxPct = contextSize > 0 ? 1.0 / contextSize : 0.0;
 
+    // Build segment data for the bar painter
+    final segments = <_BarSegment>[];
+    for (final item in mainItems) {
+      segments.add(_BarSegment(fraction: item.tokens.toDouble() * ctxPct, color: item.color));
+    }
+    if (emptyTokens > 0) {
+      segments.add(_BarSegment(fraction: emptyTokens.toDouble() * ctxPct, color: Colors.transparent));
+    }
+    for (final item in reserveItems) {
+      segments.add(_BarSegment(fraction: item.tokens.toDouble() * ctxPct, color: item.color));
+    }
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          SizedBox(
             width: 48,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                color: context.cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(color: Colors.white.withValues(alpha: 0.05), offset: const Offset(1, 1), blurRadius: 2, spreadRadius: 0, blurStyle: BlurStyle.inner),
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.2), offset: const Offset(-1, -1), blurRadius: 2, spreadRadius: 0, blurStyle: BlurStyle.inner),
-                ],
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.white.withValues(alpha: 0.05), Colors.white.withValues(alpha: 0.12), Colors.white.withValues(alpha: 0.02), Colors.transparent],
-                          stops: const [0, 0.2, 0.5, 1],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Column(
-                    children: [
-                      for (final item in mainItems)
-                        _barSegment(item.tokens.toDouble() * ctxPct, item.color),
-                      if (emptyTokens > 0)
-                        _barSegment(emptyTokens.toDouble() * ctxPct, Colors.transparent),
-                      for (final item in reserveItems)
-                        _barSegment(item.tokens.toDouble() * ctxPct, item.color),
-                    ],
-                  ),
-                ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: CustomPaint(
+                painter: _BarChartPainter(
+                  segments: segments,
+                  backgroundColor: context.cs.surfaceContainerHighest,
+                  borderRadius: 12,
+                ),
               ),
             ),
           ),
           const SizedBox(width: 24),
           Expanded(
-              child: Column(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: combinedBreakdownItems.map((row) => _breakdownRow(context, row, breakdown)).toList(),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _barSegment(double fraction, Color color) {
-    if (fraction <= 0) return const SizedBox();
-    final flex = (fraction * 100000).toInt();
-    if (flex <= 0) return const SizedBox();
-    
-    Decoration? decoration;
-    if (color != Colors.transparent) {
-      final darken = Color.lerp(color, Colors.black, 0.15)!;
-      decoration = BoxDecoration(
-        gradient: LinearGradient(colors: [color, darken]),
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-          bottom: BorderSide(color: Colors.black.withValues(alpha: 0.1)),
-        ),
-      );
-    }
-    
-    return Expanded(
-      flex: flex,
-      child: Container(
-        width: double.infinity,
-        decoration: decoration,
       ),
     );
   }
@@ -473,5 +433,103 @@ class SettingsSlider extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _BarSegment {
+  final double fraction;
+  final Color color;
+  _BarSegment({required this.fraction, required this.color});
+}
+
+class _BarChartPainter extends CustomPainter {
+  final List<_BarSegment> segments;
+  final Color backgroundColor;
+  final double borderRadius;
+
+  _BarChartPainter({
+    required this.segments,
+    required this.backgroundColor,
+    required this.borderRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(borderRadius));
+    
+    // Draw background
+    final bgPaint = Paint()..color = backgroundColor;
+    canvas.drawRRect(rrect, bgPaint);
+
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    // Draw base gradient (simulating the container's gradient from before)
+    final rect = Offset.zero & size;
+    final gradient = LinearGradient(
+      colors: [Colors.white.withValues(alpha: 0.05), Colors.white.withValues(alpha: 0.12), Colors.white.withValues(alpha: 0.02), Colors.transparent],
+      stops: const [0, 0.2, 0.5, 1],
+    );
+    final shaderPaint = Paint()..shader = gradient.createShader(rect);
+    canvas.drawRect(rect, shaderPaint);
+
+    double currentY = 0;
+    for (final segment in segments) {
+      if (segment.fraction <= 0) continue;
+      final height = segment.fraction * size.height;
+      if (height <= 0) continue;
+
+      final segmentRect = Rect.fromLTWH(0, currentY, size.width, height);
+      
+      if (segment.color != Colors.transparent) {
+        final darken = Color.lerp(segment.color, Colors.black, 0.15)!;
+        final segmentGradient = LinearGradient(colors: [segment.color, darken]);
+        final segmentPaint = Paint()..shader = segmentGradient.createShader(segmentRect);
+        
+        canvas.drawRect(segmentRect, segmentPaint);
+        
+        // Draw borders
+        final borderPaint = Paint()..style = PaintingStyle.stroke..strokeWidth = 1;
+        borderPaint.color = Colors.white.withValues(alpha: 0.1);
+        canvas.drawLine(segmentRect.topLeft, segmentRect.topRight, borderPaint);
+        
+        borderPaint.color = Colors.black.withValues(alpha: 0.1);
+        canvas.drawLine(segmentRect.bottomLeft, segmentRect.bottomRight, borderPaint);
+      }
+
+      currentY += height;
+    }
+
+    canvas.restore();
+    
+    // Draw outer box shadows (inner shadow effect)
+    final path = Path()..addRRect(rrect);
+    
+    canvas.save();
+    canvas.clipRRect(rrect);
+    
+    final innerShadowPaint1 = Paint()
+      ..color = Colors.white.withValues(alpha: 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.inner, 2);
+    canvas.drawPath(path.shift(const Offset(1, 1)), innerShadowPaint1);
+    
+    final innerShadowPaint2 = Paint()
+      ..color = Colors.black.withValues(alpha: 0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.inner, 2);
+    canvas.drawPath(path.shift(const Offset(-1, -1)), innerShadowPaint2);
+    
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BarChartPainter oldDelegate) {
+    if (oldDelegate.segments.length != segments.length) return true;
+    for (int i = 0; i < segments.length; i++) {
+      if (oldDelegate.segments[i].fraction != segments[i].fraction ||
+          oldDelegate.segments[i].color != segments[i].color) {
+        return true;
+      }
+    }
+    return false;
   }
 }

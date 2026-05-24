@@ -23,7 +23,8 @@
       background: var(--bg-color, #1a1a2e);
     }
     #chat-container::-webkit-scrollbar {
-      width: 6px;
+      display: none;
+      width: 0;
     }
     #chat-container::-webkit-scrollbar-track {
       background: transparent;
@@ -48,7 +49,7 @@
 
   <script src="formatter.js"></script>
   <script src="renderer.js"></script>
-  <script src="virtual_list.js"></script>
+  <script src="useVirtualScroll.js"></script>
   <script src="bridge.js"></script>
 
   <script>
@@ -59,7 +60,7 @@
     try {
       const container = document.getElementById('chat-container');
       const formatter = new Formatter();
-      const virtualList = new VirtualList(container);
+      const virtualList = new UseVirtualScroll(container);
       const renderer = new Renderer(formatter, virtualList);
       window.bridge = new Bridge(renderer, virtualList);
       container.addEventListener('wheel', (e) => {

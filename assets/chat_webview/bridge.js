@@ -55,6 +55,19 @@ class Bridge {
 
     const onStart = (e) => {
       if (this.isGenerating) return;
+
+      const path = e.composedPath ? e.composedPath() : (e.path || []);
+      const isScrollableX = path.some(el => {
+        if (el.nodeType === Node.ELEMENT_NODE) {
+          const style = window.getComputedStyle(el);
+          if (style.overflowX === 'auto' || style.overflowX === 'scroll') {
+            if (el.scrollWidth > el.clientWidth) return true;
+          }
+        }
+        return false;
+      });
+      if (isScrollableX) return;
+
       const section = e.target.closest?.('.message-section.char');
       if (!section) return;
       if (section.classList.contains('editing') || section.classList.contains('selection-mode')) return;
@@ -339,10 +352,22 @@ class Bridge {
   /* ---------- Interaction dispatch ---------- */
   _setupInteractionListener() {
     document.addEventListener('click', (e) => {
-      /* Selection checkbox */
-      if (e.target.closest('.selection-checkbox')) {
-        this._handleSelectionCheckbox(e);
-        return;
+      /* Selection mode: tap on message toggles selection */
+      if (this.renderer._selectionMode) {
+        const section = e.target.closest('.message-section');
+        if (section) {
+          e.preventDefault();
+          e.stopPropagation();
+          const id = section.dataset.messageId;
+          this.renderer.toggleMessageSelection(id);
+          const ids = this.renderer.getSelectedIds();
+          this._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
+          // Auto-exit selection mode when nothing selected
+          if (ids.length === 0) {
+            this.renderer.setSelectionMode(false);
+          }
+          return;
+        }
       }
 
       /* Reasoning collapse */
@@ -565,16 +590,27 @@ class Bridge {
       else this._hideSelectionBar();
     });
 
-    /* Right-click → actions menu */
+    /* Long-press → enter selection mode (or toggle if already in it) */
     document.addEventListener('contextmenu', (e) => {
       const section = e.target.closest('.message-section');
       if (!section) return;
       e.preventDefault();
       const id = section.dataset.messageId;
-      const isUser = section.classList.contains('user');
-      const isSystem = section.classList.contains('system');
-      const content = this._extractText(section);
-      this._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
+
+      if (this.renderer._selectionMode) {
+        // Already in selection mode — toggle this message
+        this.renderer.toggleMessageSelection(id);
+        const ids = this.renderer.getSelectedIds();
+        this._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
+        if (ids.length === 0) {
+          this.renderer.setSelectionMode(false);
+        }
+      } else {
+        // Enter selection mode and select this message
+        this.renderer.setSelectionMode(true);
+        this.renderer.toggleMessageSelection(id);
+        this._sendToFlutter('onSelectionChange', [JSON.stringify(this.renderer.getSelectedIds())]);
+      }
     });
   }
 
@@ -1075,15 +1111,6 @@ class Bridge {
   }
 
   setSelectionMode(enabled) { this.renderer.setSelectionMode(enabled); }
-
-  _handleSelectionCheckbox(e) {
-    const cb = e.target.closest('.selection-checkbox');
-    if (!cb) return;
-    e.stopPropagation();
-    const id = cb.dataset.messageId;
-    this.renderer.toggleMessageSelection(id);
-    this._sendToFlutter('onSelectionChange', [JSON.stringify(this.renderer.getSelectedIds())]);
-  }
 
   _setupImageClickForward() {
     this.virtualList.container.addEventListener('image-click', (e) => {
