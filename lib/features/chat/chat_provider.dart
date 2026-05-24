@@ -265,14 +265,19 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     if (lastIdx < 0) return;
 
     final lastMsg = current.messages[lastIdx];
-    ChatMessage? prevAssistant;
 
-    if (lastMsg.role == 'assistant') {
-      prevAssistant = lastMsg;
+    if (lastMsg.role == 'user') {
+      state = AsyncData(current.copyWith(isGenerating: true, generationStartTime: DateTime.now()));
+      final promptSession = current.session!.copyWith(
+        messages: current.messages,
+        updatedAt: currentTimestampSeconds(),
+      );
+      await _runGeneration(promptSession, current, saveSession: current.session!);
+      return;
     }
 
-    if (prevAssistant == null) return;
-
+    // Last message is assistant → swipe (new variant)
+    final prevAssistant = lastMsg;
     final regenTargetId = prevAssistant.id;
     _restorationMessage = prevAssistant;
 
@@ -715,9 +720,10 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
         final originalMsg = _restorationMessage!;
         final rollbackSwipes = originalMsg.swipes.isNotEmpty ? originalMsg.swipes : [originalMsg.content];
         final rollbackSwipesMeta = originalMsg.swipesMeta.isNotEmpty ? originalMsg.swipesMeta : [<String, dynamic>{'genTime': originalMsg.genTime, 'reasoning': originalMsg.reasoning, 'tokens': originalMsg.tokens}];
-        final idx = session.messages.indexWhere((m) => m.id == regenTargetId);
+        final restoreSession = saveSession ?? session;
+        final idx = restoreSession.messages.indexWhere((m) => m.id == regenTargetId);
         if (idx >= 0) {
-          final restored = session.messages[idx].copyWith(
+          final restored = restoreSession.messages[idx].copyWith(
             content: originalMsg.content,
             swipeId: originalMsg.swipeId,
             swipes: rollbackSwipes,
@@ -729,7 +735,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
             isTyping: false,
             isError: false,
           );
-          final restoredMessages = [...session.messages];
+          final restoredMessages = [...restoreSession.messages];
           restoredMessages[idx] = restored;
           final restoredSession = session.copyWith(
             messages: restoredMessages,

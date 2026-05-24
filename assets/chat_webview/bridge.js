@@ -12,9 +12,58 @@ class Bridge {
     this._requestCounter = 0;
     this.isGenerating = false;
     this.isGeneratingImage = false;
+    this._genTimerInterval = null;
+    this._genTimerStart = null;
     this._setupScrollListener();
     this._setupInteractionListener();
     this._setupImageClickForward();
+  }
+
+  /* ---------- Generation timer ---------- */
+  _startGenTimer() {
+    this._stopGenTimer();
+    this._genTimerStart = Date.now();
+    this._genTimerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - this._genTimerStart) / 1000);
+      const timeStr = elapsed + 's';
+      // Update badge on the streaming placeholder or last typing message
+      const streamingEl = document.querySelector('[data-message-id="__streaming__"]')
+        || document.querySelector('.message-section.char .msg-body .typing-container')?.closest('.message-section');
+      if (streamingEl) {
+        let badge = streamingEl.querySelector('.gen-time-badge');
+        if (!badge) {
+          // Create badge container if not present
+          const layout = streamingEl.classList.contains('layout-bubble') ? 'bubble' : 'default';
+          const statContainer = streamingEl.querySelector(layout === 'bubble' ? '.bubble-meta' : '.msg-meta');
+          if (statContainer) {
+            const gw = document.createElement('div');
+            gw.className = 'gen-stat-wrap';
+            badge = document.createElement('span');
+            badge.className = 'gen-time gen-time-badge';
+            gw.appendChild(badge);
+            statContainer.appendChild(gw);
+          }
+        }
+        if (badge) badge.textContent = timeStr;
+      }
+    }, 1000);
+  }
+
+  _stopGenTimer() {
+    if (this._genTimerInterval) {
+      clearInterval(this._genTimerInterval);
+      this._genTimerInterval = null;
+    }
+    this._genTimerStart = null;
+  }
+
+  setGenerating(value) {
+    this.isGenerating = value;
+    if (value) {
+      this._startGenTimer();
+    } else {
+      this._stopGenTimer();
+    }
   }
 
   /* ---------- Flutter transport ---------- */
@@ -465,6 +514,8 @@ class Bridge {
     else if (msg.reasoning === null || msg.reasoning === '') delete section.dataset.reasoning;
 
     if (msg.text != null) section.dataset.rawText = msg.text;
+
+    if (msg.isError !== undefined) section.classList.toggle('error', !!msg.isError);
 
     const isUser = section.classList.contains('user');
     this.renderer.updateMessageContent(

@@ -275,15 +275,28 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
     if (anyGenerating != oldAnyGenerating || widget.isGenerating != old.isGenerating) {
       _bridge!.isGenerating = widget.isGenerating;
       _bridge!.isGeneratingImage = widget.isGeneratingImage;
-      _bridge!.evalJs('if (window.bridge) { window.bridge.isGenerating = ${widget.isGenerating}; window.bridge.isGeneratingImage = ${widget.isGeneratingImage}; }');
+      _bridge!.evalJs('if (window.bridge) { window.bridge.setGenerating(${widget.isGenerating}); window.bridge.isGeneratingImage = ${widget.isGeneratingImage}; }');
       if (!anyGenerating && widget.messages.isNotEmpty) {
-        // Regen button lives on the last user message
+        // Generation finished → show regen button on last user message
         final lastUser = widget.messages.lastWhereOrNull((m) => m.role == 'user');
         _bridge?.setLastMessage(lastUser?.id);
       } else if (widget.isGenerating) {
-        final lastUser = widget.messages.lastWhereOrNull((m) => m.role == 'user');
-        _bridge?.setLastMessage(lastUser?.id);
+        // Generation started → remove regen button
+        _bridge?.setLastMessage(null);
       }
+    }
+
+    // Fresh generation started (no regenTargetId) → inject typing placeholder immediately
+    if (!_wasGenerating && widget.isGenerating && widget.regenTargetId == null && !_streamingSent) {
+      final typingMsg = ChatMessage(
+        id: _kStreamingId,
+        role: 'assistant',
+        content: '',
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        isTyping: true,
+      );
+      _bridge?.appendMessage(typingMsg);
+      _streamingSent = true;
     }
 
     if (_wasGenerating && !widget.isGenerating) {
@@ -458,6 +471,7 @@ class _ChatWebViewState extends ConsumerState<ChatWebViewWidget>
           content: next.text,
           reasoning: next.reasoning,
           timestamp: DateTime.now().millisecondsSinceEpoch,
+          isTyping: true,
         );
 
         if (!_streamingSent) {
