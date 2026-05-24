@@ -16,6 +16,20 @@ dart run build_runner build     # Regenerate after editing freezed/drift models
 flutter test                    # Run tests
 ```
 
+**`flutter run` and `flutter test --watch` are permanently unavailable to the agent.**
+
+Reason: both commands are **long-running / blocking**. `flutter run` starts a persistent dev server and keeps the terminal occupied until the app is manually closed. The agent session would freeze indefinitely, unable to continue any work, issue further commands, or report results.
+
+Only run one-shot, non-interactive commands:
+- `flutter analyze` (with optional file path argument)
+- `flutter test` (non-watch, one-shot)
+- `dart run build_runner build` when required
+
+If you need to verify runtime behavior or hot-reload changes, ask the user to run `flutter run -d <platform>` (or `flutter run -d chrome`) in a separate terminal and report back. The agent cannot drive or observe a live Flutter session.
+
+**Hot restart after JS asset changes:**
+When files in `assets/chat_webview/` are modified, the user must **hot restart** (press `R`). Hot reload (`r`) doesn't rebuild the asset bundle.
+
 ## Code Conventions
 
 ### Flutter Widgets
@@ -87,12 +101,13 @@ When editing files matching a pattern below, READ the corresponding rule file FI
 | Formal invariants with code references | `docs/INVARIANTS.md` |
 | Custom `==...==` markdown markers, message rendering | `docs/markdown-markers.md` |
 | Windows/build failures, dependency overrides | `docs/BUILD_NOTES.md` |
+| Class/file organization, decomposition | `docs/CODE_STYLE.md` |
 
 ## Workflow
 
 - Branch (`feat/xxx`) off `master`, push to `origin`, open a PR — see `docs/WORKFLOW.md` for branching, Trello, and cleanup checklists.
 - Run `dart run build_runner build` after changing any freezed/drift model.
-- Single responsibility: split a class before it grows past ~150 lines (thin orchestrators, fat specialists, constructor injection). Details: `docs/ARCHITECTURE.md`.
+- Single responsibility: split a class before it grows past ~150 lines (thin orchestrators, fat specialists, constructor injection). Details: `docs/CODE_STYLE.md`.
 
 ## Do NOT
 
