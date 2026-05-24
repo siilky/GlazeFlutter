@@ -4,6 +4,232 @@
  * Flutter callHandler contract is preserved — useMessageActions lives in Dart.
  * ============================================================ */
 
+class GenTimer {
+  constructor() {
+    this._interval = null;
+    this._start = null;
+  }
+
+  start() {
+    this.stop();
+    this._start = Date.now();
+    this._interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - this._start) / 1000);
+      const timeStr = elapsed + 's';
+      const streamingEl = document.querySelector('[data-message-id="__streaming__"]')
+        || document.querySelector('.message-section.char .msg-body .typing-container')?.closest('.message-section');
+      if (streamingEl) {
+        let badge = streamingEl.querySelector('.gen-time-badge');
+        if (!badge) {
+          const layout = streamingEl.classList.contains('layout-bubble') ? 'bubble' : 'default';
+          const statContainer = streamingEl.querySelector(layout === 'bubble' ? '.bubble-meta' : '.msg-meta');
+          if (statContainer) {
+            const gw = document.createElement('div');
+            gw.className = 'gen-stat-wrap';
+            badge = document.createElement('span');
+            badge.className = 'gen-time gen-time-badge';
+            gw.appendChild(badge);
+            statContainer.appendChild(gw);
+          }
+        }
+        if (badge) badge.textContent = timeStr;
+      }
+    }, 1000);
+  }
+
+  stop() {
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
+    }
+    this._start = null;
+  }
+}
+
+class InteractionDispatch {
+  constructor(bridge) {
+    this.bridge = bridge;
+  }
+
+  handleClick(e) {
+    const bridge = this.bridge;
+    const renderer = bridge.renderer;
+
+    if (renderer.selectionMode) {
+      const section = e.target.closest('.message-section');
+      if (section) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = section.dataset.messageId;
+        renderer.toggleMessageSelection(id);
+        const ids = renderer.getSelectedIds();
+        bridge._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
+        if (ids.length === 0) renderer.setSelectionMode(false);
+        return;
+      }
+    }
+
+    const reasoningHdr = e.target.closest('[data-action="toggle-reasoning"]');
+    if (reasoningHdr) {
+      const block = reasoningHdr.closest('.msg-reasoning');
+      if (block) block.classList.toggle('collapsed');
+      return;
+    }
+
+    const actionEl = e.target.closest('[data-action]');
+    if (actionEl) {
+      const action = actionEl.dataset.action;
+      const handler = this._actionMap[action];
+      if (handler) {
+        handler.call(this, e, actionEl);
+        return;
+      }
+    }
+
+    const link = e.target.closest('a');
+    if (link) {
+      e.preventDefault();
+      bridge._sendToFlutter('onLinkClick', [link.href]);
+      return;
+    }
+
+    const stopBtn = e.target.closest('.stop-btn');
+    if (stopBtn) {
+      bridge._sendToFlutter('onStop', []);
+      return;
+    }
+
+    const regenBtn = e.target.closest('.msg-regenerate');
+    if (regenBtn) {
+      const id = regenBtn.dataset.messageId;
+      const mode = regenBtn.dataset.mode || 'magic';
+      bridge._sendToFlutter('onRegenerate', [id, mode]);
+      return;
+    }
+
+    const guidedBtn = e.target.closest('.msg-guided-swipe-btn');
+    if (guidedBtn) {
+      bridge._toggleGuidedSwipe(guidedBtn.dataset.messageId);
+      return;
+    }
+
+    const editSave = e.target.closest('[data-action="edit-save"]');
+    if (editSave) {
+      const section = editSave.closest('.message-section');
+      const ta = section ? section.querySelector('.edit-textarea') : null;
+      bridge._sendToFlutter('onEditSave', [editSave.dataset.messageId, ta ? ta.value : '']);
+      return;
+    }
+
+    const actionsBtn = e.target.closest('.msg-actions-btn');
+    if (actionsBtn) {
+      const id = actionsBtn.dataset.messageId;
+      const section = document.querySelector(`[data-message-id="${id}"]`);
+      if (section) {
+        const isUser = section.classList.contains('user');
+        const isSystem = section.classList.contains('system');
+        const content = bridge._extractText(section);
+        bridge._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
+      }
+      return;
+    }
+
+    const errorCopyBtn = e.target.closest('.error-copy-btn');
+    if (errorCopyBtn) {
+      const id = errorCopyBtn.dataset.messageId;
+      const section = document.querySelector(`[data-message-id="${id}"]`);
+      if (section) {
+        const raw = section.dataset.rawText || '';
+        try { navigator.clipboard.writeText(raw); }
+        catch (_) {
+          const ta = document.createElement('textarea');
+          ta.value = raw;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        errorCopyBtn.dataset.copied = '1';
+        setTimeout(() => { delete errorCopyBtn.dataset.copied; }, 1200);
+      }
+      return;
+    }
+
+    const avatar = e.target.closest('.msg-avatar');
+    if (avatar) {
+      const section = avatar.closest('.message-section');
+      if (section) bridge._sendToFlutter('onAvatarClick', [section.dataset.messageId]);
+      return;
+    }
+
+    const img = e.target.closest('.msg-image-attachment img');
+    if (img && img.src) {
+      bridge._sendToFlutter('onImageClick', [img.src]);
+      return;
+    }
+
+    bridge._hideSelectionBar();
+  }
+
+  _extractImgInstruction(el, path) {
+    const sec = path.find(e => e.dataset?.messageId);
+    const messageId = sec ? sec.dataset.messageId : '';
+    let instr = '';
+    try { instr = decodeURIComponent(el.dataset.instruction || ''); }
+    catch (_) { instr = el.dataset.instruction || ''; }
+    return { instr, messageId };
+  }
+
+  get _actionMap() {
+    const bridge = this.bridge;
+    return {
+      'memory-click': (e, el) => bridge._sendToFlutter('onMemoryClick', [el.dataset.messageId]),
+      'inject-click': (e, el) => bridge._sendToFlutter('onInjectClick', [el.dataset.messageId]),
+      'toggle-hidden': (e, el) => bridge._sendToFlutter('onToggleHidden', [el.dataset.messageId]),
+      'toggle-image-hidden': (e, el) => {
+        const section = el.closest('.message-section');
+        bridge._sendToFlutter('onToggleImageHidden', [section ? section.dataset.messageId : '']);
+      },
+      'swipe-left': (e, el) => bridge._sendToFlutter('onSwipe', [JSON.stringify({ id: el.dataset.messageId, direction: 'left' })]),
+      'swipe-right': (e, el) => bridge._sendToFlutter('onSwipe', [JSON.stringify({ id: el.dataset.messageId, direction: 'right' })]),
+      'greeting-prev': (e, el) => bridge._sendToFlutter('onChangeGreeting', [el.dataset.messageId, -1]),
+      'greeting-next': (e, el) => bridge._sendToFlutter('onChangeGreeting', [el.dataset.messageId, 1]),
+      'stop': (e, el) => bridge._sendToFlutter('onStop', []),
+      'regenerate': (e, el) => bridge._sendToFlutter('onRegenerate', [el.dataset.messageId, el.dataset.mode || 'magic']),
+      'toggle-guided': (e, el) => bridge._toggleGuidedSwipe(el.dataset.messageId),
+      'edit-save': (e, el) => {
+        const section = el.closest('.message-section');
+        const ta = section ? section.querySelector('.edit-textarea') : null;
+        bridge._sendToFlutter('onEditSave', [el.dataset.messageId, ta ? ta.value : '']);
+      },
+      'edit-cancel': (e, el) => bridge._sendToFlutter('onEditCancel', [el.dataset.messageId]),
+      'open-actions': (e, el) => {
+        const id = el.dataset.messageId;
+        const section = document.querySelector(`[data-message-id="${id}"]`);
+        if (section) {
+          const isUser = section.classList.contains('user');
+          const isSystem = section.classList.contains('system');
+          const content = bridge._extractText(section);
+          bridge._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
+        }
+      },
+      'img-retry': (e, el) => {
+        const { instr, messageId } = this._extractImgInstruction(el, e.composedPath());
+        bridge._sendToFlutter('onImgRetry', [instr, messageId]);
+      },
+      'img-find': (e, el) => {
+        const { instr, messageId } = this._extractImgInstruction(el, e.composedPath());
+        bridge._sendToFlutter('onImgFind', [instr, messageId]);
+      },
+      'img-regen': (e, el) => {
+        const { instr, messageId } = this._extractImgInstruction(el, e.composedPath());
+        bridge._sendToFlutter('onImgRegen', [instr, messageId]);
+      },
+      'img-stop': (e, el) => bridge._sendToFlutter('onImgCancel', []),
+    };
+  }
+}
+
 class Bridge {
   constructor(renderer, virtualList) {
     this.renderer = renderer;
@@ -12,8 +238,8 @@ class Bridge {
     this._requestCounter = 0;
     this.isGenerating = false;
     this.isGeneratingImage = false;
-    this._genTimerInterval = null;
-    this._genTimerStart = null;
+    this._genTimer = new GenTimer();
+    this._interaction = new InteractionDispatch(this);
     this._charName = null;
     this._personaName = null;
     this._charAvatarUrl = null;
@@ -211,50 +437,12 @@ class Bridge {
     });
   }
 
-  /* ---------- Generation timer ---------- */
-  _startGenTimer() {
-    this._stopGenTimer();
-    this._genTimerStart = Date.now();
-    this._genTimerInterval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - this._genTimerStart) / 1000);
-      const timeStr = elapsed + 's';
-      // Update badge on the streaming placeholder or last typing message
-      const streamingEl = document.querySelector('[data-message-id="__streaming__"]')
-        || document.querySelector('.message-section.char .msg-body .typing-container')?.closest('.message-section');
-      if (streamingEl) {
-        let badge = streamingEl.querySelector('.gen-time-badge');
-        if (!badge) {
-          // Create badge container if not present
-          const layout = streamingEl.classList.contains('layout-bubble') ? 'bubble' : 'default';
-          const statContainer = streamingEl.querySelector(layout === 'bubble' ? '.bubble-meta' : '.msg-meta');
-          if (statContainer) {
-            const gw = document.createElement('div');
-            gw.className = 'gen-stat-wrap';
-            badge = document.createElement('span');
-            badge.className = 'gen-time gen-time-badge';
-            gw.appendChild(badge);
-            statContainer.appendChild(gw);
-          }
-        }
-        if (badge) badge.textContent = timeStr;
-      }
-    }, 1000);
-  }
-
-  _stopGenTimer() {
-    if (this._genTimerInterval) {
-      clearInterval(this._genTimerInterval);
-      this._genTimerInterval = null;
-    }
-    this._genTimerStart = null;
-  }
-
   setGenerating(value) {
     this.isGenerating = value;
     if (value) {
-      this._startGenTimer();
+      this._genTimer.start();
     } else {
-      this._stopGenTimer();
+      this._genTimer.stop();
     }
   }
 
@@ -351,221 +539,7 @@ class Bridge {
 
   /* ---------- Interaction dispatch ---------- */
   _setupInteractionListener() {
-    document.addEventListener('click', (e) => {
-      /* Selection mode: tap on message toggles selection */
-      if (this.renderer._selectionMode) {
-        const section = e.target.closest('.message-section');
-        if (section) {
-          e.preventDefault();
-          e.stopPropagation();
-          const id = section.dataset.messageId;
-          this.renderer.toggleMessageSelection(id);
-          const ids = this.renderer.getSelectedIds();
-          this._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
-          // Auto-exit selection mode when nothing selected
-          if (ids.length === 0) {
-            this.renderer.setSelectionMode(false);
-          }
-          return;
-        }
-      }
-
-      /* Reasoning collapse */
-      const reasoningHdr = e.target.closest('[data-action="toggle-reasoning"]');
-      if (reasoningHdr) {
-        const block = reasoningHdr.closest('.msg-reasoning');
-        if (block) block.classList.toggle('collapsed');
-        return;
-      }
-
-      /* External links */
-      const link = e.target.closest('a');
-      if (link) {
-        e.preventDefault();
-        this._sendToFlutter('onLinkClick', [link.href]);
-        return;
-      }
-
-      /* Memory badge → Flutter */
-      const memoryBadge = e.target.closest('[data-action="memory-click"]');
-      if (memoryBadge) {
-        this._sendToFlutter('onMemoryClick', [memoryBadge.dataset.messageId]);
-        return;
-      }
-
-      /* Triggered items / inject menu */
-      const injectBadge = e.target.closest('[data-action="inject-click"]');
-      if (injectBadge) {
-        this._sendToFlutter('onInjectClick', [injectBadge.dataset.messageId]);
-        return;
-      }
-
-      /* Hidden eye toggle */
-      const hiddenToggle = e.target.closest('[data-action="toggle-hidden"]');
-      if (hiddenToggle) {
-        this._sendToFlutter('onToggleHidden', [hiddenToggle.dataset.messageId]);
-        return;
-      }
-
-      /* Image-context-hidden toggle */
-      const imgHiddenToggle = e.target.closest('[data-action="toggle-image-hidden"]');
-      if (imgHiddenToggle) {
-        const section = imgHiddenToggle.closest('.message-section');
-        const id = section ? section.dataset.messageId : '';
-        this._sendToFlutter('onToggleImageHidden', [id]);
-        return;
-      }
-
-      /* Swipe nav (assistant variants) */
-      const swipeBtn = e.target.closest('[data-action="swipe-left"], [data-action="swipe-right"]');
-      if (swipeBtn) {
-        const action = swipeBtn.dataset.action;
-        const id = swipeBtn.dataset.messageId;
-        this._sendToFlutter('onSwipe', [JSON.stringify({
-          id, direction: action === 'swipe-right' ? 'right' : 'left'
-        })]);
-        return;
-      }
-
-      /* Greeting nav (first message) */
-      const greetingBtn = e.target.closest('[data-action="greeting-prev"], [data-action="greeting-next"]');
-      if (greetingBtn) {
-        const dir = greetingBtn.dataset.action === 'greeting-next' ? 1 : -1;
-        this._sendToFlutter('onChangeGreeting', [greetingBtn.dataset.messageId, dir]);
-        return;
-      }
-
-      /* Stop generation */
-      const stopBtn = e.target.closest('[data-action="stop"], .stop-btn');
-      if (stopBtn) {
-        this._sendToFlutter('onStop', []);
-        return;
-      }
-
-      /* Regenerate (last user / error) */
-      const regenBtn = e.target.closest('[data-action="regenerate"], .msg-regenerate');
-      if (regenBtn) {
-        const id = regenBtn.dataset.messageId;
-        const mode = regenBtn.dataset.mode || 'magic';
-        this._sendToFlutter('onRegenerate', [id, mode]);
-        return;
-      }
-
-      /* Guided swipe toggle */
-      const guidedBtn = e.target.closest('[data-action="toggle-guided"], .msg-guided-swipe-btn');
-      if (guidedBtn) {
-        this._toggleGuidedSwipe(guidedBtn.dataset.messageId);
-        return;
-      }
-
-      /* Edit save / cancel */
-      const editSave = e.target.closest('[data-action="edit-save"]');
-      if (editSave) {
-        const section = editSave.closest('.message-section');
-        const ta = section ? section.querySelector('.edit-textarea') : null;
-        const id = editSave.dataset.messageId;
-        const text = ta ? ta.value : '';
-        this._sendToFlutter('onEditSave', [id, text]);
-        return;
-      }
-      const editCancel = e.target.closest('[data-action="edit-cancel"]');
-      if (editCancel) {
-        this._sendToFlutter('onEditCancel', [editCancel.dataset.messageId]);
-        return;
-      }
-
-      /* Actions menu (kebab) */
-      const actionsBtn = e.target.closest('[data-action="open-actions"], .msg-actions-btn');
-      if (actionsBtn) {
-        const id = actionsBtn.dataset.messageId;
-        const section = document.querySelector(`[data-message-id="${id}"]`);
-        if (section) {
-          const isUser = section.classList.contains('user');
-          const isSystem = section.classList.contains('system');
-          const content = this._extractText(section);
-          this._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
-        }
-        return;
-      }
-
-      /* Image gen frames */
-      const path = e.composedPath();
-
-      const imgRetryBtn = path.find(el => el.matches?.('[data-action="img-retry"]'));
-      if (imgRetryBtn) {
-        const sec = path.find(el => el.dataset?.messageId);
-        const messageId = sec ? sec.dataset.messageId : '';
-        let instr = '';
-        try { instr = decodeURIComponent(imgRetryBtn.dataset.instruction || ''); }
-        catch (_) { instr = imgRetryBtn.dataset.instruction || ''; }
-        this._sendToFlutter('onImgRetry', [instr, messageId]);
-        return;
-      }
-      const imgFindBtn = path.find(el => el.matches?.('[data-action="img-find"]'));
-      if (imgFindBtn) {
-        const sec = path.find(el => el.dataset?.messageId);
-        const messageId = sec ? sec.dataset.messageId : '';
-        let instr = '';
-        try { instr = decodeURIComponent(imgFindBtn.dataset.instruction || ''); }
-        catch (_) { instr = imgFindBtn.dataset.instruction || ''; }
-        this._sendToFlutter('onImgFind', [instr, messageId]);
-        return;
-      }
-      const imgRegenBtn = path.find(el => el.matches?.('[data-action="img-regen"]'));
-      if (imgRegenBtn) {
-        const sec = path.find(el => el.dataset?.messageId);
-        const messageId = sec ? sec.dataset.messageId : '';
-        let instr = '';
-        try { instr = decodeURIComponent(imgRegenBtn.dataset.instruction || ''); }
-        catch (_) { instr = imgRegenBtn.dataset.instruction || ''; }
-        this._sendToFlutter('onImgRegen', [instr, messageId]);
-        return;
-      }
-      const imgStopBtn = path.find(el => el.matches?.('[data-action="img-stop"]'));
-      if (imgStopBtn) {
-        this._sendToFlutter('onImgCancel', []);
-        return;
-      }
-
-      /* Error copy */
-      const errorCopyBtn = e.target.closest('.error-copy-btn');
-      if (errorCopyBtn) {
-        const id = errorCopyBtn.dataset.messageId;
-        const section = document.querySelector(`[data-message-id="${id}"]`);
-        if (section) {
-          const raw = section.dataset.rawText || '';
-          try { navigator.clipboard.writeText(raw); }
-          catch (_) {
-            const ta = document.createElement('textarea');
-            ta.value = raw;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            ta.remove();
-          }
-          errorCopyBtn.dataset.copied = '1';
-          setTimeout(() => { delete errorCopyBtn.dataset.copied; }, 1200);
-        }
-        return;
-      }
-
-      /* Avatar tap */
-      const avatar = e.target.closest('.msg-avatar');
-      if (avatar) {
-        const section = avatar.closest('.message-section');
-        if (section) this._sendToFlutter('onAvatarClick', [section.dataset.messageId]);
-        return;
-      }
-
-      /* Image tap (inside body) */
-      const img = e.target.closest('.msg-image-attachment img');
-      if (img && img.src) {
-        this._sendToFlutter('onImageClick', [img.src]);
-        return;
-      }
-
-      this._hideSelectionBar();
-    });
+    document.addEventListener('click', (e) => this._interaction.handleClick(e));
 
     /* Selection bar */
     document.addEventListener('selectionchange', () => {
@@ -598,12 +572,12 @@ class Bridge {
       const section = e.target.closest('.message-section');
       if (!section) return;
 
-      if (!this.renderer._selectionMode && e.target.closest('.msg-body')) return;
+      if (!this.renderer.selectionMode && e.target.closest('.msg-body')) return;
 
       e.preventDefault();
       const id = section.dataset.messageId;
 
-      if (this.renderer._selectionMode) {
+      if (this.renderer.selectionMode) {
         this.renderer.toggleMessageSelection(id);
         const ids = this.renderer.getSelectedIds();
         this._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
@@ -690,15 +664,10 @@ class Bridge {
     const elements = [];
     for (const msg of messages) {
       const rendered = this.renderer.renderMessage(msg);
-      if (Array.isArray(rendered)) {
-        for (const el of rendered) {
-          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-          ids.push(id);
-          elements.push(el);
-        }
-      } else {
-        ids.push(msg.id);
-        elements.push(rendered);
+      for (const el of rendered) {
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        ids.push(id);
+        elements.push(el);
       }
     }
 
@@ -710,13 +679,9 @@ class Bridge {
   appendMessage(messageJson) {
     const msg = JSON.parse(messageJson);
     const rendered = this.renderer.renderMessage(msg);
-    if (Array.isArray(rendered)) {
-      for (const el of rendered) {
-        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-        this.virtualList.append(id, el);
-      }
-    } else {
-      this.virtualList.append(msg.id, rendered);
+    for (const el of rendered) {
+      const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+      this.virtualList.append(id, el);
     }
     this.virtualList.scrollToBottom();
   }
@@ -725,13 +690,9 @@ class Bridge {
     const messages = JSON.parse(messagesJson);
     messages.forEach(msg => {
       const rendered = this.renderer.renderMessage(msg);
-      if (Array.isArray(rendered)) {
-        for (const el of rendered) {
-          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-          this.virtualList.append(id, el);
-        }
-      } else {
-        this.virtualList.append(msg.id, rendered);
+      for (const el of rendered) {
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        this.virtualList.append(id, el);
       }
     });
   }
@@ -743,14 +704,10 @@ class Bridge {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       const rendered = this.renderer.renderMessage(msg);
-      if (Array.isArray(rendered)) {
-        for (let j = rendered.length - 1; j >= 0; j--) {
-          const el = rendered[j];
-          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-          this.virtualList.prepend(id, el);
-        }
-      } else {
-        this.virtualList.prepend(msg.id, rendered);
+      for (let j = rendered.length - 1; j >= 0; j--) {
+        const el = rendered[j];
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        this.virtualList.prepend(id, el);
       }
     }
     const scrollAfter = this.virtualList.container.scrollHeight;

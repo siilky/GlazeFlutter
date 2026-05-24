@@ -210,6 +210,8 @@ class Renderer {
 
   getSelectedIds() { return [...this._selectedIds]; }
 
+  get selectionMode() { return this._selectionMode; }
+
   /* ----- Public: render a message ----- */
   renderMessage(messageData) {
     const elements = [];
@@ -224,7 +226,7 @@ class Renderer {
 
     const messageEl = this._createSection(messageData);
     elements.push(messageEl);
-    return elements.length > 1 ? elements : messageEl;
+    return elements;
   }
 
   _createSection(messageData) {
