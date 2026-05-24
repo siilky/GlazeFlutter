@@ -76,7 +76,6 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   CancelToken? _imgGenCancelToken;
   ChatMessage? _restorationMessage;
   int _activeGenId = 0;
-  Completer<void>? _activeGenCompleter;
 
   /// Called by [ChatGenerationService] to register the active SSE cancel token.
   /// Guarded by [genId]: if the calling generation is no longer current, the

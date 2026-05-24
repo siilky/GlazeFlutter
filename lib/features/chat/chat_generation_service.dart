@@ -70,6 +70,7 @@ class ChatGenerationService {
       if (isAborted()) return ChatState(session: saveSession ?? session, isGenerating: false, visibleStartIndex: vsi);
       final cancelToken = CancelToken();
       _ref.read(chatProvider(charId).notifier).setCancelToken(cancelToken, genId: genId);
+      if (cancelToken.isCancelled) return ChatState(session: saveSession ?? session, isGenerating: false, visibleStartIndex: vsi);
       final preset = payload.preset;
       const defaultTagStart = '<think' + '>' ;
       const defaultTagEnd = '</think' + '>' ;
@@ -121,11 +122,13 @@ class ChatGenerationService {
         omitReasoning: apiConfig.omitReasoning,
         omitReasoningEffort: apiConfig.omitReasoningEffort,
         onUpdate: (delta, reasoningDelta) {
+          if (isAborted()) return;
           accumulator.consumeDelta(delta, reasoningDelta: reasoningDelta);
           if (!frameScheduled) {
             frameScheduled = true;
             SchedulerBinding.instance.scheduleFrameCallback((_) {
               frameScheduled = false;
+              if (isAborted()) return;
               _ref.read(streamingStateProvider(charId).notifier).state =
                   StreamingState(
                     text: accumulator.text.trimLeft(),
@@ -172,7 +175,9 @@ class ChatGenerationService {
           );
         },
         onError: (error) {
-          final isCancelled = error is DioException && error.type == DioExceptionType.cancel;
+          final isCancelled = (error is DioException && error.type == DioExceptionType.cancel)
+              || cancelToken.isCancelled
+              || isAborted();
           if (isCancelled) {
             finalState = ChatState(session: session, isGenerating: false, visibleStartIndex: vsi);
           } else if (regenTargetId != null && saveSession != null) {
