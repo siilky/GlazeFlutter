@@ -76,9 +76,17 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   CancelToken? _imgGenCancelToken;
   ChatMessage? _restorationMessage;
   int _activeGenId = 0;
-  Completer<void>? _activeGenCompleter;
 
-  void setCancelToken(CancelToken token) => _cancelToken = token;
+  /// Called by [ChatGenerationService] to register the active SSE cancel token.
+  /// Guarded by [genId]: if the calling generation is no longer current, the
+  /// token is immediately cancelled so its SSE stream never fires onComplete.
+  void setCancelToken(CancelToken token, {required int genId}) {
+    if (_activeGenId != genId) {
+      token.cancel();
+      return;
+    }
+    _cancelToken = token;
+  }
 
   bool get isGeneratingImage => _imgGenCancelToken != null && !(_imgGenCancelToken!.isCancelled);
 
@@ -255,8 +263,11 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   }
 
   Future<void> regenerateLastAssistant({String? guidanceText}) async {
-    if (_activeGenCompleter != null && !_activeGenCompleter!.isCompleted) {
-      await _abortAndWait();
+    // Abort any in-flight generation immediately (does not await) — correctness
+    // is guaranteed by the isAborted() closure and setCancelToken genId guard,
+    // so we don't need to wait for the old stream to fully close before starting.
+    if (state.value?.isGenerating == true) {
+      abortGeneration();
     }
     final current = state.value;
     if (current == null || current.session == null || current.isGenerating) return;
@@ -361,6 +372,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     final result = await service.generate(
       session: current.session!,
       charId: arg,
+      genId: genId,
       currentState: current,
       onStateUpdate: (s) { if (_activeGenId == genId) state = AsyncData(s); },
       isAborted: () => _activeGenId != genId,
@@ -638,7 +650,70 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
           isGeneratingImage: false,
         ));
       } else {
-        state = AsyncData(current.copyWith(isGenerating: false, isGeneratingImage: false));
+        // Fresh generation (sendMessage). Never remove user messages.
+        // If partial streaming content arrived, save it as an assistant message.
+        // If the last message in state is an assistant that is absolutely empty
+        // (no content and no reasoning), remove it. Otherwise keep everything.
+        final partialText = partialStreaming.text;
+        final partialReasoning = partialStreaming.reasoning;
+        final hasPartial = partialText.isNotEmpty || (partialReasoning != null && partialReasoning.isNotEmpty);
+
+        final currentMessages = current.session?.messages ?? const <ChatMessage>[];
+        final lastMsg = currentMessages.isNotEmpty ? currentMessages.last : null;
+        final lastIsEmptyAssistant = lastMsg != null &&
+            lastMsg.role == 'assistant' &&
+            lastMsg.content.isEmpty &&
+            (lastMsg.reasoning == null || lastMsg.reasoning!.isEmpty);
+
+        if (hasPartial) {
+          // Save partial content as a new assistant message
+          final partialMsg = ChatMessage(
+            id: generateId(),
+            role: 'assistant',
+            content: partialText,
+            reasoning: partialReasoning,
+            isTyping: false,
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+            swipes: [partialText],
+            swipeId: 0,
+            swipesMeta: [<String, dynamic>{}],
+          );
+          final baseMessages = lastIsEmptyAssistant
+              ? currentMessages.sublist(0, currentMessages.length - 1)
+              : currentMessages;
+          final updatedMessages = [...baseMessages, partialMsg];
+          final updatedSession = current.session?.copyWith(
+            messages: updatedMessages,
+            updatedAt: currentTimestampSeconds(),
+          );
+          if (updatedSession != null) {
+            ref.read(chatRepoProvider).put(updatedSession);
+            ChatSessionService.updateCache(updatedSession);
+          }
+          state = AsyncData(current.copyWith(
+            session: updatedSession ?? current.session,
+            isGenerating: false,
+            isGeneratingImage: false,
+          ));
+        } else if (lastIsEmptyAssistant) {
+          // Drop the empty assistant placeholder, keep everything else (incl. user msg)
+          final trimmedMessages = currentMessages.sublist(0, currentMessages.length - 1);
+          final trimmedSession = current.session?.copyWith(
+            messages: trimmedMessages,
+            updatedAt: currentTimestampSeconds(),
+          );
+          if (trimmedSession != null) {
+            ref.read(chatRepoProvider).put(trimmedSession);
+            ChatSessionService.updateCache(trimmedSession);
+          }
+          state = AsyncData(current.copyWith(
+            session: trimmedSession ?? current.session,
+            isGenerating: false,
+            isGeneratingImage: false,
+          ));
+        } else {
+          state = AsyncData(current.copyWith(isGenerating: false, isGeneratingImage: false));
+        }
       }
     } else if (current != null && current.isGeneratingImage) {
       state = AsyncData(current.copyWith(isGeneratingImage: false));
@@ -646,16 +721,6 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
     _restorationMessage = null;
 
     GenerationNotificationService.instance.onGenerationAborted();
-  }
-
-  /// Aborts any active generation and waits for the SSE stream to fully close
-  /// before returning. This prevents the race condition where a new generation
-  /// starts before the old stream's onError/onComplete callbacks have fired.
-  Future<void> _abortAndWait() async {
-    final completer = _activeGenCompleter;
-    if (completer == null || completer.isCompleted) return;
-    abortGeneration();
-    await completer.future;
   }
 
   void _invalidateHistory() => ref.invalidate(chatHistoryProvider);
@@ -693,6 +758,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       session: session,
       saveSession: saveSession,
       charId: arg,
+      genId: genId,
       currentState: current,
       onStateUpdate: (s) { if (_activeGenId == genId) state = AsyncData(s); },
       isAborted: () => _activeGenId != genId,

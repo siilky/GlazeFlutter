@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -122,73 +123,85 @@ class SseClient {
     );
 
     final responseStream = response.data.stream;
+    final completer = Completer<void>();
+    StreamSubscription? subscription;
     var buffer = '';
     var fullText = '';
     var fullReasoning = '';
 
-    await for (final chunk in responseStream as Stream) {
-      if (cancelToken != null && cancelToken.isCancelled) {
-        debugPrint('[SSE] cancel detected in await-for, breaking; accumulated ${fullText.length} chars');
-        // break out of await-for; Dart automatically cancels the stream subscription
-        break;
-      }
-
-      buffer += utf8.decode(chunk as List<int>, allowMalformed: true);
-      final lines = buffer.split('\n');
-      buffer = lines.removeLast();
-
-      for (final line in lines) {
-        final trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        final data = trimmed.substring(6).trim();
-        if (data == '[DONE]') {
-          // Check cancel BEFORE calling onComplete to prevent race condition
-          // where server sent [DONE] just before client cancelled
-          if (cancelToken != null && cancelToken.isCancelled) {
-            debugPrint('[SSE] cancel detected at [DONE], suppressing onComplete; accumulated ${fullText.length} chars');
-            return;
-          }
-          // Normal completion — call onComplete and return.
-          onComplete?.call(fullText, fullReasoning.isNotEmpty ? fullReasoning : null);
+    subscription = (responseStream as Stream<List<int>>).listen(
+      (chunk) {
+        if (cancelToken?.isCancelled == true) {
+          debugPrint('[SSE] cancel detected in listen callback, stopping stream');
+          subscription?.cancel();
+          if (!completer.isCompleted) completer.complete();
           return;
         }
+        buffer += utf8.decode(chunk, allowMalformed: true);
+        final lines = buffer.split('\n');
+        buffer = lines.removeLast();
 
-        try {
-          final json = jsonDecode(data) as Map<String, dynamic>;
-          final choice = json['choices']?[0];
-          final delta = choice?['delta'];
-
-          final contentDelta = delta?['content'] as String? ?? '';
-          final reasoningDelta = delta?['reasoning_content'] as String? ??
-              delta?['reasoning'] as String?;
-
-          if (contentDelta.isNotEmpty) {
-            fullText += contentDelta;
+        for (final line in lines) {
+          final trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          final data = trimmed.substring(6).trim();
+          if (data == '[DONE]') {
+            if (cancelToken != null && cancelToken.isCancelled) {
+              debugPrint('[SSE] cancel detected at [DONE], suppressing onComplete');
+            } else {
+              onComplete?.call(fullText, fullReasoning.isNotEmpty ? fullReasoning : null);
+              fullText = '';
+              fullReasoning = '';
+            }
+            subscription?.cancel();
+            if (!completer.isCompleted) completer.complete();
+            return;
           }
-          if (reasoningDelta != null && reasoningDelta.isNotEmpty) {
-            fullReasoning += reasoningDelta;
-          }
 
-          if (contentDelta.isNotEmpty || reasoningDelta != null) {
-            onUpdate?.call(contentDelta, reasoningDelta);
-          }
-        } catch (_) {}
-      }
-    }
+          try {
+            final json = jsonDecode(data) as Map<String, dynamic>;
+            final choice = json['choices']?[0];
+            final delta = choice?['delta'];
 
-    // Stream ended without [DONE] — this means the connection was dropped
-    // (server-side cancel, network error, 499, etc.) or the client cancelled.
-    // Do NOT call onComplete here; the outer catch will invoke onError instead.
-    // If the client cancelled cleanly, onError handles it via DioException.cancel.
-    // If text accumulated, we throw so onError can decide what to save.
-    
-    // CRITICAL: Double-check cancel status AFTER stream completes to prevent race condition
-    // where cancel() was called but buffered data was still processed in the await-for loop.
+            final contentDelta = delta?['content'] as String? ?? '';
+            final reasoningDelta = delta?['reasoning_content'] as String? ??
+                delta?['reasoning'] as String?;
+
+            if (contentDelta.isNotEmpty) {
+              fullText += contentDelta;
+            }
+            if (reasoningDelta != null && reasoningDelta.isNotEmpty) {
+              fullReasoning += reasoningDelta;
+            }
+
+            if (contentDelta.isNotEmpty || reasoningDelta != null) {
+              onUpdate?.call(contentDelta, reasoningDelta);
+            }
+          } catch (_) {}
+        }
+      },
+      onDone: () {
+        if (!completer.isCompleted) completer.complete();
+      },
+      onError: (e) {
+        if (!completer.isCompleted) completer.complete();
+      },
+      cancelOnError: true,
+    );
+
+    cancelToken?.whenCancel.then((_) {
+      debugPrint('[SSE] CancelToken fired — cancelling stream subscription');
+      subscription?.cancel();
+      if (!completer.isCompleted) completer.complete();
+    });
+
+    await completer.future;
+
     if (cancelToken != null && cancelToken.isCancelled) {
-      debugPrint('[SSE] cancel detected after stream ended, suppressing onComplete; accumulated ${fullText.length} chars');
+      debugPrint('[SSE] stream completed with cancel active; suppressing onComplete');
       return;
     }
-    
+
     // Server dropped connection without [DONE] — treat as normal completion
     // if any text was accumulated (provider returned 200 but omitted [DONE]).
     if (fullText.isNotEmpty || fullReasoning.isNotEmpty) {
