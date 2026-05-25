@@ -7,6 +7,7 @@ import '../../core/llm/prompt_isolate.dart';
 import '../../core/llm/prompt_payload_builder.dart';
 import '../../core/llm/sse_client.dart';
 import '../../core/llm/stream_accumulator.dart';
+import '../../core/llm/tokenizer.dart';
 import '../../core/models/api_config.dart';
 import '../../core/models/chat_message.dart';
 import '../../core/state/active_selection_provider.dart';
@@ -21,10 +22,20 @@ import 'chat_provider.dart';
 import 'chat_state.dart';
 import 'widgets/cached_token_breakdown.dart';
 
+final chatGenerationServiceProvider = Provider<ChatGenerationService>((ref) {
+  return ChatGenerationService(ref);
+});
+
 class ChatGenerationService {
   final Ref _ref;
 
   ChatGenerationService(this._ref);
+
+  void _persist(ChatSession session) {
+    _ref.read(chatRepoProvider).put(session).catchError((Object e) {
+      debugPrint('[ChatGenerationService] failed to persist session: $e');
+    });
+  }
 
   Future<ChatState> generate({
     required ChatSession session,
@@ -147,20 +158,12 @@ class ChatGenerationService {
               (text.isNotEmpty || (reasoning != null && reasoning.isNotEmpty))) {
             accumulator.consumeDelta(text, reasoningDelta: reasoning);
           }
-          accumulator.flush();
           var finalText = accumulator.text.trimLeft();
-          if (accumulator.hasExternalReasoning) {
-            finalText = finalText.replaceAll(reasoningTagEnd, '');
-            finalText = finalText.replaceAll(reasoningTagStart, '');
-            finalText = finalText.trimLeft();
-          } else if (finalText.startsWith(reasoningTagEnd)) {
-            finalText = finalText.substring(reasoningTagEnd.length).trimLeft();
-          }
           var finalReasoning = accumulator.reasoning.isNotEmpty ? accumulator.reasoning : reasoning;
           final isAllReasoning = finalText.isEmpty && finalReasoning != null && finalReasoning.isNotEmpty;
           final elapsed = DateTime.now().difference(startGenTime).inMilliseconds;
           final timeStr = '${(elapsed / 1000).toStringAsFixed(1)}s';
-          final tokenCount = (finalText.length / 4).round();
+          final tokenCount = estimateTokens(finalText);
           finalState = _saveAssistantMessage(
             finalText, finalReasoning, saveSession ?? session,
             isAborted: isAborted,
@@ -437,7 +440,7 @@ class ChatGenerationService {
           updatedAt: currentTimestampSeconds(),
           sessionVars: pendingSessionVars ?? currentSession.sessionVars,
         );
-        _ref.read(chatRepoProvider).put(finalSession);
+        _persist(finalSession);
         return ChatState(session: finalSession, lastRawResponse: rawResponse, regenTargetId: regenTargetId, visibleStartIndex: visibleStartIndex);
       }
     }
@@ -470,7 +473,7 @@ class ChatGenerationService {
       updatedAt: now,
       sessionVars: sessionVars,
     );
-    _ref.read(chatRepoProvider).put(finalSession);
+    _persist(finalSession);
     return ChatState(session: finalSession, lastRawResponse: rawResponse, visibleStartIndex: visibleStartIndex);
   }
 
@@ -498,7 +501,7 @@ class ChatGenerationService {
       updatedAt: now,
       sessionVars: sessionVars,
     );
-    _ref.read(chatRepoProvider).put(finalSession);
+    _persist(finalSession);
     return ChatState(session: finalSession, visibleStartIndex: visibleStartIndex);
   }
 
@@ -539,7 +542,7 @@ class ChatGenerationService {
       updatedAt: now,
       sessionVars: sessionVars,
     );
-    _ref.read(chatRepoProvider).put(finalSession);
+    _persist(finalSession);
     return ChatState(session: finalSession, regenTargetId: regenTargetId, visibleStartIndex: visibleStartIndex);
   }
 }

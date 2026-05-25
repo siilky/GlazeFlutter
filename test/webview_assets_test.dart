@@ -176,6 +176,186 @@ void main() {
       );
     });
   });
+
+  // ─── InteractionDispatch extraction (Phase 3.1) ────────────────────────────
+  group('InteractionDispatch (bridge.js)', () {
+    test('InteractionDispatch class exists', () {
+      expect(bridgeJs, contains('class InteractionDispatch'));
+    });
+
+    test('handleClick method exists', () {
+      expect(bridgeJs, contains('handleClick(e)'));
+    });
+
+    test('action map contains all expected data-action keys', () {
+      final requiredActions = [
+        'memory-click',
+        'inject-click',
+        'toggle-hidden',
+        'toggle-image-hidden',
+        'swipe-left',
+        'swipe-right',
+        'greeting-prev',
+        'greeting-next',
+        'stop',
+        'regenerate',
+        'toggle-guided',
+        'edit-save',
+        'edit-cancel',
+        'open-actions',
+        'img-retry',
+        'img-find',
+        'img-regen',
+        'img-stop',
+      ];
+      for (final action in requiredActions) {
+        expect(
+          bridgeJs,
+          contains("'$action':"),
+          reason: 'InteractionDispatch._actionMap must contain key "$action"',
+        );
+      }
+    });
+
+    test('Bridge creates InteractionDispatch instance', () {
+      expect(bridgeJs, contains('new InteractionDispatch(this)'));
+    });
+
+    test('click listener delegates to InteractionDispatch.handleClick', () {
+      expect(
+        bridgeJs,
+        contains('this._interaction.handleClick(e)'),
+      );
+    });
+  });
+
+  // ─── GenTimer extraction (Phase 3.5) ───────────────────────────────────────
+  group('GenTimer (bridge.js)', () {
+    test('GenTimer class exists', () {
+      expect(bridgeJs, contains('class GenTimer'));
+    });
+
+    test('GenTimer has start method', () {
+      expect(bridgeJs, contains('GenTimer'));
+      expect(bridgeJs, contains('start()'));
+    });
+
+    test('GenTimer has stop method', () {
+      expect(bridgeJs, contains('GenTimer'));
+      expect(bridgeJs, contains('stop()'));
+    });
+
+    test('Bridge creates GenTimer instance', () {
+      expect(bridgeJs, contains('new GenTimer()'));
+    });
+
+    test('setGenerating delegates to _genTimer.start/stop', () {
+      expect(bridgeJs, contains('this._genTimer.start()'));
+      expect(bridgeJs, contains('this._genTimer.stop()'));
+    });
+  });
+
+  // ─── renderMessage always returns array (Phase 3.6) ────────────────────────
+  group('renderMessage return type (renderer.js)', () {
+    test('renderMessage returns elements array (not conditional)', () {
+      final marker = 'renderMessage(messageData)';
+      final idx = rendererJs.indexOf(marker);
+      expect(idx, isNot(-1), reason: 'renderMessage must exist');
+
+      final body = _extractBlockBody(rendererJs, idx);
+      expect(
+        body,
+        isNot(contains('elements.length > 1 ? elements : messageEl')),
+        reason: 'renderMessage must always return array, not conditional HTMLElement|Array',
+      );
+      expect(
+        body,
+        contains('return elements'),
+        reason: 'renderMessage must return the elements array directly',
+      );
+    });
+
+    test('no Array.isArray checks remain in bridge.js call sites', () {
+      expect(
+        bridgeJs,
+        isNot(contains('Array.isArray(rendered)')),
+        reason: 'All Array.isArray(rendered) checks should be removed since renderMessage always returns array',
+      );
+    });
+  });
+
+  // ─── selectionMode public getter (Phase 3.7) ──────────────────────────────
+  group('selectionMode encapsulation (SelectionManager)', () {
+    test('SelectionManager has public selectionMode getter', () {
+      expect(
+        bridgeJs,
+        contains('get selectionMode()'),
+        reason: 'SelectionManager must expose selectionMode as public getter',
+      );
+    });
+
+    test('bridge.js does not access _selectionMode directly', () {
+      expect(
+        bridgeJs,
+        isNot(contains('renderer._selectionMode')),
+        reason: 'Bridge must use SelectionManager.selectionMode, not the private _selectionMode field',
+      );
+    });
+  });
+
+  // ─── Streaming fast path (Phase 4.1) ───────────────────────────────────────
+  group('updateMessageContent fast path (renderer.js)', () {
+    test('updateMessageContent has fast path for text-only updates', () {
+      final marker = 'updateMessageContent(sectionEl, text, reasoning, isUser, isTyping, animate)';
+      final idx = rendererJs.indexOf(marker);
+      expect(idx, isNot(-1), reason: 'updateMessageContent must exist');
+
+      final body = _extractBlockBody(rendererJs, idx);
+      expect(
+        body,
+        contains('!isTyping && !isError && !animate'),
+        reason: 'Fast path condition must check not-typing, not-error, not-animate',
+      );
+      expect(
+        body,
+        contains('.glaze-message'),
+        reason: 'Fast path must patch existing .glaze-message element',
+      );
+    });
+  });
+
+  // ─── _createGenStat dedup (Phase 4.3) ──────────────────────────────────────
+  group('_createGenStat dedup (renderer.js)', () {
+    test('_createGenStat method exists', () {
+      expect(rendererJs, contains('_createGenStat('));
+    });
+
+    test('_createGenStat creates gen-stat div', () {
+      final idx = rendererJs.indexOf('_createGenStat(');
+      final body = _extractBlockBody(rendererJs, idx);
+      expect(body, contains("'gen-stat'"));
+    });
+
+    test('_createBubbleMeta uses _createGenStat', () {
+      final idx = rendererJs.indexOf('_createBubbleMeta(m)');
+      final body = _extractBlockBody(rendererJs, idx);
+      expect(
+        body,
+        contains('_createGenStat'),
+        reason: '_createBubbleMeta must delegate to _createGenStat instead of inline DOM construction',
+      );
+    });
+
+    test('_createFooter uses _createGenStat', () {
+      final idx = rendererJs.indexOf('_createFooter(m)');
+      final body = _extractBlockBody(rendererJs, idx);
+      expect(
+        body,
+        contains('_createGenStat'),
+        reason: '_createFooter must delegate to _createGenStat instead of inline DOM construction',
+      );
+    });
+  });
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -250,4 +430,20 @@ String _extractTextareaWheelListener(String src) {
     pos = idx + 1;
   }
   return '';
+}
+
+/// Extracts the body of a JS method/class block starting from [fromIndex].
+/// Walks braces to find the matching close.
+String _extractBlockBody(String src, int fromIndex) {
+  int start = src.indexOf('{', fromIndex);
+  if (start == -1) return '';
+  int depth = 0;
+  for (int i = start; i < src.length; i++) {
+    if (src[i] == '{') depth++;
+    else if (src[i] == '}') {
+      depth--;
+      if (depth == 0) return src.substring(start, i + 1);
+    }
+  }
+  return src.substring(start);
 }

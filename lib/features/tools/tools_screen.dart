@@ -6,8 +6,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/state/active_selection_provider.dart';
-import '../../core/state/db_provider.dart';
 import '../../shared/shell/nav_height_provider.dart';
+import '../personas/persona_list_provider.dart';
+import '../presets/preset_list_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_scaffold.dart' show GlazeAppBar;
 
@@ -17,10 +18,12 @@ class PersonaInfo {
   const PersonaInfo({required this.name, this.avatarPath});
 }
 
-final _activePersonaInfoProvider = FutureProvider<PersonaInfo?>((ref) async {
+final _activePersonaInfoProvider = Provider<PersonaInfo?>((ref) {
   final activeId = ref.watch(activePersonaIdProvider);
   if (activeId == null) return null;
-  final persona = await ref.read(personaRepoProvider).getById(activeId);
+  final persona = (ref.watch(personaListProvider).value ?? [])
+      .where((p) => p.id == activeId)
+      .firstOrNull;
   if (persona == null) return null;
   return PersonaInfo(name: persona.name, avatarPath: persona.avatarPath);
 });
@@ -28,7 +31,7 @@ final _activePersonaInfoProvider = FutureProvider<PersonaInfo?>((ref) async {
 final _activePresetNameProvider = FutureProvider<String>((ref) async {
   final activeId = ref.watch(activePresetIdProvider);
   if (activeId == null) return 'Default';
-  final preset = await ref.read(presetRepoProvider).getById(activeId);
+  final preset = await ref.read(presetListProvider.notifier).getPresetById(activeId);
   return preset?.name ?? 'Default';
 });
 
@@ -58,7 +61,7 @@ class ToolsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bottomPad = ref.watch(navHeightProvider) + 20;
-    final personaInfo = ref.watch(_activePersonaInfoProvider).value;
+    final personaInfo = ref.watch(_activePersonaInfoProvider);
     final presetName = ref.watch(_activePresetNameProvider).value ?? 'Default';
     final topPad = MediaQuery.of(context).padding.top + 66.0;
     return Scaffold(

@@ -13,6 +13,7 @@ import '../../core/services/character_book_converter.dart';
 import '../../core/services/character_importer.dart';
 import '../../core/state/character_provider.dart';
 import '../../core/state/db_provider.dart';
+import '../../core/state/lorebook_provider.dart';
 import '../../shared/shell/nav_height_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
@@ -332,7 +333,6 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
 
     final importer = await ref.read(characterImporterProvider.future);
     final notifier = ref.read(charactersProvider.notifier);
-    final lorebookRepo = ref.read(lorebookRepoProvider);
     final galleryService = await ref.read(galleryServiceProvider.future);
     int imported = 0;
     String? lastError;
@@ -347,7 +347,7 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
             r.characterBookData!,
             r.character.id,
           );
-          await lorebookRepo.put(lorebook);
+          await ref.read(lorebooksProvider.notifier).put(lorebook);
         }
         if (r.galleryImages != null) {
           for (final img in r.galleryImages!) {
@@ -385,7 +385,6 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
 
     final importer = await ref.read(characterImporterProvider.future);
     final notifier = ref.read(charactersProvider.notifier);
-    final lorebookRepo = ref.read(lorebookRepoProvider);
     final galleryService = await ref.read(galleryServiceProvider.future);
     int imported = 0;
     String? lastError;
@@ -406,7 +405,7 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
             r.characterBookData!,
             r.character.id,
           );
-          await lorebookRepo.put(lorebook);
+          await ref.read(lorebooksProvider.notifier).put(lorebook);
         }
         if (r.galleryImages != null) {
           for (final img in r.galleryImages!) {

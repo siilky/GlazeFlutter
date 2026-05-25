@@ -9,12 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/services/chat_import_export.dart';
 import '../../../core/models/chat_message.dart';
+import '../../../core/state/shared_prefs_provider.dart';
 import '../../../features/settings/app_settings_provider.dart';
-import '../../../core/state/db_provider.dart';
+import '../../../core/state/chat_session_ops_provider.dart';
+import '../../../features/chat_history/chat_history_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
@@ -141,7 +142,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
   }
 
   Future<void> _loadLayout() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await ref.read(sharedPreferencesProvider.future);
     final savedOrder = prefs.getStringList(_itemsKey);
     final savedDeleted = prefs.getStringList(_deletedItemsKey) ?? const [];
     _deletedIds
@@ -168,7 +169,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
   }
 
   Future<void> _saveLayout() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await ref.read(sharedPreferencesProvider.future);
     await prefs.setStringList(_itemsKey, List<String>.from(_itemIds));
     await prefs.setStringList(_deletedItemsKey, _deletedIds.toList());
   }
@@ -536,7 +537,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       if (!mounted) return;
       switch (result) {
         case 'export':
-          await ChatActionsService(ref).exportSessionUI(
+          await ref.read(chatActionsServiceProvider).exportSessionUI(
             context,
             charId: widget.charId,
             sessionId: sessionId,
@@ -544,14 +545,14 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         case 'rename':
           _showRenameDialog(sessionId);
         case 'delete':
-          await ref.read(chatRepoProvider).delete(sessionId);
+          await ref.read(chatHistoryProvider.notifier).deleteSession(sessionId);
           ref.invalidate(chatProvider(widget.charId));
       }
     });
   }
 
   void _showRenameDialog(String sessionId) async {
-    final session = await ref.read(chatRepoProvider).getById(sessionId);
+    final session = await ref.read(chatSessionOpsProvider.notifier).getSession(sessionId);
     if (!mounted || session == null) return;
     final currentName = session.sessionVars['sessionName']?.isNotEmpty == true
         ? session.sessionVars['sessionName']!
@@ -568,9 +569,7 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
           if (val.trim().isNotEmpty) {
             final updatedVars = Map<String, String>.from(session.sessionVars);
             updatedVars['sessionName'] = val.trim();
-            await ref
-                .read(chatRepoProvider)
-                .put(session.copyWith(sessionVars: updatedVars));
+            await ref.read(chatSessionOpsProvider.notifier).saveSession(session.copyWith(sessionVars: updatedVars));
             ref.invalidate(chatProvider(widget.charId));
           }
         },
@@ -594,13 +593,11 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
         final importResult = importChatFromJsonlString(
           utf8.decode(file.bytes!),
         );
-        count = await ChatActionsService(
-          ref,
-        ).importChatFromResult(widget.charId, importResult);
+        count = await ref.read(chatActionsServiceProvider)
+            .importChatFromResult(widget.charId, importResult);
       } else if (filePath != null) {
-        count = await ChatActionsService(
-          ref,
-        ).importChat(widget.charId, filePath);
+        count = await ref.read(chatActionsServiceProvider)
+            .importChat(widget.charId, filePath);
       } else {
         return;
       }

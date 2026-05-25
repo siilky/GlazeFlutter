@@ -4,35 +4,339 @@
  * Flutter callHandler contract is preserved — useMessageActions lives in Dart.
  * ============================================================ */
 
-class Bridge {
-  constructor(renderer, virtualList) {
-    this.renderer = renderer;
-    this.virtualList = virtualList;
-    this._pendingRequests = new Map();
-    this._requestCounter = 0;
-    this.isGenerating = false;
-    this.isGeneratingImage = false;
-    this._genTimerInterval = null;
-    this._genTimerStart = null;
-    this._charName = null;
-    this._personaName = null;
-    this._charAvatarUrl = null;
-    this._personaAvatarUrl = null;
-    this._setupScrollListener();
-    this._setupInteractionListener();
-    this._setupImageClickForward();
-    this._setupSwipeGestures();
+class GenTimer {
+  constructor() {
+    this._interval = null;
+    this._start = null;
   }
 
-  /* ---------- Touch swipe gestures (char message body) ---------- */
-  /* Ported from Glaze/src/composables/chat/useMessageSwipe.js */
-  _setupSwipeGestures() {
+  start() {
+    this.stop();
+    this._start = Date.now();
+    this._interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - this._start) / 1000);
+      const timeStr = elapsed + 's';
+      const streamingEl = document.querySelector('[data-message-id="__streaming__"]')
+        || document.querySelector('.message-section.char .msg-body .typing-container')?.closest('.message-section');
+      if (streamingEl) {
+        let badge = streamingEl.querySelector('.gen-time-badge');
+        if (!badge) {
+          const layout = streamingEl.classList.contains('layout-bubble') ? 'bubble' : 'default';
+          const statContainer = streamingEl.querySelector(layout === 'bubble' ? '.bubble-meta' : '.msg-meta');
+          if (statContainer) {
+            const gw = document.createElement('div');
+            gw.className = 'gen-stat-wrap';
+            badge = document.createElement('span');
+            badge.className = 'gen-time gen-time-badge';
+            gw.appendChild(badge);
+            statContainer.appendChild(gw);
+          }
+        }
+        if (badge) badge.textContent = timeStr;
+      }
+    }, 1000);
+  }
+
+  stop() {
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
+    }
+    this._start = null;
+  }
+}
+
+class MessageUpdateBatcher {
+  constructor() {
+    this._pending = new Map();
+    this._rafScheduled = false;
+  }
+
+  enqueue(id, updateFn) {
+    this._pending.set(id, updateFn);
+    if (!this._rafScheduled) {
+      this._rafScheduled = true;
+      requestAnimationFrame(() => this.flush());
+    }
+  }
+
+  flush() {
+    const batch = new Map(this._pending);
+    this._pending.clear();
+    this._rafScheduled = false;
+    for (const [id, fn] of batch) {
+      fn(id);
+    }
+  }
+
+  hasPending() {
+    return this._pending.size > 0;
+  }
+}
+
+class SelectionManager {
+  constructor(sendToFlutter) {
+    this._sendToFlutter = sendToFlutter;
+    this._selectionMode = false;
+    this._selectedIds = new Set();
+    this._selectedText = '';
+    this._barCreated = false;
+  }
+
+  get selectionMode() { return this._selectionMode; }
+
+  getSelectedIds() { return [...this._selectedIds]; }
+
+  setSelectionMode(enabled) {
+    if (enabled && document.querySelector('.message-section.editing')) return;
+    this._selectionMode = !!enabled;
+    if (!enabled) this._selectedIds.clear();
+    document.querySelectorAll('.message-section').forEach(msgEl => {
+      msgEl.classList.toggle('selection-mode', this._selectionMode);
+      msgEl.classList.toggle('selected', this._selectedIds.has(msgEl.dataset.messageId));
+    });
+  }
+
+  toggleMessageSelection(messageId) {
+    if (this._selectedIds.has(messageId)) this._selectedIds.delete(messageId);
+    else this._selectedIds.add(messageId);
+    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (msgEl) {
+      msgEl.classList.toggle('selected', this._selectedIds.has(messageId));
+    }
+  }
+
+  exitIfEmpty() {
+    if (this._selectedIds.size === 0) this.setSelectionMode(false);
+  }
+
+  handleClick(e) {
+    if (!this._selectionMode) return false;
+    const section = e.target.closest('.message-section');
+    if (!section) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = section.dataset.messageId;
+    this.toggleMessageSelection(id);
+    this._sendToFlutter('onSelectionChange', [JSON.stringify(this.getSelectedIds())]);
+    this.exitIfEmpty();
+    return true;
+  }
+
+  handleContextMenu(e) {
+    const section = e.target.closest('.message-section');
+    if (!section) return false;
+
+    const id = section.dataset.messageId;
+    const isSelected = this._selectedIds.has(id);
+    const onBody = !!e.target.closest('.msg-body');
+
+    if (this._selectionMode && isSelected && onBody) {
+      return false;
+    }
+
+    e.preventDefault();
+
+    if (this._selectionMode) {
+      this.toggleMessageSelection(id);
+      this._sendToFlutter('onSelectionChange', [JSON.stringify(this.getSelectedIds())]);
+      this.exitIfEmpty();
+    } else {
+      this.setSelectionMode(true);
+      this.toggleMessageSelection(id);
+      this._sendToFlutter('onSelectionChange', [JSON.stringify(this.getSelectedIds())]);
+    }
+    return true;
+  }
+
+  handleSelectionChange() {
+    const editing = document.querySelector('.message-section.editing');
+    if (editing) { this._hideSelectionBar(); return; }
+
+    let selText = '';
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim().length > 0) {
+      selText = sel.toString().trim();
+    }
+    if (!selText) {
+      const hosts = document.querySelectorAll('.message-content');
+      for (const el of hosts) {
+        if (el.shadowRoot) {
+          const shadowSel = el.shadowRoot.getSelection ? el.shadowRoot.getSelection() : null;
+          if (shadowSel && shadowSel.toString().trim().length > 0) {
+            selText = shadowSel.toString().trim();
+            break;
+          }
+        }
+      }
+    }
+    if (selText) this._showSelectionBar(selText);
+    else this._hideSelectionBar();
+  }
+
+  _showSelectionBar(text) {
+    let bar = document.getElementById('selection-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'selection-bar';
+      bar.className = 'selection-bar';
+      bar.innerHTML = '<button class="sel-btn" data-action="copy">Copy</button><button class="sel-btn" data-action="quote">Quote</button>';
+      bar.addEventListener('click', (e) => {
+        const btn = e.target.closest('.sel-btn');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        this._sendToFlutter('onSelectionAction', [JSON.stringify({ action, text: this._selectedText })]);
+        this._hideSelectionBar();
+        window.getSelection().removeAllRanges();
+      });
+      document.body.appendChild(bar);
+      this._barCreated = true;
+    }
+    this._selectedText = text;
+    bar.style.display = 'flex';
+  }
+
+  _hideSelectionBar() {
+    const bar = document.getElementById('selection-bar');
+    if (bar) bar.style.display = 'none';
+  }
+
+  applyClassesToSection(section, classes) {
+    if (this._selectionMode) classes.push('selection-mode');
+    if (this._selectedIds.has(section.dataset.messageId || '')) classes.push('selected');
+    return classes;
+  }
+
+  shouldHideActions() { return this._selectionMode; }
+
+  hideSelectionBar() { this._hideSelectionBar(); }
+}
+
+class EditController {
+  constructor(sendToFlutter) {
+    this._sendToFlutter = sendToFlutter;
+  }
+
+  startEdit(messageId, scrollTopFn) {
+    const section = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!section) return;
+
+    const scrollPos = scrollTopFn();
+    section.classList.add('editing');
+
+    const rawText = (section.dataset.rawText || '').replace(/^<think\b[^>]*>[\s\S]*?<\/think>\s*/, '');
+    const reasoning = section.dataset.reasoning || '';
+    let editText = rawText;
+    if (reasoning) editText = '<' + 'think>\n' + reasoning + '\n</' + 'think>\n' + rawText;
+
+    const body = section.querySelector('.msg-body');
+    if (!body) return;
+
+    body.dataset.originalHtml = body.innerHTML;
+    body.innerHTML = '';
+    const textarea = document.createElement('textarea');
+    textarea.className = 'edit-textarea';
+    textarea.value = editText;
+    textarea.dataset.originalText = editText;
+    body.appendChild(textarea);
+
+    textarea.addEventListener('input', () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.max(80, textarea.scrollHeight) + 'px';
+    });
+    textarea.addEventListener('wheel', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.deltaMode === 0) {
+        textarea.scrollTop += e.deltaY * 0.3;
+      } else if (e.deltaMode === 1) {
+        textarea.scrollTop += e.deltaY * 16;
+      } else {
+        textarea.scrollTop += e.deltaY * 100;
+      }
+    }, { passive: false });
+    textarea.addEventListener('touchmove', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
+    textarea.style.height = Math.max(80, textarea.scrollHeight + 20) + 'px';
+    textarea.focus();
+
+    const footer = section.querySelector('.msg-footer');
+    if (footer) {
+      footer.dataset.originalHtml = footer.innerHTML;
+      footer.innerHTML = '';
+
+      const metaCol = document.createElement('div');
+      metaCol.className = 'msg-meta';
+      footer.appendChild(metaCol);
+
+      const center = document.createElement('div');
+      center.className = 'msg-center-controls';
+      footer.appendChild(center);
+
+      const editBox = document.createElement('div');
+      editBox.className = 'edit-buttons';
+      editBox.innerHTML = `
+        <div class="edit-btn cancel" data-action="edit-cancel" data-message-id="${messageId}" title="Cancel">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </div>
+        <div class="edit-btn save" data-action="edit-save" data-message-id="${messageId}" title="Save">
+          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+        </div>
+      `;
+      footer.appendChild(editBox);
+    }
+
+    scrollTopFn(scrollPos);
+  }
+
+  stopEdit(messageId) {
+    const section = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!section) return;
+    section.classList.remove('editing');
+
+    const body = section.querySelector('.msg-body');
+    if (body && body.dataset.originalHtml !== undefined) {
+      body.innerHTML = body.dataset.originalHtml;
+      delete body.dataset.originalHtml;
+    }
+    const footer = section.querySelector('.msg-footer');
+    if (footer && footer.dataset.originalHtml !== undefined) {
+      footer.innerHTML = footer.dataset.originalHtml;
+      delete footer.dataset.originalHtml;
+    }
+  }
+
+  handleSave(el) {
+    const section = el.closest('.message-section');
+    const ta = section ? section.querySelector('.edit-textarea') : null;
+    this._sendToFlutter('onEditSave', [el.dataset.messageId, ta ? ta.value : '']);
+  }
+
+  handleCancel(el) {
+    this._sendToFlutter('onEditCancel', [el.dataset.messageId]);
+  }
+
+  isEditing(section) {
+    return section && section.classList.contains('editing');
+  }
+}
+
+class SwipeGestureHandler {
+  constructor(sendToFlutter, getContainer, isGeneratingFn) {
+    this._sendToFlutter = sendToFlutter;
+    this._getContainer = getContainer;
+    this._isGenerating = isGeneratingFn;
+  }
+
+  setup() {
     const THRESHOLD = 100;
     let startX = 0;
     let startY = 0;
     let activeBody = null;
     let activeSection = null;
     let scrollingVertical = false;
+    const self = this;
 
     const reset = (body) => {
       body.style.transition = 'transform 0.3s ease';
@@ -54,7 +358,7 @@ class Bridge {
     };
 
     const onStart = (e) => {
-      if (this.isGenerating) return;
+      if (self._isGenerating()) return;
 
       const path = e.composedPath ? e.composedPath() : (e.path || []);
       const isScrollableX = path.some(el => {
@@ -101,7 +405,6 @@ class Bridge {
       const isFirstMsg = activeSection.dataset.messageIndex === '0';
       const canSwitchGreeting = isFirstMsg && greetingTotal > 1;
 
-      // Block translation when there's nowhere to go on that side.
       if (dx < 0 && !canSwitchGreeting && !isLast && swipeId >= swipeTotal - 1) return;
       if (dx > 0 && !canSwitchGreeting && swipeId <= 0) return;
 
@@ -129,29 +432,29 @@ class Bridge {
       const msgId = section.dataset.messageId;
 
       if (canSwitchGreeting) {
-        if (dx < -THRESHOLD) animateOut(body, () => this._sendToFlutter('onChangeGreeting', [msgId, 1]));
-        else if (dx > THRESHOLD) animateOut(body, () => this._sendToFlutter('onChangeGreeting', [msgId, -1]));
+        if (dx < -THRESHOLD) animateOut(body, () => self._sendToFlutter('onChangeGreeting', [msgId, 1]));
+        else if (dx > THRESHOLD) animateOut(body, () => self._sendToFlutter('onChangeGreeting', [msgId, -1]));
         else reset(body);
         return;
       }
 
       if (dx < -THRESHOLD) {
         if (swipeId < swipeTotal - 1) {
-          animateOut(body, () => this._sendToFlutter('onSwipe', [JSON.stringify({ id: msgId, direction: 'right' })]));
+          animateOut(body, () => self._sendToFlutter('onSwipe', [JSON.stringify({ id: msgId, direction: 'right' })]));
         } else if (isLast) {
           body.style.transition = 'transform 0.1s';
           body.style.transform = 'translateX(-20px)';
           setTimeout(() => {
             body.style.transform = '';
             body.style.transition = '';
-            this._sendToFlutter('onRegenerate', [msgId, 'new_variant']);
+            self._sendToFlutter('onRegenerate', [msgId, 'new_variant']);
           }, 100);
         } else {
           reset(body);
         }
       } else if (dx > THRESHOLD) {
         if (swipeId > 0) {
-          animateOut(body, () => this._sendToFlutter('onSwipe', [JSON.stringify({ id: msgId, direction: 'left' })]));
+          animateOut(body, () => self._sendToFlutter('onSwipe', [JSON.stringify({ id: msgId, direction: 'left' })]));
         } else {
           reset(body);
         }
@@ -160,11 +463,262 @@ class Bridge {
       }
     };
 
-    const container = this.virtualList.container;
+    const container = this._getContainer();
     container.addEventListener('touchstart', onStart, { passive: true });
     container.addEventListener('touchmove', onMove, { passive: false });
     container.addEventListener('touchend', onEnd);
     container.addEventListener('touchcancel', onEnd);
+  }
+
+  toggleGuidedSwipe(messageId) {
+    const section = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!section) return;
+
+    const btn = section.querySelector('.msg-guided-swipe-btn');
+    const existing = section.querySelector('.guided-swipe-container');
+    if (existing) {
+      existing.remove();
+      btn?.classList.remove('active');
+      return;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'guided-swipe-container';
+
+    const main = document.createElement('div');
+    main.className = 'guidance-main';
+    main.innerHTML = `<div class="guidance-header">GUIDED SWIPE</div>`;
+    const textarea = document.createElement('textarea');
+    textarea.className = 'guided-swipe-textarea';
+    textarea.placeholder = 'Enter OOC instruction for swipe...';
+    textarea.rows = 1;
+    main.appendChild(textarea);
+    container.appendChild(main);
+
+    const self = this;
+    const actions = document.createElement('div');
+    actions.className = 'guided-swipe-actions';
+
+    const cancel = document.createElement('div');
+    cancel.className = 'guided-btn cancel';
+    cancel.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+    cancel.addEventListener('click', () => {
+      container.remove();
+      btn?.classList.remove('active');
+    });
+    actions.appendChild(cancel);
+
+    const confirm = document.createElement('div');
+    confirm.className = 'guided-btn confirm';
+    confirm.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+    confirm.addEventListener('click', () => {
+      const guidance = textarea.value.trim();
+      if (guidance) self._sendToFlutter('onGuidedSwipe', [messageId, guidance]);
+      container.remove();
+      btn?.classList.remove('active');
+    });
+    actions.appendChild(confirm);
+
+    container.appendChild(actions);
+
+    const stack = section.querySelector('.msg-content-stack');
+    if (stack && stack.parentNode === section) {
+      section.insertBefore(container, stack.nextSibling);
+    } else {
+      section.appendChild(container);
+    }
+
+    btn?.classList.add('active');
+    textarea.focus();
+  }
+}
+
+class InteractionDispatch {
+  constructor(bridge) {
+    this.bridge = bridge;
+  }
+
+  handleClick(e) {
+    const bridge = this.bridge;
+
+    if (bridge._selectionManager.handleClick(e)) return;
+
+    const reasoningHdr = e.target.closest('[data-action="toggle-reasoning"]');
+    if (reasoningHdr) {
+      const block = reasoningHdr.closest('.msg-reasoning');
+      if (block) block.classList.toggle('collapsed');
+      return;
+    }
+
+    const actionEl = e.target.closest('[data-action]');
+    if (actionEl) {
+      const action = actionEl.dataset.action;
+      const handler = this._actionMap[action];
+      if (handler) {
+        handler.call(this, e, actionEl);
+        return;
+      }
+    }
+
+    const link = e.target.closest('a');
+    if (link) {
+      e.preventDefault();
+      bridge._sendToFlutter('onLinkClick', [link.href]);
+      return;
+    }
+
+    const stopBtn = e.target.closest('.stop-btn');
+    if (stopBtn) {
+      bridge._sendToFlutter('onStop', []);
+      return;
+    }
+
+    const regenBtn = e.target.closest('.msg-regenerate');
+    if (regenBtn) {
+      const id = regenBtn.dataset.messageId;
+      const mode = regenBtn.dataset.mode || 'magic';
+      bridge._sendToFlutter('onRegenerate', [id, mode]);
+      return;
+    }
+
+    const guidedBtn = e.target.closest('.msg-guided-swipe-btn');
+    if (guidedBtn) {
+      bridge._swipeHandler.toggleGuidedSwipe(guidedBtn.dataset.messageId);
+      return;
+    }
+
+    const actionsBtn = e.target.closest('.msg-actions-btn');
+    if (actionsBtn) {
+      const id = actionsBtn.dataset.messageId;
+      const section = document.querySelector(`[data-message-id="${id}"]`);
+      if (section) {
+        const isUser = section.classList.contains('user');
+        const isSystem = section.classList.contains('system');
+        const content = bridge._extractText(section);
+        bridge._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
+      }
+      return;
+    }
+
+    const errorCopyBtn = e.target.closest('.error-copy-btn');
+    if (errorCopyBtn) {
+      const id = errorCopyBtn.dataset.messageId;
+      const section = document.querySelector(`[data-message-id="${id}"]`);
+      if (section) {
+        const raw = section.dataset.rawText || '';
+        try { navigator.clipboard.writeText(raw); }
+        catch (_) {
+          const ta = document.createElement('textarea');
+          ta.value = raw;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        errorCopyBtn.dataset.copied = '1';
+        setTimeout(() => { delete errorCopyBtn.dataset.copied; }, 1200);
+      }
+      return;
+    }
+
+    const avatar = e.target.closest('.msg-avatar');
+    if (avatar) {
+      const section = avatar.closest('.message-section');
+      if (section) bridge._sendToFlutter('onAvatarClick', [section.dataset.messageId]);
+      return;
+    }
+
+    const img = e.target.closest('.msg-image-attachment img');
+    if (img && img.src) {
+      bridge._sendToFlutter('onImageClick', [img.src]);
+      return;
+    }
+
+    bridge._selectionManager.hideSelectionBar();
+  }
+
+  _extractImgInstruction(el, path) {
+    const sec = path.find(e => e.dataset?.messageId);
+    const messageId = sec ? sec.dataset.messageId : '';
+    let instr = '';
+    try { instr = decodeURIComponent(el.dataset.instruction || ''); }
+    catch (_) { instr = el.dataset.instruction || ''; }
+    return { instr, messageId };
+  }
+
+  get _actionMap() {
+    const bridge = this.bridge;
+    return {
+      'memory-click': (e, el) => bridge._sendToFlutter('onMemoryClick', [el.dataset.messageId]),
+      'inject-click': (e, el) => bridge._sendToFlutter('onInjectClick', [el.dataset.messageId]),
+      'toggle-hidden': (e, el) => bridge._sendToFlutter('onToggleHidden', [el.dataset.messageId]),
+      'toggle-image-hidden': (e, el) => {
+        const section = el.closest('.message-section');
+        bridge._sendToFlutter('onToggleImageHidden', [section ? section.dataset.messageId : '']);
+      },
+      'swipe-left': (e, el) => bridge._sendToFlutter('onSwipe', [JSON.stringify({ id: el.dataset.messageId, direction: 'left' })]),
+      'swipe-right': (e, el) => bridge._sendToFlutter('onSwipe', [JSON.stringify({ id: el.dataset.messageId, direction: 'right' })]),
+      'greeting-prev': (e, el) => bridge._sendToFlutter('onChangeGreeting', [el.dataset.messageId, -1]),
+      'greeting-next': (e, el) => bridge._sendToFlutter('onChangeGreeting', [el.dataset.messageId, 1]),
+      'stop': (e, el) => bridge._sendToFlutter('onStop', []),
+      'regenerate': (e, el) => bridge._sendToFlutter('onRegenerate', [el.dataset.messageId, el.dataset.mode || 'magic']),
+      'toggle-guided': (e, el) => bridge._swipeHandler.toggleGuidedSwipe(el.dataset.messageId),
+      'edit-save': (e, el) => bridge._editController.handleSave(el),
+      'edit-cancel': (e, el) => bridge._editController.handleCancel(el),
+      'open-actions': (e, el) => {
+        const id = el.dataset.messageId;
+        const section = document.querySelector(`[data-message-id="${id}"]`);
+        if (section) {
+          const isUser = section.classList.contains('user');
+          const isSystem = section.classList.contains('system');
+          const content = bridge._extractText(section);
+          bridge._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
+        }
+      },
+      'img-retry': (e, el) => {
+        const { instr, messageId } = this._extractImgInstruction(el, e.composedPath());
+        bridge._sendToFlutter('onImgRetry', [instr, messageId]);
+      },
+      'img-find': (e, el) => {
+        const { instr, messageId } = this._extractImgInstruction(el, e.composedPath());
+        bridge._sendToFlutter('onImgFind', [instr, messageId]);
+      },
+      'img-regen': (e, el) => {
+        const { instr, messageId } = this._extractImgInstruction(el, e.composedPath());
+        bridge._sendToFlutter('onImgRegen', [instr, messageId]);
+      },
+      'img-stop': (e, el) => bridge._sendToFlutter('onImgCancel', []),
+    };
+  }
+}
+
+class Bridge {
+  constructor(renderer, virtualList) {
+    this.renderer = renderer;
+    this.virtualList = virtualList;
+    this._pendingRequests = new Map();
+    this._requestCounter = 0;
+    this.isGenerating = false;
+    this.isGeneratingImage = false;
+    this._genTimer = new GenTimer();
+    this._updateBatcher = new MessageUpdateBatcher();
+    this._selectionManager = new SelectionManager((name, args) => this._sendToFlutter(name, args));
+    this._editController = new EditController((name, args) => this._sendToFlutter(name, args));
+    this._interaction = new InteractionDispatch(this);
+    this._charName = null;
+    this._personaName = null;
+    this._charAvatarUrl = null;
+    this._personaAvatarUrl = null;
+    renderer.selectionManager = this._selectionManager;
+    this._swipeHandler = new SwipeGestureHandler(
+      (name, args) => this._sendToFlutter(name, args),
+      () => this.virtualList.container,
+      () => this.isGenerating,
+    );
+    this._setupScrollListener();
+    this._setupInteractionListener();
+    this._setupImageClickForward();
+    this._swipeHandler.setup();
   }
 
   /* ---------- Identity (active char / persona) ---------- */
@@ -211,50 +765,12 @@ class Bridge {
     });
   }
 
-  /* ---------- Generation timer ---------- */
-  _startGenTimer() {
-    this._stopGenTimer();
-    this._genTimerStart = Date.now();
-    this._genTimerInterval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - this._genTimerStart) / 1000);
-      const timeStr = elapsed + 's';
-      // Update badge on the streaming placeholder or last typing message
-      const streamingEl = document.querySelector('[data-message-id="__streaming__"]')
-        || document.querySelector('.message-section.char .msg-body .typing-container')?.closest('.message-section');
-      if (streamingEl) {
-        let badge = streamingEl.querySelector('.gen-time-badge');
-        if (!badge) {
-          // Create badge container if not present
-          const layout = streamingEl.classList.contains('layout-bubble') ? 'bubble' : 'default';
-          const statContainer = streamingEl.querySelector(layout === 'bubble' ? '.bubble-meta' : '.msg-meta');
-          if (statContainer) {
-            const gw = document.createElement('div');
-            gw.className = 'gen-stat-wrap';
-            badge = document.createElement('span');
-            badge.className = 'gen-time gen-time-badge';
-            gw.appendChild(badge);
-            statContainer.appendChild(gw);
-          }
-        }
-        if (badge) badge.textContent = timeStr;
-      }
-    }, 1000);
-  }
-
-  _stopGenTimer() {
-    if (this._genTimerInterval) {
-      clearInterval(this._genTimerInterval);
-      this._genTimerInterval = null;
-    }
-    this._genTimerStart = null;
-  }
-
   setGenerating(value) {
     this.isGenerating = value;
     if (value) {
-      this._startGenTimer();
+      this._genTimer.start();
     } else {
-      this._stopGenTimer();
+      this._genTimer.stop();
     }
   }
 
@@ -364,294 +880,11 @@ class Bridge {
 
   /* ---------- Interaction dispatch ---------- */
   _setupInteractionListener() {
-    document.addEventListener('click', (e) => {
-      const editingSection = document.querySelector('.message-section.editing');
+    document.addEventListener('click', (e) => this._interaction.handleClick(e));
 
-      /* Selection mode: tap on message toggles selection */
-      if (this.renderer._selectionMode) {
-        if (editingSection) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        const section = e.target.closest('.message-section');
-        if (section) {
-          e.preventDefault();
-          e.stopPropagation();
-          const id = section.dataset.messageId;
-          this.renderer.toggleMessageSelection(id);
-          const ids = this.renderer.getSelectedIds();
-          this._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
-          // Auto-exit selection mode when nothing selected
-          if (ids.length === 0) {
-            this.renderer.setSelectionMode(false);
-          }
-          return;
-        }
-      }
+    document.addEventListener('selectionchange', () => this._selectionManager.handleSelectionChange());
 
-      /* Reasoning collapse */
-      const reasoningHdr = e.target.closest('[data-action="toggle-reasoning"]');
-      if (reasoningHdr) {
-        const block = reasoningHdr.closest('.msg-reasoning');
-        if (block) block.classList.toggle('collapsed');
-        return;
-      }
-
-      /* External links */
-      const link = e.target.closest('a');
-      if (link) {
-        e.preventDefault();
-        this._sendToFlutter('onLinkClick', [link.href]);
-        return;
-      }
-
-      /* Memory badge → Flutter */
-      const memoryBadge = e.target.closest('[data-action="memory-click"]');
-      if (memoryBadge) {
-        this._sendToFlutter('onMemoryClick', [memoryBadge.dataset.messageId]);
-        return;
-      }
-
-      /* Triggered items / inject menu */
-      const injectBadge = e.target.closest('[data-action="inject-click"]');
-      if (injectBadge) {
-        this._sendToFlutter('onInjectClick', [injectBadge.dataset.messageId]);
-        return;
-      }
-
-      /* Hidden eye toggle */
-      const hiddenToggle = e.target.closest('[data-action="toggle-hidden"]');
-      if (hiddenToggle) {
-        this._sendToFlutter('onToggleHidden', [hiddenToggle.dataset.messageId]);
-        return;
-      }
-
-      /* Image-context-hidden toggle */
-      const imgHiddenToggle = e.target.closest('[data-action="toggle-image-hidden"]');
-      if (imgHiddenToggle) {
-        const section = imgHiddenToggle.closest('.message-section');
-        const id = section ? section.dataset.messageId : '';
-        this._sendToFlutter('onToggleImageHidden', [id]);
-        return;
-      }
-
-      /* Swipe nav (assistant variants) */
-      const swipeBtn = e.target.closest('[data-action="swipe-left"], [data-action="swipe-right"]');
-      if (swipeBtn) {
-        const action = swipeBtn.dataset.action;
-        const id = swipeBtn.dataset.messageId;
-        this._sendToFlutter('onSwipe', [JSON.stringify({
-          id, direction: action === 'swipe-right' ? 'right' : 'left'
-        })]);
-        return;
-      }
-
-      /* Greeting nav (first message) */
-      const greetingBtn = e.target.closest('[data-action="greeting-prev"], [data-action="greeting-next"]');
-      if (greetingBtn) {
-        const dir = greetingBtn.dataset.action === 'greeting-next' ? 1 : -1;
-        this._sendToFlutter('onChangeGreeting', [greetingBtn.dataset.messageId, dir]);
-        return;
-      }
-
-      /* Stop generation */
-      const stopBtn = e.target.closest('[data-action="stop"], .stop-btn');
-      if (stopBtn) {
-        this._sendToFlutter('onStop', []);
-        return;
-      }
-
-      /* Regenerate (last user / error) */
-      const regenBtn = e.target.closest('[data-action="regenerate"], .msg-regenerate');
-      if (regenBtn) {
-        const id = regenBtn.dataset.messageId;
-        const mode = regenBtn.dataset.mode || 'magic';
-        this._sendToFlutter('onRegenerate', [id, mode]);
-        return;
-      }
-
-      /* Guided swipe toggle */
-      const guidedBtn = e.target.closest('[data-action="toggle-guided"], .msg-guided-swipe-btn');
-      if (guidedBtn) {
-        this._toggleGuidedSwipe(guidedBtn.dataset.messageId);
-        return;
-      }
-
-      /* Edit save / cancel */
-      const editSave = e.target.closest('[data-action="edit-save"]');
-      if (editSave) {
-        const section = editSave.closest('.message-section');
-        const ta = section ? section.querySelector('.edit-textarea') : null;
-        const id = editSave.dataset.messageId;
-        const text = ta ? ta.value : '';
-        this._sendToFlutter('onEditSave', [id, text]);
-        return;
-      }
-      const editCancel = e.target.closest('[data-action="edit-cancel"]');
-      if (editCancel) {
-        this._sendToFlutter('onEditCancel', [editCancel.dataset.messageId]);
-        return;
-      }
-
-      /* Actions menu (kebab) */
-      const actionsBtn = e.target.closest('[data-action="open-actions"], .msg-actions-btn');
-      if (actionsBtn) {
-        const id = actionsBtn.dataset.messageId;
-        const section = document.querySelector(`[data-message-id="${id}"]`);
-        if (section) {
-          const isUser = section.classList.contains('user');
-          const isSystem = section.classList.contains('system');
-          const content = this._extractText(section);
-          this._sendToFlutter('onMessageContext', [JSON.stringify({ id, isUser, isSystem, content })]);
-        }
-        return;
-      }
-
-      /* Image gen frames */
-      const path = e.composedPath();
-
-      const imgRetryBtn = path.find(el => el.matches?.('[data-action="img-retry"]'));
-      if (imgRetryBtn) {
-        const sec = path.find(el => el.dataset?.messageId);
-        const messageId = sec ? sec.dataset.messageId : '';
-        let instr = '';
-        try { instr = decodeURIComponent(imgRetryBtn.dataset.instruction || ''); }
-        catch (_) { instr = imgRetryBtn.dataset.instruction || ''; }
-        this._sendToFlutter('onImgRetry', [instr, messageId]);
-        return;
-      }
-      const imgFindBtn = path.find(el => el.matches?.('[data-action="img-find"]'));
-      if (imgFindBtn) {
-        const sec = path.find(el => el.dataset?.messageId);
-        const messageId = sec ? sec.dataset.messageId : '';
-        let instr = '';
-        try { instr = decodeURIComponent(imgFindBtn.dataset.instruction || ''); }
-        catch (_) { instr = imgFindBtn.dataset.instruction || ''; }
-        this._sendToFlutter('onImgFind', [instr, messageId]);
-        return;
-      }
-      const imgRegenBtn = path.find(el => el.matches?.('[data-action="img-regen"]'));
-      if (imgRegenBtn) {
-        const sec = path.find(el => el.dataset?.messageId);
-        const messageId = sec ? sec.dataset.messageId : '';
-        let instr = '';
-        try { instr = decodeURIComponent(imgRegenBtn.dataset.instruction || ''); }
-        catch (_) { instr = imgRegenBtn.dataset.instruction || ''; }
-        this._sendToFlutter('onImgRegen', [instr, messageId]);
-        return;
-      }
-      const imgStopBtn = path.find(el => el.matches?.('[data-action="img-stop"]'));
-      if (imgStopBtn) {
-        this._sendToFlutter('onImgCancel', []);
-        return;
-      }
-
-      /* Error copy */
-      const errorCopyBtn = e.target.closest('.error-copy-btn');
-      if (errorCopyBtn) {
-        const id = errorCopyBtn.dataset.messageId;
-        const section = document.querySelector(`[data-message-id="${id}"]`);
-        if (section) {
-          const raw = section.dataset.rawText || '';
-          try { navigator.clipboard.writeText(raw); }
-          catch (_) {
-            const ta = document.createElement('textarea');
-            ta.value = raw;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            ta.remove();
-          }
-          errorCopyBtn.dataset.copied = '1';
-          setTimeout(() => { delete errorCopyBtn.dataset.copied; }, 1200);
-        }
-        return;
-      }
-
-      /* Avatar tap */
-      const avatar = e.target.closest('.msg-avatar');
-      if (avatar) {
-        const section = avatar.closest('.message-section');
-        if (section) this._sendToFlutter('onAvatarClick', [section.dataset.messageId]);
-        return;
-      }
-
-      /* Image tap (inside body) */
-      const img = e.target.closest('.msg-image-attachment img');
-      if (img && img.src) {
-        this._sendToFlutter('onImageClick', [img.src]);
-        return;
-      }
-
-      this._hideSelectionBar();
-    });
-
-    /* Selection bar */
-    document.addEventListener('selectionchange', () => {
-      const editing = document.querySelector('.message-section.editing');
-      if (editing) { this._hideSelectionBar(); return; }
-
-      let selText = '';
-      const sel = window.getSelection();
-      if (sel && sel.toString().trim().length > 0) {
-        selText = sel.toString().trim();
-      }
-      if (!selText) {
-        const hosts = document.querySelectorAll('.message-content');
-        for (const el of hosts) {
-          if (el.shadowRoot) {
-            const shadowSel = el.shadowRoot.getSelection ? el.shadowRoot.getSelection() : null;
-            if (shadowSel && shadowSel.toString().trim().length > 0) {
-              selText = shadowSel.toString().trim();
-              break;
-            }
-          }
-        }
-      }
-      if (selText) this._showSelectionBar(selText);
-      else this._hideSelectionBar();
-    });
-
-    /* Long-press:
-     *   1st press on a message → enter selection mode + select that message
-     *   2nd press on the SAME (already-selected) message body → let native
-     *     text selection take over (don't preventDefault, don't toggle).
-     *   Press on header / footer / a non-selected message → toggle that
-     *     message's selection. Exits selection mode when nothing remains. */
-    document.addEventListener('contextmenu', (e) => {
-      if (document.querySelector('.message-section.editing')) {
-        return;
-      }
-      const section = e.target.closest('.message-section');
-      if (!section) return;
-
-      const id = section.dataset.messageId;
-      const inSelectionMode = this.renderer._selectionMode;
-      const isSelected = this.renderer._selectedIds.has(id);
-      const onBody = !!e.target.closest('.msg-body');
-
-      if (inSelectionMode && isSelected && onBody) {
-        // Second long-press on the same selected message body — hand off to
-        // native text selection (CSS `user-select: text` is active here).
-        return;
-      }
-
-      e.preventDefault();
-
-      if (inSelectionMode) {
-        this.renderer.toggleMessageSelection(id);
-        const ids = this.renderer.getSelectedIds();
-        this._sendToFlutter('onSelectionChange', [JSON.stringify(ids)]);
-        if (ids.length === 0) {
-          this.renderer.setSelectionMode(false);
-        }
-      } else {
-        this.renderer.setSelectionMode(true);
-        this.renderer.toggleMessageSelection(id);
-        this._sendToFlutter('onSelectionChange', [JSON.stringify(this.renderer.getSelectedIds())]);
-      }
-    });
+    document.addEventListener('contextmenu', (e) => this._selectionManager.handleContextMenu(e));
   }
 
   _extractText(section) {
@@ -661,33 +894,6 @@ class Bridge {
       if (root) return root.textContent || '';
     }
     return section.dataset.rawText || '';
-  }
-
-  /* ---------- Selection bar ---------- */
-  _showSelectionBar(text) {
-    let bar = document.getElementById('selection-bar');
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'selection-bar';
-      bar.className = 'selection-bar';
-      bar.innerHTML = '<button class="sel-btn" data-action="copy">Copy</button><button class="sel-btn" data-action="quote">Quote</button>';
-      bar.addEventListener('click', (e) => {
-        const btn = e.target.closest('.sel-btn');
-        if (!btn) return;
-        const action = btn.dataset.action;
-        this._sendToFlutter('onSelectionAction', [JSON.stringify({ action, text: this._selectedText })]);
-        this._hideSelectionBar();
-        window.getSelection().removeAllRanges();
-      });
-      document.body.appendChild(bar);
-    }
-    this._selectedText = text;
-    bar.style.display = 'flex';
-  }
-
-  _hideSelectionBar() {
-    const bar = document.getElementById('selection-bar');
-    if (bar) bar.style.display = 'none';
   }
 
   /* ---------- Loading screen ---------- */
@@ -713,6 +919,7 @@ class Bridge {
 
   /* ---------- Message list API ---------- */
   setMessages(messagesJson) {
+    this.flush();
     this._suppressLoadMore = true;
     const container = document.getElementById('chat-container') || document.body;
     if (![...container.classList].some(c => c.startsWith('layout-'))) {
@@ -726,15 +933,10 @@ class Bridge {
     const elements = [];
     for (const msg of messages) {
       const rendered = this.renderer.renderMessage(msg);
-      if (Array.isArray(rendered)) {
-        for (const el of rendered) {
-          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-          ids.push(id);
-          elements.push(el);
-        }
-      } else {
-        ids.push(msg.id);
-        elements.push(rendered);
+      for (const el of rendered) {
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        ids.push(id);
+        elements.push(el);
       }
     }
 
@@ -744,49 +946,40 @@ class Bridge {
   }
 
   appendMessage(messageJson) {
+    this.flush();
     const msg = JSON.parse(messageJson);
     const rendered = this.renderer.renderMessage(msg);
-    if (Array.isArray(rendered)) {
-      for (const el of rendered) {
-        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-        this.virtualList.append(id, el);
-      }
-    } else {
-      this.virtualList.append(msg.id, rendered);
+    for (const el of rendered) {
+      const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+      this.virtualList.append(id, el);
     }
     this.virtualList.scrollToBottom();
   }
 
   appendMessages(messagesJson) {
+    this.flush();
     const messages = JSON.parse(messagesJson);
     messages.forEach(msg => {
       const rendered = this.renderer.renderMessage(msg);
-      if (Array.isArray(rendered)) {
-        for (const el of rendered) {
-          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-          this.virtualList.append(id, el);
-        }
-      } else {
-        this.virtualList.append(msg.id, rendered);
+      for (const el of rendered) {
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        this.virtualList.append(id, el);
       }
     });
   }
 
   prependMessages(messagesJson) {
+    this.flush();
     this._suppressLoadMore = true;
     const messages = JSON.parse(messagesJson);
     const scrollBefore = this.virtualList.container.scrollHeight;
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       const rendered = this.renderer.renderMessage(msg);
-      if (Array.isArray(rendered)) {
-        for (let j = rendered.length - 1; j >= 0; j--) {
-          const el = rendered[j];
-          const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
-          this.virtualList.prepend(id, el);
-        }
-      } else {
-        this.virtualList.prepend(msg.id, rendered);
+      for (let j = rendered.length - 1; j >= 0; j--) {
+        const el = rendered[j];
+        const id = el.dataset.messageId || `__date_${el.dataset.dateSeparator || Date.now()}`;
+        this.virtualList.prepend(id, el);
       }
     }
     const scrollAfter = this.virtualList.container.scrollHeight;
@@ -797,6 +990,10 @@ class Bridge {
 
   updateMessage(messageJson) {
     const msg = JSON.parse(messageJson);
+    this._updateBatcher.enqueue(msg.id, () => this._executeUpdateMessage(msg));
+  }
+
+  _executeUpdateMessage(msg) {
     const section = document.querySelector(`[data-message-id="${msg.id}"]`);
     if (!section) return;
 
@@ -832,6 +1029,8 @@ class Bridge {
 
     this.renderer.updateMessageMeta(section, msg);
   }
+
+  flush() { this._updateBatcher.flush(); }
 
   _syncMessageControls(section, msg) {
     const center = section.querySelector('.msg-center-controls');
@@ -938,9 +1137,13 @@ class Bridge {
     // For char messages: renderer rebuilds controls on next render; flag is enough.
   }
 
-  removeMessage(messageId) { this.virtualList.remove(messageId); }
+  removeMessage(messageId) {
+    this.flush();
+    this.virtualList.remove(messageId);
+  }
 
   clearAll() {
+    this.flush();
     this._showLoadingScreen();
     this.virtualList.clear();
   }
@@ -1019,107 +1222,14 @@ class Bridge {
 
   /* ---------- Inline edit (toggle into .msg-body) ---------- */
   startEdit(messageId) {
-    const section = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (!section) return;
-
-    const scrollPos = this.virtualList.container.scrollTop;
-    this.renderer.setSelectionMode(false);
-    this._sendToFlutter('onSelectionChange', [JSON.stringify([])]);
-    this._hideSelectionBar();
-    const existingSelection = window.getSelection?.();
-    if (existingSelection) existingSelection.removeAllRanges();
-    section.classList.add('editing');
-
-    const rawText = (section.dataset.rawText || '').replace(/^<think\b[^>]*>[\s\S]*?<\/think>\s*/, '');
-    const reasoning = section.dataset.reasoning || '';
-    let editText = rawText;
-    if (reasoning) editText = '<' + 'think>\n' + reasoning + '\n</' + 'think>\n' + rawText;
-
-    const body = section.querySelector('.msg-body');
-    if (!body) return;
-
-    body.dataset.originalHtml = body.innerHTML;
-    body.innerHTML = '';
-    const textarea = document.createElement('textarea');
-    textarea.className = 'edit-textarea';
-    textarea.value = editText;
-    textarea.dataset.originalText = editText;
-    body.appendChild(textarea);
-    textarea.addEventListener('focus', () => {
-      this._sendToFlutter('onEditFocusChange', [messageId, true]);
+    this._editController.startEdit(messageId, (pos) => {
+      if (pos !== undefined) this.virtualList.container.scrollTop = pos;
+      return this.virtualList.container.scrollTop;
     });
-    textarea.addEventListener('blur', () => {
-      this._sendToFlutter('onEditFocusChange', [messageId, false]);
-    });
-
-    textarea.addEventListener('input', () => {
-      textarea.style.height = 'auto';
-      textarea.style.height = Math.max(80, textarea.scrollHeight) + 'px';
-    });
-    textarea.addEventListener('wheel', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      if (e.deltaMode === 0) {
-        textarea.scrollTop += e.deltaY * 0.3;
-      } else if (e.deltaMode === 1) {
-        textarea.scrollTop += e.deltaY * 16;
-      } else {
-        textarea.scrollTop += e.deltaY * 100;
-      }
-    }, { passive: false });
-    textarea.addEventListener('touchmove', (e) => {
-      e.stopPropagation();
-    }, { passive: true });
-    textarea.style.height = Math.max(80, textarea.scrollHeight + 20) + 'px';
-    textarea.focus();
-    this._sendToFlutter('onEditFocusChange', [messageId, true]);
-
-    /* Replace center controls with edit buttons */
-    const footer = section.querySelector('.msg-footer');
-    if (footer) {
-      footer.dataset.originalHtml = footer.innerHTML;
-      footer.innerHTML = '';
-
-      const metaCol = document.createElement('div');
-      metaCol.className = 'msg-meta';
-      footer.appendChild(metaCol);
-
-      const center = document.createElement('div');
-      center.className = 'msg-center-controls';
-      footer.appendChild(center);
-
-      const editBox = document.createElement('div');
-      editBox.className = 'edit-buttons';
-      editBox.innerHTML = `
-        <div class="edit-btn cancel" data-action="edit-cancel" data-message-id="${messageId}" title="Cancel">
-          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </div>
-        <div class="edit-btn save" data-action="edit-save" data-message-id="${messageId}" title="Save">
-          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-        </div>
-      `;
-      footer.appendChild(editBox);
-    }
-
-    this.virtualList.container.scrollTop = scrollPos;
   }
 
   stopEdit(messageId) {
-    const section = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (!section) return;
-    section.classList.remove('editing');
-    this._sendToFlutter('onEditFocusChange', [messageId, false]);
-
-    const body = section.querySelector('.msg-body');
-    if (body && body.dataset.originalHtml !== undefined) {
-      body.innerHTML = body.dataset.originalHtml;
-      delete body.dataset.originalHtml;
-    }
-    const footer = section.querySelector('.msg-footer');
-    if (footer && footer.dataset.originalHtml !== undefined) {
-      footer.innerHTML = footer.dataset.originalHtml;
-      delete footer.dataset.originalHtml;
-    }
+    this._editController.stopEdit(messageId);
   }
 
   setBackgroundImage(url, blur, opacity) {
@@ -1176,9 +1286,6 @@ class Bridge {
     const ctx = canvas.getContext('2d');
     const img = ctx.createImageData(size, size);
     const data = img.data;
-    // White pixels with random alpha — per-pixel grain (no SVG tile/grid).
-    // `intensity` linearly scales the alpha distribution: 0.1 → very sparse,
-    // 1.0 → balanced grain, 2.0 → dense (clamped at full opaque).
     for (let p = 0; p < data.length; p += 4) {
       const a = Math.min(1, Math.random() * intensity);
       data[p] = 255;
@@ -1190,69 +1297,6 @@ class Bridge {
     const url = canvas.toDataURL('image/png');
     this._noiseCache.set(key, url);
     return url;
-  }
-
-  /* ---------- Guided swipe inline ---------- */
-  _toggleGuidedSwipe(messageId) {
-    const section = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (!section) return;
-
-    const btn = section.querySelector('.msg-guided-swipe-btn');
-    const existing = section.querySelector('.guided-swipe-container');
-    if (existing) {
-      existing.remove();
-      btn?.classList.remove('active');
-      return;
-    }
-
-    const container = document.createElement('div');
-    container.className = 'guided-swipe-container';
-
-    const main = document.createElement('div');
-    main.className = 'guidance-main';
-    main.innerHTML = `<div class="guidance-header">GUIDED SWIPE</div>`;
-    const textarea = document.createElement('textarea');
-    textarea.className = 'guided-swipe-textarea';
-    textarea.placeholder = 'Enter OOC instruction for swipe...';
-    textarea.rows = 1;
-    main.appendChild(textarea);
-    container.appendChild(main);
-
-    const actions = document.createElement('div');
-    actions.className = 'guided-swipe-actions';
-
-    const cancel = document.createElement('div');
-    cancel.className = 'guided-btn cancel';
-    cancel.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
-    cancel.addEventListener('click', () => {
-      container.remove();
-      btn?.classList.remove('active');
-    });
-    actions.appendChild(cancel);
-
-    const confirm = document.createElement('div');
-    confirm.className = 'guided-btn confirm';
-    confirm.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
-    confirm.addEventListener('click', () => {
-      const guidance = textarea.value.trim();
-      if (guidance) this._sendToFlutter('onGuidedSwipe', [messageId, guidance]);
-      container.remove();
-      btn?.classList.remove('active');
-    });
-    actions.appendChild(confirm);
-
-    container.appendChild(actions);
-
-    /* Insert after .msg-content-stack inside section (matches Vue layout) */
-    const stack = section.querySelector('.msg-content-stack');
-    if (stack && stack.parentNode === section) {
-      section.insertBefore(container, stack.nextSibling);
-    } else {
-      section.appendChild(container);
-    }
-
-    btn?.classList.add('active');
-    textarea.focus();
   }
 
   setPerformanceMode(enabled) {
@@ -1288,10 +1332,7 @@ class Bridge {
     requestAnimationFrame(tick);
   }
 
-  setSelectionMode(enabled) {
-    if (enabled && document.querySelector('.message-section.editing')) return;
-    this.renderer.setSelectionMode(enabled);
-  }
+  setSelectionMode(enabled) { this._selectionManager.setSelectionMode(enabled); }
 
   _setupImageClickForward() {
     this.virtualList.container.addEventListener('image-click', (e) => {

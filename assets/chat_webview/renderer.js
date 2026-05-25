@@ -186,30 +186,8 @@ class Renderer {
     this.activeSearchIndex = -1;
     this.searchMatches = [];
     this._lastTimestamps = { date: null, idx: -1 };
-    this._selectionMode = false;
-    this._selectedIds = new Set();
+    this.selectionManager = null;
   }
-
-  /* ----- Selection mode ----- */
-  setSelectionMode(enabled) {
-    this._selectionMode = !!enabled;
-    if (!enabled) this._selectedIds.clear();
-    document.querySelectorAll('.message-section').forEach(msgEl => {
-      msgEl.classList.toggle('selection-mode', this._selectionMode);
-      msgEl.classList.toggle('selected', this._selectedIds.has(msgEl.dataset.messageId));
-    });
-  }
-
-  toggleMessageSelection(messageId) {
-    if (this._selectedIds.has(messageId)) this._selectedIds.delete(messageId);
-    else this._selectedIds.add(messageId);
-    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (msgEl) {
-      msgEl.classList.toggle('selected', this._selectedIds.has(messageId));
-    }
-  }
-
-  getSelectedIds() { return [...this._selectedIds]; }
 
   /* ----- Public: render a message ----- */
   renderMessage(messageData) {
@@ -225,7 +203,7 @@ class Renderer {
 
     const messageEl = this._createSection(messageData);
     elements.push(messageEl);
-    return elements.length > 1 ? elements : messageEl;
+    return elements;
   }
 
   _createSection(messageData) {
@@ -252,9 +230,8 @@ class Renderer {
     const classes = ['message-section', this._roleKey(role), `layout-${layout}`];
     if (isError) classes.push('error');
     if (isHidden) classes.push('msg-hidden');
-    if (messageData.isEditing) classes.push('editing');
-    if (this._selectionMode) classes.push('selection-mode');
-    if (this._selectedIds.has(id)) classes.push('selected');
+if (messageData.isEditing) classes.push('editing');
+    if (this.selectionManager) this.selectionManager.applyClassesToSection(section, classes);
     section.className = classes.join(' ');
 
     /* --- Header --- */
@@ -512,6 +489,40 @@ class Renderer {
     return wrap;
   }
 
+  _createGenStat(genTime, tokenCount, clockMargin = '2px') {
+    const stat = document.createElement('div');
+    stat.className = 'gen-stat';
+    const hasGen = genTime && genTime !== '0s';
+    const hasTokens = tokenCount && tokenCount > 0;
+    if (hasGen) {
+      const clock = document.createElement('span');
+      clock.innerHTML = ICON.clock;
+      clock.firstChild.style.cssText = `width:12px;height:12px;fill:currentColor;margin-right:${clockMargin};`;
+      stat.appendChild(clock.firstChild);
+      const gw = document.createElement('span');
+      gw.className = 'gen-time-wrapper';
+      const gt = document.createElement('span');
+      gt.className = 'gen-time gen-time-badge';
+      gt.textContent = genTime;
+      gw.appendChild(gt);
+      stat.appendChild(gw);
+    }
+    if (hasTokens) {
+      const tc = document.createElement('div');
+      tc.className = 'token-count-inline';
+      if (hasGen) tc.style.marginLeft = '6px';
+      const doc = document.createElement('span');
+      doc.innerHTML = ICON.doc;
+      doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
+      tc.appendChild(doc.firstChild);
+      const t = document.createElement('span');
+      t.textContent = `${tokenCount}t`;
+      tc.appendChild(t);
+      stat.appendChild(tc);
+    }
+    return stat;
+  }
+
   /* ----- Bubble meta (inside body) ----- */
   _createBubbleMeta(m) {
     const meta = document.createElement('div');
@@ -527,35 +538,8 @@ class Renderer {
     const hasGen = m.genTime && m.genTime !== '0s';
     const hasTokens = m.tokens && m.tokens > 0 && !m.isTyping;
     if (hasGen || hasTokens) {
-      const stat = document.createElement('div');
-      stat.className = 'gen-stat';
+      const stat = this._createGenStat(m.genTime, m.tokens, '2px');
       stat.style.marginRight = 'auto';
-      if (hasGen) {
-        const clock = document.createElement('span');
-        clock.innerHTML = ICON.clock;
-        clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-        stat.appendChild(clock.firstChild);
-        const gw = document.createElement('span');
-        gw.className = 'gen-time-wrapper';
-        const gt = document.createElement('span');
-        gt.className = 'gen-time gen-time-badge';
-        gt.textContent = m.genTime;
-        gw.appendChild(gt);
-        stat.appendChild(gw);
-      }
-      if (hasTokens) {
-        const tc = document.createElement('div');
-        tc.className = 'token-count-inline';
-        if (hasGen) tc.style.marginLeft = '6px';
-        const doc = document.createElement('span');
-        doc.innerHTML = ICON.doc;
-        doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-        tc.appendChild(doc.firstChild);
-        const t = document.createElement('span');
-        t.textContent = `${m.tokens}t`;
-        tc.appendChild(t);
-        stat.appendChild(tc);
-      }
       meta.appendChild(stat);
     }
 
@@ -587,34 +571,7 @@ class Renderer {
     const hasGen = m.genTime && m.genTime !== '0s';
     const hasTokens = m.tokens && m.tokens > 0 && !m.isTyping;
     if (hasGen || hasTokens) {
-      const stat = document.createElement('div');
-      stat.className = 'gen-stat';
-      if (hasGen) {
-        const clock = document.createElement('span');
-        clock.innerHTML = ICON.clock;
-        clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:4px;';
-        stat.appendChild(clock.firstChild);
-        const gw = document.createElement('span');
-        gw.className = 'gen-time-wrapper';
-        const gt = document.createElement('span');
-        gt.className = 'gen-time gen-time-badge';
-        gt.textContent = m.genTime;
-        gw.appendChild(gt);
-        stat.appendChild(gw);
-      }
-      if (hasTokens) {
-        const tc = document.createElement('div');
-        tc.className = 'token-count-inline';
-        if (hasGen) tc.style.marginLeft = '6px';
-        const doc = document.createElement('span');
-        doc.innerHTML = ICON.doc;
-        doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-        tc.appendChild(doc.firstChild);
-        const t = document.createElement('span');
-        t.textContent = `${m.tokens}t`;
-        tc.appendChild(t);
-        stat.appendChild(tc);
-      }
+      const stat = this._createGenStat(m.genTime, m.tokens, '4px');
       metaCol.appendChild(stat);
     }
     footer.appendChild(metaCol);
@@ -677,7 +634,7 @@ class Renderer {
     /* --- Right: actions / edit buttons --- */
     if (m.isEditing) {
       footer.appendChild(this._createEditButtons(m.id));
-    } else if (!this._selectionMode) {
+    } else if (!this.selectionManager || !this.selectionManager.shouldHideActions()) {
       const actions = document.createElement('div');
       actions.className = 'msg-actions-btn';
       actions.dataset.action = 'open-actions';
@@ -815,10 +772,26 @@ class Renderer {
     const body = sectionEl.querySelector('.msg-body');
     if (!body) return;
 
-    /* Replace typing/error/normal as needed */
     const isError = sectionEl.classList.contains('error');
 
-    /* Clear non-meta children of body, preserving image + bubble-meta */
+    if (!isTyping && !isError && !animate) {
+      const existingHost = body.querySelector('.message-content');
+      if (existingHost && existingHost.shadowRoot) {
+        const glazeMsg = existingHost.shadowRoot.querySelector('.glaze-message');
+        if (glazeMsg) {
+          glazeMsg.innerHTML = this.formatter.format(text, isUser);
+          if (reasoning && reasoning.trim()) {
+            let reasoningEl = sectionEl.querySelector('.msg-reasoning');
+            if (reasoningEl) {
+              const rHost = reasoningEl.querySelector('.msg-reasoning-inner .message-content');
+              if (rHost) this._writeShadowContent(rHost, reasoning, isUser, false);
+            }
+          }
+          return;
+        }
+      }
+    }
+
     const meta = body.querySelector('.bubble-meta');
     const image = body.querySelector('.msg-image-attachment');
     body.innerHTML = '';
@@ -921,67 +894,13 @@ class Renderer {
       }
 
       if (!genStatBubble && bubbleMeta && (hasGen || hasTokens)) {
-        const stat = document.createElement('div');
-        stat.className = 'gen-stat';
+        const stat = this._createGenStat(msg.genTime, msg.tokens, '2px');
         stat.style.marginRight = 'auto';
-        if (hasGen) {
-          const clock = document.createElement('span');
-          clock.innerHTML = ICON.clock;
-          clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-          stat.appendChild(clock.firstChild);
-          const gw = document.createElement('span');
-          gw.className = 'gen-time-wrapper';
-          const gt = document.createElement('span');
-          gt.className = 'gen-time gen-time-badge';
-          gt.textContent = msg.genTime;
-          gw.appendChild(gt);
-          stat.appendChild(gw);
-        }
-        if (hasTokens) {
-          const tc = document.createElement('div');
-          tc.className = 'token-count-inline';
-          if (hasGen) tc.style.marginLeft = '6px';
-          const doc = document.createElement('span');
-          doc.innerHTML = ICON.doc;
-          doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-          tc.appendChild(doc.firstChild);
-          const t = document.createElement('span');
-          t.textContent = `${msg.tokens}t`;
-          tc.appendChild(t);
-          stat.appendChild(tc);
-        }
         bubbleMeta.appendChild(stat);
       }
 
       if (!genStatFooter && footerMeta && (hasGen || hasTokens)) {
-        const stat = document.createElement('div');
-        stat.className = 'gen-stat';
-        if (hasGen) {
-          const clock = document.createElement('span');
-          clock.innerHTML = ICON.clock;
-          clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:4px;';
-          stat.appendChild(clock.firstChild);
-          const gw = document.createElement('span');
-          gw.className = 'gen-time-wrapper';
-          const gt = document.createElement('span');
-          gt.className = 'gen-time gen-time-badge';
-          gt.textContent = msg.genTime;
-          gw.appendChild(gt);
-          stat.appendChild(gw);
-        }
-        if (hasTokens) {
-          const tc = document.createElement('div');
-          tc.className = 'token-count-inline';
-          if (hasGen) tc.style.marginLeft = '6px';
-          const doc = document.createElement('span');
-          doc.innerHTML = ICON.doc;
-          doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-          tc.appendChild(doc.firstChild);
-          const t = document.createElement('span');
-          t.textContent = `${msg.tokens}t`;
-          tc.appendChild(t);
-          stat.appendChild(tc);
-        }
+        const stat = this._createGenStat(msg.genTime, msg.tokens, '4px');
         footerMeta.appendChild(stat);
       }
     }

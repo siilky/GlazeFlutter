@@ -548,15 +548,14 @@ void main() {
       final lbList = map['triggeredLorebooks'] as List;
       expect(lbList.length, equals(1));
       final lbJson = lbList.first as Map<String, dynamic>;
-      expect(lbJson['id'], equals('lb1'));
       expect(lbJson['name'], equals('Character Lore'));
       expect(lbJson['lorebookName'], equals('World Book'));
 
       final memList = map['triggeredMemories'] as List;
       expect(memList.length, equals(1));
       final memJson = memList.first as Map<String, dynamic>;
-      expect(memJson['id'], equals('mem1'));
-      expect(memJson['source'], equals('keyword'));
+      expect(memJson['name'], equals('Past Event'));
+      expect(memJson['lorebookName'], equals(''));
     });
 
     test('streaming update includes badge data but excludes avatarUrl', () {

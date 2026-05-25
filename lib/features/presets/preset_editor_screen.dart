@@ -7,7 +7,6 @@ import '../../core/models/preset.dart';
 import '../../core/services/preset_defaults.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
-import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
@@ -143,10 +142,7 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
       summaryPrompt: widget.preset?.summaryPrompt,
       createdAt: _createdAt,
     );
-    await ref.read(presetRepoProvider).put(presetToSave);
-    try {
-      ref.invalidate(presetListProvider);
-    } catch (_) {}
+    await ref.read(presetListProvider.notifier).updatePreset(presetToSave);
   }
 
   bool handleBack() {

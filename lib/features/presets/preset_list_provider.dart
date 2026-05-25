@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/models/preset.dart';
 import '../../core/state/db_provider.dart';
+import '../../core/state/shared_prefs_provider.dart';
 import '../../core/utils/sync_deletion_tracker.dart';
 
 final presetListProvider =
@@ -24,6 +24,15 @@ class PresetListNotifier extends AsyncNotifier<List<Preset>> {
     ref.invalidateSelf();
   }
 
+  Future<void> updatePreset(Preset preset) async {
+    await ref.read(presetRepoProvider).put(preset);
+    ref.invalidateSelf();
+  }
+
+  Future<Preset?> getPresetById(String id) async {
+    return ref.read(presetRepoProvider).getById(id);
+  }
+
   Future<void> remove(String id) async {
     await ref.read(presetRepoProvider).delete(id);
     await SyncDeletionTracker.record('theme_presets', id);
@@ -32,7 +41,7 @@ class PresetListNotifier extends AsyncNotifier<List<Preset>> {
 
   Future<List<Preset>> _applyOrder(List<Preset> presets) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await ref.read(sharedPreferencesProvider.future);
       final raw = prefs.getString('presetOrder');
       if (raw == null) return presets;
       final order = (jsonDecode(raw) as List).cast<String>();
