@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/llm/tokenizer.dart';
 import 'core/services/generation_notification_service.dart';
 import 'core/state/active_selection_provider.dart';
 import 'core/state/lorebook_provider.dart';
@@ -197,6 +198,7 @@ class _GlazeAppState extends ConsumerState<GlazeApp> with WidgetsBindingObserver
     loadLorebookActivations(ref);
     loadLorebookSettings(ref);
     seedDefaultPresets(ref);
+    preloadO200kBase();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       checkAndShowOnboarding(context);
       _listenNotificationNavigation();

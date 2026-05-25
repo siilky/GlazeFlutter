@@ -140,12 +140,12 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) {
 
 ## Phase 7: Tokenizer Accuracy (medium risk)
 
-- [ ] 7.1 Add `o200k_base` encoding support via custom `Tiktoken` constructor — download vocab from `https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken` (~2MB), cache locally, load into existing `tiktoken` Dart package using `Tiktoken(name, patStr, mergeableRanks, specialTokens)`
-- [ ] 7.2 Model-aware encoding selector — map model name → encoding (`cl100k_base` for GPT-4/3.5, `o200k_base` for GPT-4o/4.1/5.x, heuristic multiplier for Claude/other providers)
-- [ ] 7.3 Heuristic multiplier fallback for non-OpenAI models — Claude: `×0.69`, Gemini/Mistral: `×0.7` (approximate, no local tokenizer available)
-- [ ] 7.4 Replace `estimateTokens()` global with `estimateTokens(text, {modelEncoding})` — encoding selection based on current `ApiConfig.model`
+- [x] 7.1 Add `o200k_base` encoding support — download vocab from OpenAI CDN (~2MB), cache locally via `path_provider`, load into `Tiktoken` constructor with `o200k_base` patStr + special tokens
+- [x] 7.2 Use `o200k_base` as default encoder for all providers (globally, no model-aware selection needed — o200k_base is strictly more accurate than cl100k_base for all models, ±10% vs +45%)
+- [x] 7.3 No heuristic provider multipliers — o200k_base ±10% for non-OpenAI models is already far better than cl100k_base +45%. Fire-and-forget `preloadO200kBase()` in app startup; falls back to cl100k_base×0.87 until loaded
+- [x] 7.4 `estimateTokens()` signature unchanged — backward compatible. `preloadO200kBase()` called in `GlazeApp.initState()`
 
-**Context:** `cl100k_base` overestimates by ~45% for both Claude (113k vs 78k actual) and GPT-5.4 (~113k vs 71k). The Dart `tiktoken` 1.0.3 package does not support `o200k_base` natively, but allows extending via constructor. JS Glaze uses `gpt-tokenizer` (cl100k_base only) — same problem exists there too.
+**Context:** `cl100k_base` overestimates by ~45% for both Claude (113k vs 78k actual) and GPT-5.4 (~113k vs 71k). `o200k_base` reduces this to ~10% for all providers — not perfect for non-OpenAI, but vastly better. No provider-specific multipliers needed.
 
 ---
 
@@ -182,3 +182,7 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) {
 | 2026-05-25 | 5.1a | ImageRecoveryService extracted from ChatNotifier — 4 static pure functions (cleanStuckImgGenTags, replaceFirstImgErrorOrGen, resetImgTagsToGen, fixupSwipesWithImageResults) + 3 instance methods (retryImageGeneration, retryImageGenerationForMessage, findImageOnDisk) via constructor injection. ChatNotifier: 1122→854 lines | Done |
 | 2026-05-25 | 5.1b | AbortHandler extracted from ChatNotifier — encapsulates _cancelToken, _imgGenCancelToken, _restorationMessage, _activeGenId, abortGeneration(), abortImageGeneration(), cancelImageGeneration(), clearStreaming(), setCancelToken(), nextGenId(), isCurrentGen(). ChatNotifier: 854→636 lines | Done |
 | 2026-05-25 | 5.2 | ChatDrawerController + ChatSearchDelegate extracted from ChatScreen. ChatDrawerController: drawer animation, keyboard height tracking, toggle/close, focus management (ChangeNotifier). ChatSearchDelegate: search state, matching logic with think-tag stripping, next/prev (ChangeNotifier). ChatScreen: 1387→1150 lines. _ChatBody props reduced from 22 to 8. | Done |
+| 2026-05-25 | 5.5 | StreamAccumulator rewrite — simple raw accumulation + complete-tag-only split instead of char-level partial matching; no more stray closing tags. Fix: missing closing think tag treated as all-reasoning. Simplify onComplete handler. WebView bg fix: use --bg-color instead of transparent (WebView2 Windows compat). | Done |
+| 2026-05-25 | 6.2 | stripThinkTags → shared utility (lib/core/utils/think_tags.dart), removed duplicate from ChatBridgeController | Done |
+| 2026-05-25 | 6.3 | Unified ChatMessage→JS map via ChatMessageMapper.toMap — replaced bridge _toMap, added greetingTotal to ChatMessageMapperContext, triggered entry serialization as {name, lorebookName} | Done |
+| 2026-05-25 | 7.1–7.4 | o200k_base tokenizer upgrade — download + cache o200k_base.tiktoken (~2MB) from OpenAI CDN, load into Tiktoken constructor. Used as default for all providers (±10% vs cl100k_base +45%). preloadO200kBase() in GlazeApp.initState(). No provider multipliers, no model-aware selection. Backward-compatible estimateTokens() signature. | Done |
