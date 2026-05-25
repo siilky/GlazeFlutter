@@ -174,3 +174,4 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) {
 | 2026-05-25 | 3.2 | SelectionManager extraction from bridge.js + renderer.js | Done |
 | 2026-05-25 | 3.3 | EditController extraction from bridge.js | Done |
 | 2026-05-25 | 3.4 | SwipeGestureHandler extraction from bridge.js | Done |
+| 2026-05-25 | merge | Upstream/master 3ab55fc merged — noise overlay, contextmenu handoff, isEditing class | Done |
