@@ -24,6 +24,15 @@ class PresetListNotifier extends AsyncNotifier<List<Preset>> {
     ref.invalidateSelf();
   }
 
+  Future<void> updatePreset(Preset preset) async {
+    await ref.read(presetRepoProvider).put(preset);
+    ref.invalidateSelf();
+  }
+
+  Future<Preset?> getPresetById(String id) async {
+    return ref.read(presetRepoProvider).getById(id);
+  }
+
   Future<void> remove(String id) async {
     await ref.read(presetRepoProvider).delete(id);
     await SyncDeletionTracker.record('theme_presets', id);

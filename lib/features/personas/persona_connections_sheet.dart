@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/persona.dart';
 import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/character_provider.dart';
-import '../../../core/state/db_provider.dart';
+import '../../../core/state/chat_session_ops_provider.dart';
+import '../../../features/personas/persona_list_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/sheet_view.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
@@ -22,8 +23,7 @@ class _PersonaConnectionsSheetState
     extends ConsumerState<PersonaConnectionsSheet> {
   @override
   Widget build(BuildContext context) {
-    final personas = ref.watch(personaRepoProvider);
-    final personaAsync = personas.getAll();
+    final personaListAsync = ref.watch(personaListProvider);
     final connections = ref.watch(personaConnectionsProvider);
     final activePersonaId = ref.watch(activePersonaIdProvider);
     final isGlobal = activePersonaId == widget.personaId;
@@ -37,13 +37,11 @@ class _PersonaConnectionsSheetState
         .map((e) => e.key)
         .toList();
 
-    return FutureBuilder<List<Persona>>(
-      future: personaAsync,
-      builder: (context, snap) {
-        final persona = snap.data
-                ?.where((p) => p.id == widget.personaId)
-                .firstOrNull ??
-            Persona(id: widget.personaId, name: 'Persona');
+    return personaListAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(child: Text('Error: $error')),
+      data: (personas) {
+        final persona = personas.where((p) => p.id == widget.personaId).firstOrNull ?? Persona(id: widget.personaId, name: 'Persona');
 
         return SheetView(
           title: 'Connections: ${persona.name}',
@@ -121,7 +119,7 @@ class _PersonaConnectionsSheetState
   }
 
   Future<String> _chatLabel(String sessionId) async {
-    final sessions = await ref.read(chatRepoProvider).getAllSessions();
+    final sessions = ref.read(chatSessionOpsProvider).value ?? [];
     final s = sessions.where((s) => s.id == sessionId).firstOrNull;
     if (s == null) return sessionId;
     final chars = ref.read(charactersProvider).value ?? [];
@@ -162,7 +160,7 @@ class _PersonaConnectionsSheetState
   }
 
   void _addChatConnection() async {
-    final sessions = await ref.read(chatRepoProvider).getAllSessions();
+    final sessions = ref.read(chatSessionOpsProvider).value ?? [];
     final connections = ref.read(personaConnectionsProvider);
     final existingIds = connections.chat.entries
         .where((e) => e.value == widget.personaId)

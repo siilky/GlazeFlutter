@@ -51,6 +51,19 @@ class CharactersNotifier extends AsyncNotifier<List<Character>> {
   Future<void> add(Character character) async {
     final repo = ref.read(characterRepoProvider);
     await repo.put(character);
+    ref.invalidateSelf();
+  }
+
+  Future<void> save(Character character) async {
+    final repo = ref.read(characterRepoProvider);
+    await repo.put(character);
+    ref.invalidateSelf();
+  }
+
+  Future<void> delete(String id) async {
+    final repo = ref.read(characterRepoProvider);
+    await repo.delete(id);
+    ref.invalidateSelf();
   }
 
   Future<void> remove(String id) async {

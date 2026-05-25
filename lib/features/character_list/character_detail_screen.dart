@@ -10,7 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/character.dart';
 import '../../core/utils/html_to_markdown.dart';
 import '../../core/state/character_provider.dart';
-import '../../core/state/db_provider.dart';
+import '../../core/state/chat_session_ops_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_tab_bar.dart';
@@ -136,7 +136,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
     super.initState();
     _charFuture = widget.isPreview
         ? Future.value(widget.previewCharacter)
-        : ref.read(characterRepoProvider).getById(widget.charId);
+        : ref.read(charactersProvider.future).then((chars) => chars.where((c) => c.id == widget.charId).firstOrNull);
   }
 
   /// Pops the GlazeBottomSheet, then pops this modal sheet returning [route]
@@ -222,7 +222,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
   }
 
   Future<void> _openChat(BuildContext context, String cId) async {
-    final sessions = await ref.read(chatRepoProvider).getByCharacterId(cId);
+    final sessions = await ref.read(chatSessionOpsProvider.notifier).getSessionsByCharacter(cId);
     if (!context.mounted) return;
 
     GlazeBottomSheet.show(

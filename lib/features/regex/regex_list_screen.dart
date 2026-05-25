@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/preset.dart';
 import '../../core/state/active_selection_provider.dart';
-import '../../core/state/db_provider.dart';
 import '../../core/state/global_regex_provider.dart';
+import '../presets/preset_list_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
@@ -18,7 +18,7 @@ class RegexListScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final presetsAsync = ref.watch(presetsListProvider);
+    final presetsAsync = ref.watch(presetListProvider);
     final globalAsync = ref.watch(globalRegexProvider);
     final activePresetId = ref.watch(activePresetIdProvider);
 
@@ -153,22 +153,20 @@ class RegexListScreen extends ConsumerWidget {
     );
   }
 
-  void _addPresetRegex(WidgetRef ref) {
+  void _addPresetRegex(WidgetRef ref) async {
     final activePresetId = ref.read(activePresetIdProvider);
     if (activePresetId == null) return;
-    final repo = ref.read(presetRepoProvider);
-    repo.getAll().then((presets) {
-      final preset = presets.where((p) => p.id == activePresetId).firstOrNull;
-      if (preset == null) return;
-      final newRegex = PresetRegex(
-        id: generateId(),
-        name: 'New Script',
-        regex: '',
-      );
-      repo.put(preset.copyWith(regexes: [...preset.regexes, newRegex])).then((_) {
-        ref.invalidate(presetsListProvider);
-      });
-    });
+    final presets = ref.watch(presetListProvider).value ?? [];
+    final preset = presets.where((p) => p.id == activePresetId).firstOrNull;
+    if (preset == null) return;
+    final newRegex = PresetRegex(
+      id: generateId(),
+      name: 'New Script',
+      regex: '',
+    );
+    await ref.read(presetListProvider.notifier).updatePreset(
+          preset.copyWith(regexes: [...preset.regexes, newRegex]),
+        );
   }
 
   void _addGlobalRegex(WidgetRef ref) {
@@ -245,8 +243,7 @@ class _PresetRegexItem extends ConsumerWidget {
       if (r.id == regex.id) return updated;
       return r;
     }).toList();
-    await ref.read(presetRepoProvider).put(preset.copyWith(regexes: updatedRegexes));
-    ref.invalidate(presetsListProvider);
+    await ref.read(presetListProvider.notifier).updatePreset(preset.copyWith(regexes: updatedRegexes));
   }
 }
 

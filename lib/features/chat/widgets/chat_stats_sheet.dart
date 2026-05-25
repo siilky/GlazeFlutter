@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/state/db_provider.dart';
+import '../../../core/state/character_provider.dart';
+import '../../../core/state/chat_session_ops_provider.dart';
 import '../../../core/state/shared_prefs_provider.dart';
 import '../../../core/models/character.dart';
 import '../../../shared/theme/app_colors.dart';
@@ -92,8 +93,7 @@ class _ChatStatsSheetState extends ConsumerState<ChatStatsSheet> {
   }
 
   Future<void> _initData() async {
-    final charRepo = ref.read(characterRepoProvider);
-    _allCharacters = await charRepo.getAll();
+    _allCharacters = ref.read(charactersProvider).value ?? [];
     await _calculateStats();
     if (mounted) {
       setState(() => _loading = false);
@@ -128,8 +128,7 @@ class _ChatStatsSheetState extends ConsumerState<ChatStatsSheet> {
   }
 
   Future<void> _calculateStats() async {
-    final repo = ref.read(chatRepoProvider);
-    final allSessions = await repo.getAllSessions();
+    final allSessions = ref.read(chatSessionOpsProvider).value ?? [];
     final currentSession =
         ref.read(chatProvider(widget.initialCharId)).value?.session;
     final currentSessionId = currentSession?.id;

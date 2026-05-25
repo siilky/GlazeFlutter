@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/persona.dart';
 import '../../core/state/active_selection_provider.dart';
 import '../../core/state/db_provider.dart';
+import 'persona_connections_sheet.dart';
+import 'persona_list_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../shared/theme/app_colors.dart';
@@ -262,9 +264,7 @@ class _PersonaEditorScreenState extends ConsumerState<_PersonaEditorScreen> {
       createdAt: _createdAt,
     );
 
-    ref.read(personaRepoProvider).put(persona).then((_) {
-      ref.invalidate(personaListProvider);
-    });
+    ref.read(personaListProvider.notifier).updatePersona(persona);
   }
 
   @override

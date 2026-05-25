@@ -76,7 +76,7 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) {
 - [x] 2.2 Remove silent `catch (_) {}` — add logging in `chat_session_service.dart`
 - [x] 2.3 SSE stream `onError` → call `onError?.call(e)` in `sse_client.dart`
 - [x] 2.4 Static `_cache` → LRU or Provider-scoped cache in `chat_session_service.dart`
-- [ ] 2.5 UI→DB violations: route through providers (17 widget files — see characterization tests)
+- [x] 2.5 UI→DB violations: route through providers (17 widget files — see characterization tests)
 
 ### 2.5 Detail — Violation Inventory
 
@@ -177,3 +177,4 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) {
 | 2026-05-25 | merge | Upstream/master 3ab55fc merged — noise overlay, contextmenu handoff, isEditing class | Done |
 | 2026-05-25 | merge | Upstream/master 8c38b6e merged — reasoning block hiding fix, editing guard in SelectionManager | Done |
 | 2026-05-25 | 4.2 | MessageUpdateBatcher — coalesce updateMessage calls via requestAnimationFrame, flush before structural ops (15 characterization tests) | Done |
+| 2026-05-25 | 2.5 | UI→DB violations fixed — migrated 17 widget files from direct repo calls to high-level providers (chatSessionOpsProvider, memoryBookOpsProvider, lorebooksProvider, charactersProvider, presetListProvider, personaListProvider), updated characterization tests to verify fix | Done |

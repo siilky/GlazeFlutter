@@ -6,7 +6,7 @@ import '../../../core/llm/lorebook_coverage.dart';
 import '../../../core/llm/lorebook_providers.dart';
 import '../../../core/llm/tokenizer.dart';
 import '../../../core/models/lorebook.dart';
-import '../../../core/state/db_provider.dart';
+import '../../../core/state/character_provider.dart';
 import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_filter_chip_bar.dart';
@@ -55,10 +55,9 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
       return;
     }
 
-    final charRepo = ref.read(characterRepoProvider);
-    final character = await charRepo.getById(widget.charId);
+    final character = ref.read(characterByIdProvider(widget.charId));
 
-    final lorebooks = await ref.read(lorebookRepoProvider).getAll();
+    final lorebooks = ref.watch(lorebooksProvider).value ?? [];
     final settings = ref.read(lorebookSettingsProvider);
     final activations = ref.read(lorebookActivationsProvider);
 

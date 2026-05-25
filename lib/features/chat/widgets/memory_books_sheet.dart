@@ -9,7 +9,7 @@ import '../../../features/settings/api_list_provider.dart';
 import '../../../core/llm/memory_injection_service.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/memory_book.dart';
-import '../../../core/state/db_provider.dart';
+import '../../../core/state/memory_book_ops_provider.dart';
 import '../../../core/state/memory_settings_provider.dart';
 import '../../../core/utils/id_generator.dart';
 import '../../../shared/theme/app_colors.dart';
@@ -46,15 +46,13 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
   }
 
   Future<void> _load() async {
-    final repo = ref.read(memoryBookRepoProvider);
-    final book = await repo.ensureForSession(widget.sessionId);
+    final book = await ref.read(memoryBookOpsProvider).ensureForSession(widget.sessionId);
     if (mounted) setState(() { _book = book; _loading = false; });
   }
 
   Future<void> _save() async {
     if (_book == null) return;
-    final repo = ref.read(memoryBookRepoProvider);
-    await repo.put(_book!);
+    await ref.read(memoryBookOpsProvider).saveMemoryBook(_book!);
   }
 
   MemoryGlobalSettings get _gs => ref.read(memoryGlobalSettingsProvider);
@@ -339,7 +337,7 @@ class _MemoryBooksSheetState extends ConsumerState<MemoryBooksSheet> {
       );
     });
     await _save();
-    await ref.read(embeddingRepoProvider).deleteByEntryId(entryId);
+    await ref.read(memoryBookOpsProvider).deleteEmbeddingEntry(entryId);
   }
 
   void _openSettings() async {

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/chat_message.dart';
-import '../../../core/state/db_provider.dart';
+import '../../../core/state/chat_session_ops_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/generic_editor.dart';
 import '../../../shared/widgets/sheet_view.dart';
@@ -54,7 +54,7 @@ class _AuthorsNoteSheetState extends ConsumerState<AuthorsNoteSheet> {
       authorsNote: note,
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
-    await ref.read(chatRepoProvider).put(updated);
+    await ref.read(chatSessionOpsProvider.notifier).saveSession(updated);
     ref.invalidate(chatProvider(widget.charId));
   }
 
