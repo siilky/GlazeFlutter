@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:glaze_flutter/core/models/chat_message.dart';
+import 'package:glaze_flutter/core/utils/think_tags.dart';
 
 part 'chat_message_mapper.freezed.dart';
 
@@ -15,6 +16,7 @@ sealed class ChatMessageMapperContext with _$ChatMessageMapperContext {
     @Default({}) Set<String> coveredMemoryIds,
     @Default({}) Set<String> pendingMemoryIds,
     @Default({}) Set<String> draftMemoryIds,
+    @Default(0) int greetingTotal,
   }) = _ChatMessageMapperContext;
 }
 
@@ -68,7 +70,7 @@ class ChatMessageMapper {
     return {
       'id': m.id,
       'role': m.role,
-      'text': m.content,
+      'text': stripThinkTags(m.content),
       'timestamp': m.timestamp,
       'isUser': isUser,
       'isAssistant': isAssistant,
@@ -85,16 +87,22 @@ class ChatMessageMapper {
       'isError': m.isError,
       if (m.isTyping) 'isTyping': true,
       if (m.reasoning != null && m.reasoning!.isNotEmpty) 'reasoning': m.reasoning,
-      if (m.isHidden) 'isHidden': true,
+      'isHidden': m.isHidden,
       if (isLast) 'isLast': true,
       if (messageIndex != null) 'messageIndex': messageIndex,
       if (m.guidanceText != null && m.guidanceText!.isNotEmpty) 'guidanceText': m.guidanceText,
       if (m.guidanceType != 'GENERATION') 'guidanceType': m.guidanceType,
       if (m.greetingIndex != null) 'greetingIndex': m.greetingIndex,
+      if (m.greetingIndex != null && ctx.greetingTotal > 1)
+        'greetingTotal': ctx.greetingTotal,
       if (memoryStatus != null) 'memoryStatus': memoryStatus,
-      if (m.triggeredLorebooks.isNotEmpty) 'triggeredLorebooks': m.triggeredLorebooks.map((e) => e.toJson()).toList(),
-      if (m.triggeredMemories.isNotEmpty) 'triggeredMemories': m.triggeredMemories.map((e) => e.toJson()).toList(),
+      if (m.triggeredLorebooks.isNotEmpty) 'triggeredLorebooks': _triggeredToJson(m.triggeredLorebooks),
+      if (m.triggeredMemories.isNotEmpty) 'triggeredMemories': _triggeredToJson(m.triggeredMemories),
       'isGenerating': ctx.isGenerating,
     };
+  }
+
+  static List<Map<String, String>> _triggeredToJson(List<TriggeredEntry> entries) {
+    return entries.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList();
   }
 }
