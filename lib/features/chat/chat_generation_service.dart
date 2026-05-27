@@ -20,7 +20,7 @@ import '../settings/api_list_provider.dart';
 import '../image_gen/services/image_gen_service.dart';
 import 'chat_provider.dart';
 import 'chat_state.dart';
-import 'widgets/cached_token_breakdown.dart';
+import 'state/cached_token_breakdown.dart';
 
 final chatGenerationServiceProvider = Provider<ChatGenerationService>((ref) {
   return ChatGenerationService(ref);
