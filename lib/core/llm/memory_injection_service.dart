@@ -46,15 +46,18 @@ class MemoryInjectionService {
     String? currentText,
     EmbeddingConfig? embeddingConfig,
   }) async {
+    debugPrint('[mem] buildInjection: reading memory book...');
     final book = await _repo.getBySessionId(sessionId);
-    if (book == null) return const MemoryInjectionResult();
+    if (book == null) { debugPrint('[mem] no memory book found'); return const MemoryInjectionResult(); }
+    debugPrint('[mem] memory book loaded, entries=${book.entries.length}');
 
     final gs = _ref.read(memoryGlobalSettingsProvider);
-    if (!gs.enabled) return const MemoryInjectionResult();
+    if (!gs.enabled) { debugPrint('[mem] memory disabled globally'); return const MemoryInjectionResult(); }
 
     final activeEntries = book.entries
         .where((e) => (e.status == 'active') && e.content.trim().isNotEmpty)
         .toList();
+    debugPrint('[mem] active entries: ${activeEntries.length}');
 
     if (activeEntries.isEmpty) return const MemoryInjectionResult();
 
@@ -75,10 +78,15 @@ class MemoryInjectionService {
         }
       }
     }
+    debugPrint('[mem] keyword matched: ${keywordMatched.length}');
 
     final vectorScores = <String, double>{};
     if (gs.vectorSearchEnabled && embeddingConfig != null && embeddingConfig.endpoint.isNotEmpty && history != null) {
+      debugPrint('[mem] starting vector search...');
       vectorScores.addAll(await _vectorSearchMemory(activeEntries, history, currentText ?? '', embeddingConfig, gs));
+      debugPrint('[mem] vector search done, scores=${vectorScores.length}');
+    } else {
+      debugPrint('[mem] vector search skipped (enabled=${gs.vectorSearchEnabled}, endpoint=${embeddingConfig?.endpoint.isNotEmpty ?? false}, history=${history != null})');
     }
 
     final scoredEntries = activeEntries.map((entry) {
@@ -132,11 +140,13 @@ class MemoryInjectionService {
     MemoryGlobalSettings settings,
   ) async {
     try {
+      debugPrint('[mem-vec] reading embeddings from DB...');
       final embeddingRows = await _embeddingRepo.getBySourceType('memory_entry');
       final embeddingMap = <String, EmbeddingRow>{};
       for (final row in embeddingRows) {
         embeddingMap[row.entryId] = row;
       }
+      debugPrint('[mem-vec] loaded ${embeddingRows.length} embedding rows');
 
       final candidates = <VectorCandidate>[];
       for (final entry in entries) {
@@ -160,6 +170,7 @@ class MemoryInjectionService {
           },
         ));
       }
+      debugPrint('[mem-vec] valid candidates: ${candidates.length}');
 
       if (candidates.isEmpty) return {};
 
@@ -175,8 +186,10 @@ class MemoryInjectionService {
       final queryText = buffer.toString().trim();
       if (queryText.isEmpty) return {};
 
+      debugPrint('[mem-vec] calling embedding API (endpoint=${config.endpoint})...');
       final queryChunks = await _embeddingService.getEmbeddingsWithChunks([queryText], config)
           .timeout(const Duration(seconds: 15), onTimeout: () => []);
+      debugPrint('[mem-vec] embedding API returned ${queryChunks.length} chunks');
       if (queryChunks.isEmpty) return {};
 
       final queryVecChunks = queryChunks.map((c) => VectorChunk(text: c.text, vector: c.vector)).toList();
