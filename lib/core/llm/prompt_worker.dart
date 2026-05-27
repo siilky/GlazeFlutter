@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
-import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:path_provider/path_provider.dart';
 
@@ -74,7 +73,6 @@ class PromptWorker {
     });
 
     await worker._send('init', null);
-    debugPrint('[PromptWorker] Isolate ready with tokenizer loaded');
 
     return worker;
   }

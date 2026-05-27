@@ -33,9 +33,7 @@ Future<void> preloadO200kBase({String? appSupportPath}) async {
     String bpeData;
     if (await cacheFile.exists()) {
       bpeData = await cacheFile.readAsString();
-      debugPrint('[tokenizer] o200k_base loaded from cache');
     } else {
-      debugPrint('[tokenizer] o200k_base not cached, downloading...');
       final response = await Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 60),
@@ -45,7 +43,6 @@ Future<void> preloadO200kBase({String? appSupportPath}) async {
       );
       bpeData = response.data!;
       await cacheFile.writeAsString(bpeData);
-      debugPrint('[tokenizer] o200k_base downloaded and cached');
     }
 
     final mergeableRanks = <ByteArray, int>{};
@@ -71,9 +68,8 @@ Future<void> preloadO200kBase({String? appSupportPath}) async {
     _o200kBaseEncoder!
         .encode('test', disallowedSpecial: SpecialTokensSet.empty());
     _tokenCache.clear();
-    debugPrint('[tokenizer] o200k_base ready');
-  } catch (e, st) {
-    debugPrint('[tokenizer] FAILED to load o200k_base: $e\n$st');
+  } catch (e) {
+    // Ignore tokenizer errors
   }
 }
 

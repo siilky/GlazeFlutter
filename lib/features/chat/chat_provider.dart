@@ -177,7 +177,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
         messages: current.messages,
         updatedAt: currentTimestampSeconds(),
       );
-      await _runGeneration(promptSession, current, saveSession: current.session!);
+      await _runGeneration(promptSession, current, saveSession: current.session!, guidanceText: guidanceText);
       return;
     }
 

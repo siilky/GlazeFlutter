@@ -54,18 +54,22 @@ class ChatGenerationService {
     String? guidanceText,
     String? regenTargetId,
   }) async {
+    debugPrint('[gen] generate() START charId=$charId genId=$genId');
     final vsi = currentState.visibleStartIndex;
     try {
+      debugPrint('[gen] building payload...');
       final builder = _ref.read(promptPayloadBuilderProvider);
       final payload = await builder.buildFromSession(
         charId: charId,
         session: session,
         guidanceText: guidanceText,
       );
+      debugPrint('[gen] payload built, building prompt in isolate...');
 
       final apiConfig = payload.apiConfig;
 
       final promptResult = await buildPromptInIsolate(payload);
+      debugPrint('[gen] prompt built, messages=${promptResult.messages.length}, totalTokens=${promptResult.breakdown.totalTokens}');
 
       _ref.read(cachedTokenBreakdownProvider(charId).notifier).state =
           promptResult.breakdown;
@@ -121,6 +125,8 @@ class ChatGenerationService {
       final coverage = payload.memoryCoverage;
       final triggeredLorebooks = promptResult.triggeredLorebooks;
       final triggeredMemories = promptResult.triggeredMemories;
+
+      debugPrint('[gen] starting SSE stream to ${apiConfig.endpoint} model=${apiConfig.model}');
 
       bool frameScheduled = false;
 

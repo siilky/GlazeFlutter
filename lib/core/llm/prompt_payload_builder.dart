@@ -109,6 +109,7 @@ class PromptPayloadBuilder {
     String? guidanceText,
     bool skipVectorSearch = false,
   }) async {
+    debugPrint('[payload] reading character...');
     final charRepo = _ref.read(characterRepoProvider);
     final presetRepo = _ref.read(presetRepoProvider);
     final personaRepo = _ref.read(personaRepoProvider);
@@ -117,16 +118,19 @@ class PromptPayloadBuilder {
     final character = await charRepo.getById(charId);
     if (character == null) throw StateError('Character not found: $charId');
 
+    debugPrint('[payload] reading API config...');
     await _ref.read(apiListProvider.future);
     final chatApi = _ref.read(activeApiConfigProvider);
     if (chatApi == null || chatApi.mode == 'embedding') throw StateError('No chat API config available');
 
+    debugPrint('[payload] reading preset...');
     final activePresetId = _ref.read(activePresetIdProvider);
     final presets = await presetRepo.getAll();
     final preset = activePresetId != null
         ? presets.where((p) => p.id == activePresetId).firstOrNull
         : (presets.isNotEmpty ? presets.first : null);
 
+    debugPrint('[payload] reading persona...');
     final personas = await personaRepo.getAll();
     final connections = _ref.read(personaConnectionsProvider);
     final activePersonaId = _ref.read(activePersonaIdProvider);
@@ -136,6 +140,7 @@ class PromptPayloadBuilder {
       personas, charId, sessionId, activePersonaId, connections,
     );
 
+    debugPrint('[payload] reading lorebooks...');
     final lorebooks = await lorebookRepo.getAll();
     final lorebookSettings = _ref.read(lorebookSettingsProvider);
     final lorebookActivations = _ref.read(lorebookActivationsProvider);
@@ -151,9 +156,11 @@ class PromptPayloadBuilder {
     List<LorebookEntry> vectorEntries = [];
 
     if (session != null) {
+      debugPrint('[payload] getting summary...');
       final summaryService = _ref.read(summaryServiceProvider);
       summaryContent = await summaryService.getSummary(session.id);
 
+      debugPrint('[payload] building memory injection...');
       final memoryService = _ref.read(memoryInjectionServiceProvider);
       final historyText = session.historyText;
       final embeddingConfig = _ref.read(embeddingConfigProvider);
@@ -170,6 +177,7 @@ class PromptPayloadBuilder {
         currentText: session.messages.lastOrNull?.content ?? '',
         embeddingConfig: embeddingConfig,
       );
+      debugPrint('[payload] memory injection complete, entries=${memoryResult.entries.length}');
       memoryContent = memoryResult.content.isNotEmpty ? memoryResult.content : null;
       memoryMacroContent = memoryResult.macroContent.isNotEmpty ? memoryResult.macroContent : null;
       memoryInjectionTarget = memoryResult.injectionTarget;
@@ -188,15 +196,18 @@ class PromptPayloadBuilder {
       }
 
       if (!skipVectorSearch) {
+        debugPrint('[payload] running vector search...');
         try {
           vectorEntries = await _runVectorSearch(session.messages, session.messages.lastOrNull?.content ?? '', character.world, character, chatId: session.id)
               .timeout(const Duration(seconds: 15));
+          debugPrint('[payload] vector search complete, entries=${vectorEntries.length}');
         } catch (e) {
-          debugPrint('[VEC] vector search timed out or failed: $e');
+          debugPrint('[payload] vector search timed out or failed: $e');
         }
       }
     }
 
+    debugPrint('[payload] building final payload...');
     return PromptPayload(
       character: character,
       persona: persona,
