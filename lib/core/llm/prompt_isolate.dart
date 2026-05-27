@@ -1,8 +1,20 @@
 import 'prompt_builder.dart';
+import 'prompt_inputs.dart';
+import 'prompt_worker.dart';
 
-// NOTE: Isolate.run removed — o200k_base encoder lives in the main isolate
-// and cannot be shared with spawned isolates (isolates don't share memory).
-// buildPrompt is fast enough (~few ms) to run on the main thread.
+/// Runs buildPrompt in a persistent background isolate.
+///
+/// The isolate maintains its own o200k_base tokenizer and a persistent
+/// token cache, so repeated calls are fast (cached history tokens).
 Future<PromptResult> buildPromptInIsolate(PromptPayload payload) async {
-  return buildPrompt(payload);
+  final worker = await PromptWorker.ensureInitialized();
+  return worker.buildPrompt(payload);
+}
+
+/// Builds a complete prompt from raw inputs in the isolate.
+/// This runs memory injection, lorebook scanning, prompt assembly,
+/// and tokenization all off the main thread.
+Future<PromptResult> buildFromInputsInIsolate(PromptInputs inputs) async {
+  final worker = await PromptWorker.ensureInitialized();
+  return worker.buildFromInputs(inputs);
 }

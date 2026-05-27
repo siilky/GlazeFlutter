@@ -16,6 +16,7 @@ import '../../../shared/widgets/glaze_tab_bar.dart';
 import '../../../shared/widgets/glaze_toast.dart';
 import '../../../shared/widgets/sheet_view.dart';
 import '../chat_provider.dart';
+import 'cached_token_breakdown.dart';
 
 class PromptPreviewScreen extends ConsumerStatefulWidget {
   final String charId;
@@ -52,18 +53,22 @@ class _PromptPreviewScreenState extends ConsumerState<PromptPreviewScreen> {
       }
 
       final builder = ref.read(promptPayloadBuilderProvider);
-      final payload = await builder.buildFromSession(
+      final inputs = await builder.collectInputs(
         charId: widget.charId,
         session: session,
       );
-      _apiConfig = payload.apiConfig;
+      _apiConfig = inputs.apiConfig;
 
-      final result = await buildPromptInIsolate(payload);
-      if (mounted)
+      final result = await buildFromInputsInIsolate(inputs);
+      ref
+          .read(cachedTokenBreakdownProvider(widget.charId).notifier)
+          .state = result.breakdown;
+      if (mounted) {
         setState(() {
           _result = result;
           _loading = false;
         });
+      }
     } catch (e) {
       debugPrint('Prompt preview error: $e');
       if (mounted) setState(() => _loading = false);
