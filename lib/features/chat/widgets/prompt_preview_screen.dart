@@ -53,14 +53,13 @@ class _PromptPreviewScreenState extends ConsumerState<PromptPreviewScreen> {
       }
 
       final builder = ref.read(promptPayloadBuilderProvider);
-      final payload = await builder.buildFromSession(
+      final inputs = await builder.collectInputs(
         charId: widget.charId,
         session: session,
-        skipVectorSearch: true,
       );
-      _apiConfig = payload.apiConfig;
+      _apiConfig = inputs.apiConfig;
 
-      final result = await buildPromptInIsolate(payload);
+      final result = await buildFromInputsInIsolate(inputs);
       ref
           .read(cachedTokenBreakdownProvider(widget.charId).notifier)
           .state = result.breakdown;
