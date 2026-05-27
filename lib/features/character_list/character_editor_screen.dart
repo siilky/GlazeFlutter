@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../core/models/character.dart';
+import '../../core/state/character_provider.dart';
 import '../../core/state/db_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
@@ -30,7 +31,6 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
   Character? _original;
   Map<String, dynamic> _item = {};
   List<String> _lorebookNames = [];
-  late final _repo = ref.read(characterRepoProvider);
   late final String _effectiveId = widget.isNew ? generateId() : widget.charId;
 
   @override
@@ -73,7 +73,8 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
   }
 
   Future<void> _loadCharacter() async {
-    final char = await _repo.getById(widget.charId);
+    final chars = await ref.read(charactersProvider.future);
+    final char = chars.where((c) => c.id == widget.charId).firstOrNull;
     if (char != null && mounted) {
       _original = char;
       _item = {
@@ -243,7 +244,7 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
         world: item['world'] as String?,
       );
 
-      await _repo.put(updated);
+      await ref.read(charactersProvider.notifier).save(updated);
       final avatarPath = item['avatarPath'] as String?;
       if (avatarPath != null && avatarPath.isNotEmpty) {
         await FileImage(File(avatarPath)).evict();

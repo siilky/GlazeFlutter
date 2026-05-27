@@ -1,4 +1,4 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +7,7 @@ import '../../core/llm/prompt_isolate.dart';
 import '../../core/llm/prompt_payload_builder.dart';
 import '../../core/llm/sse_client.dart';
 import '../../core/llm/stream_accumulator.dart';
+import '../../core/llm/tokenizer.dart';
 import '../../core/models/api_config.dart';
 import '../../core/models/chat_message.dart';
 import '../../core/state/active_selection_provider.dart';
@@ -21,10 +22,20 @@ import 'chat_provider.dart';
 import 'chat_state.dart';
 import 'widgets/cached_token_breakdown.dart';
 
+final chatGenerationServiceProvider = Provider<ChatGenerationService>((ref) {
+  return ChatGenerationService(ref);
+});
+
 class ChatGenerationService {
   final Ref _ref;
 
   ChatGenerationService(this._ref);
+
+  void _persist(ChatSession session) {
+    _ref.read(chatRepoProvider).put(session).catchError((Object e) {
+      debugPrint('[ChatGenerationService] failed to persist session: $e');
+    });
+  }
 
   Future<ChatState> generate({
     required ChatSession session,
@@ -147,7 +158,7 @@ class ChatGenerationService {
             });
           }
         },
-        onComplete: (text, reasoning) {
+        onComplete: (text, reasoning, {rawResponseJson}) {
           if (isAborted()) return;
           if (!apiConfig.stream &&
               accumulator.text.isEmpty &&
@@ -155,26 +166,29 @@ class ChatGenerationService {
               (text.isNotEmpty || (reasoning != null && reasoning.isNotEmpty))) {
             accumulator.consumeDelta(text, reasoningDelta: reasoning);
           }
-          accumulator.flush();
           var finalText = accumulator.text.trimLeft();
-          if (accumulator.hasExternalReasoning) {
-            finalText = finalText.replaceAll(reasoningTagEnd, '');
-            finalText = finalText.replaceAll(reasoningTagStart, '');
-            finalText = finalText.trimLeft();
-          } else if (finalText.startsWith(reasoningTagEnd)) {
-            finalText = finalText.substring(reasoningTagEnd.length).trimLeft();
-          }
           var finalReasoning = accumulator.reasoning.isNotEmpty ? accumulator.reasoning : reasoning;
+
+          // Belt-and-suspenders sanitization: remove any leaked reasoning tag markers
+          // from the final visible text and reasoning. This catches cases where the model
+          // (especially on non-streaming path) emits an unbalanced stray </think> or the
+          // configured closing tag "from thin air". The markers are control tokens and
+          // must never appear in the persisted assistant message content or reasoning field.
+          finalText = _sanitizeReasoningMarkers(finalText, reasoningTagStart, reasoningTagEnd);
+          if (finalReasoning != null && finalReasoning.isNotEmpty) {
+            finalReasoning = _sanitizeReasoningMarkers(finalReasoning, reasoningTagStart, reasoningTagEnd);
+          }
+
           final isAllReasoning = finalText.isEmpty && finalReasoning != null && finalReasoning.isNotEmpty;
           final elapsed = DateTime.now().difference(startGenTime).inMilliseconds;
           final timeStr = '${(elapsed / 1000).toStringAsFixed(1)}s';
-          final tokenCount = (finalText.length / 4).round();
+          final tokenCount = estimateTokens(finalText);
           finalState = _saveAssistantMessage(
             finalText, finalReasoning, saveSession ?? session,
             isAborted: isAborted,
             pendingSessionVars: pendingSessionVars,
             genTime: timeStr, tokens: tokenCount,
-            rawResponse: text,
+            rawResponse: rawResponseJson ?? text,
             previousSwipes: previousSwipes,
             previousSwipeId: previousSwipeId,
             previousReasoning: previousReasoning,
@@ -445,7 +459,7 @@ class ChatGenerationService {
           updatedAt: currentTimestampSeconds(),
           sessionVars: pendingSessionVars ?? currentSession.sessionVars,
         );
-        _ref.read(chatRepoProvider).put(finalSession);
+        _persist(finalSession);
         return ChatState(session: finalSession, lastRawResponse: rawResponse, regenTargetId: regenTargetId, visibleStartIndex: visibleStartIndex);
       }
     }
@@ -478,8 +492,36 @@ class ChatGenerationService {
       updatedAt: now,
       sessionVars: sessionVars,
     );
-    _ref.read(chatRepoProvider).put(finalSession);
+    _persist(finalSession);
     return ChatState(session: finalSession, lastRawResponse: rawResponse, visibleStartIndex: visibleStartIndex);
+  }
+
+  /// Removes stray reasoning tag markers (both the configured ones and the
+  /// canonical <think>/</think> defaults) from the final text or reasoning.
+  /// This is a last-line defense against unbalanced or leaked tags that the model
+  /// (especially on the non-streaming path) may emit "from thin air".
+  String _sanitizeReasoningMarkers(String input, String tagStart, String tagEnd) {
+    var s = input;
+    // Configured tags first (user may have chosen custom markers)
+    if (tagStart.isNotEmpty) {
+      s = s.replaceAll(tagStart, '');
+    }
+    if (tagEnd.isNotEmpty) {
+      s = s.replaceAll(tagEnd, '');
+    }
+    // Canonical defaults (in case of leakage even when custom tags are configured)
+    s = s.replaceAll('<think>', '');
+    s = s.replaceAll('</think>', '');
+    s = s.replaceAll('<think>\n', '');
+    s = s.replaceAll('\n</think>', '');
+    s = s.replaceAll('<think> ', '');
+    s = s.replaceAll(' </think>', '');
+    // Also catch partially malformed variants that sometimes leak
+    s = s.replaceAll('<think', '');
+    s = s.replaceAll('</think', '');
+    s = s.replaceAll('think>', '');
+    s = s.replaceAll('think\n', '');
+    return s;
   }
 
   ChatState _saveErrorMessage(
@@ -506,7 +548,7 @@ class ChatGenerationService {
       updatedAt: now,
       sessionVars: sessionVars,
     );
-    _ref.read(chatRepoProvider).put(finalSession);
+    _persist(finalSession);
     return ChatState(session: finalSession, visibleStartIndex: visibleStartIndex);
   }
 
@@ -547,7 +589,7 @@ class ChatGenerationService {
       updatedAt: now,
       sessionVars: sessionVars,
     );
-    _ref.read(chatRepoProvider).put(finalSession);
+    _persist(finalSession);
     return ChatState(session: finalSession, regenTargetId: regenTargetId, visibleStartIndex: visibleStartIndex);
   }
 }

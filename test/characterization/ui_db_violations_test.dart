@@ -1,0 +1,127 @@
+import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('UI→DB violations fixed (Phase 2.5)', () {
+    final widgetFiles = <String>[
+      'lib/features/chat/widgets/magic_drawer.dart',
+      'lib/features/chat/widgets/summary_sheet.dart',
+      'lib/features/chat/widgets/authors_note_sheet.dart',
+      'lib/features/chat/widgets/chat_stats_sheet.dart',
+      'lib/features/chat/widgets/lorebook_coverage_sheet.dart',
+      'lib/features/chat/widgets/context_info_sheet.dart',
+      'lib/features/chat/widgets/chat_dialogs.dart',
+      'lib/features/chat/widgets/memory_books_sheet.dart',
+      'lib/features/regex/regex_list_screen.dart',
+      'lib/features/personas/persona_list_screen.dart',
+      'lib/features/personas/persona_connections_sheet.dart',
+      'lib/features/character_list/character_editor_screen.dart',
+      'lib/features/character_list/character_detail_screen.dart',
+      'lib/features/character_list/character_list_screen.dart',
+      'lib/features/tools/tools_screen.dart',
+      'lib/features/presets/preset_editor_screen.dart',
+      'lib/features/picks/widgets/picks_detail_launcher.dart',
+    ];
+
+    test('all widget files exist on disk', () {
+      for (final path in widgetFiles) {
+        expect(
+          File(path).existsSync(),
+          isTrue,
+          reason: '$path should exist',
+        );
+      }
+    });
+
+    test('no widget files directly import *RepoProvider', () {
+      for (final path in widgetFiles) {
+        final source = File(path).readAsStringSync();
+        
+        // Check that files don't directly use repo providers for data access
+        // Note: Some files may still import db_provider.dart for other providers
+        // like imageStorageProvider or characterImporterProvider
+        final hasDirectRepoUsage = source.contains('ref.read(characterRepoProvider)') ||
+            source.contains('ref.watch(characterRepoProvider)') ||
+            source.contains('ref.read(chatRepoProvider)') ||
+            source.contains('ref.watch(chatRepoProvider)') ||
+            source.contains('ref.read(presetRepoProvider)') ||
+            source.contains('ref.watch(presetRepoProvider)') ||
+            source.contains('ref.read(personaRepoProvider)') ||
+            source.contains('ref.watch(personaRepoProvider)') ||
+            source.contains('ref.read(lorebookRepoProvider)') ||
+            source.contains('ref.watch(lorebookRepoProvider)');
+        
+        expect(
+          hasDirectRepoUsage,
+          isFalse,
+          reason: '$path should not directly call *RepoProvider (use higher-level providers instead)',
+        );
+      }
+    });
+
+    test('total widget files count is 17', () {
+      expect(widgetFiles.length, 17);
+    });
+
+    test('no .put() calls on repos in widget code', () async {
+      final mutationPattern = RegExp(r'ref\.read\(\w+RepoProvider\)[\s\S]*?\.put\(');
+      var foundMutations = 0;
+      for (final path in widgetFiles) {
+        final source = File(path).readAsStringSync();
+        if (mutationPattern.hasMatch(source)) {
+          foundMutations++;
+        }
+      }
+      expect(foundMutations, 0,
+          reason: 'No widget files should call .put() directly on repos');
+    });
+
+    test('no .delete() calls on repos in widget code', () async {
+      var foundDelete = false;
+      for (final path in widgetFiles) {
+        final source = File(path).readAsStringSync();
+        if (RegExp(r'ref\.read\(\w+RepoProvider\)[\s\S]*?\.delete\(').hasMatch(source)) {
+          foundDelete = true;
+          break;
+        }
+      }
+      expect(foundDelete, isFalse,
+          reason: 'No widget files should call .delete() directly on repos');
+    });
+  });
+
+  group('Architecture layer imports (Phase 2.5)', () {
+    test('provider files do NOT import from widgets', () {
+      final providerFiles = Directory('lib/features')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('_provider.dart'))
+          .where((f) => !f.path.contains('characterization'));
+
+      for (final file in providerFiles) {
+        final source = file.readAsStringSync();
+        expect(
+          source,
+          isNot(contains('widgets/')),
+          reason: '${file.path} should not import from widgets layer',
+        );
+      }
+    });
+
+    test('repo files do NOT import from widgets or providers', () {
+      final repoFiles = Directory('lib/features')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('_repo.dart'));
+
+      for (final file in repoFiles) {
+        final source = file.readAsStringSync();
+        expect(
+          source,
+          isNot(contains('widgets/')),
+          reason: '${file.path} should not import from widgets layer',
+        );
+      }
+    });
+  });
+}

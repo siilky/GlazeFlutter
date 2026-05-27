@@ -7,7 +7,6 @@ import '../../core/models/preset.dart';
 import '../../core/services/preset_defaults.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
-import '../../core/state/db_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
@@ -93,6 +92,9 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
   bool _showAdvanced = false;
   int? _expandedBlockIndex;
 
+  double? _savedScrollOffset;
+  late final ScrollController _scrollController = ScrollController();
+
   Timer? _saveTimer;
   late final String _currentId = widget.preset?.id ?? generateId();
   late final int _createdAt = widget.preset?.createdAt ?? currentTimestampSeconds();
@@ -117,6 +119,7 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
     _nameCtrl.dispose();
     _reasoningStartCtrl.dispose();
     _reasoningEndCtrl.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -143,19 +146,40 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
       summaryPrompt: widget.preset?.summaryPrompt,
       createdAt: _createdAt,
     );
-    await ref.read(presetRepoProvider).put(presetToSave);
-    try {
-      ref.invalidate(presetListProvider);
-    } catch (_) {}
+    await ref.read(presetListProvider.notifier).updatePreset(presetToSave);
   }
 
   bool handleBack() {
     if (_expandedBlockIndex != null) {
+      _saveScrollOffset();
       setState(() => _expandedBlockIndex = null);
       widget.onEditingBlockChanged?.call(false);
+      _restoreScrollAfterFrame();
       return true;
     }
     return false;
+  }
+
+  void _saveScrollOffset() {
+    if (_scrollController.hasClients) {
+      _savedScrollOffset = _scrollController.offset;
+    }
+  }
+
+  void _restoreScrollAfterFrame() {
+    if (_savedScrollOffset == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          _savedScrollOffset != null &&
+          _scrollController.hasClients) {
+        final target = _savedScrollOffset!.clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        );
+        _scrollController.jumpTo(target);
+        _savedScrollOffset = null;
+      }
+    });
   }
 
   @override
@@ -169,17 +193,20 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
           _scheduleSave();
         },
         onDelete: () {
+          _saveScrollOffset();
           setState(() {
             _blocks.removeAt(_expandedBlockIndex!);
             _expandedBlockIndex = null;
           });
           widget.onEditingBlockChanged?.call(false);
+          _restoreScrollAfterFrame();
           _scheduleSave();
         },
       );
     }
 
     return SingleChildScrollView(
+      controller: _scrollController,
       key: const ValueKey('dashboard'),
       padding: EdgeInsets.only(
         top: MediaQuery.paddingOf(context).top,
@@ -310,6 +337,7 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
         index: i,
         isLast: i == _blocks.length - 1,
         onEdit: () {
+          _saveScrollOffset();
           setState(() {
             _expandedBlockIndex = i;
           });

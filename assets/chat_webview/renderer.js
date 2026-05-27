@@ -178,6 +178,7 @@ const SHADOW_STYLE = `
   .message-section.editing .msg-reasoning { display: none; }
 `;
 
+
 class Renderer {
   constructor(formatter, virtualList) {
     this.formatter = formatter;
@@ -186,33 +187,22 @@ class Renderer {
     this.activeSearchIndex = -1;
     this.searchMatches = [];
     this._lastTimestamps = { date: null, idx: -1 };
-    this._selectionMode = false;
-    this._selectedIds = new Set();
+    this.selectionManager = null;
   }
-
-  /* ----- Selection mode ----- */
-  setSelectionMode(enabled) {
-    this._selectionMode = !!enabled;
-    if (!enabled) this._selectedIds.clear();
-    document.querySelectorAll('.message-section').forEach(msgEl => {
-      msgEl.classList.toggle('selection-mode', this._selectionMode);
-      msgEl.classList.toggle('selected', this._selectedIds.has(msgEl.dataset.messageId));
-    });
-  }
-
-  toggleMessageSelection(messageId) {
-    if (this._selectedIds.has(messageId)) this._selectedIds.delete(messageId);
-    else this._selectedIds.add(messageId);
-    const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (msgEl) {
-      msgEl.classList.toggle('selected', this._selectedIds.has(messageId));
-    }
-  }
-
-  getSelectedIds() { return [...this._selectedIds]; }
 
   /* ----- Public: render a message ----- */
   renderMessage(messageData) {
+    if (messageData.messageIndex == null && this.virtualList) {
+      const items = this.virtualList.items;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const el = items[i].el;
+        if (el && el.dataset && el.dataset.messageIndex != null) {
+          messageData.messageIndex = parseInt(el.dataset.messageIndex, 10) + 1;
+          break;
+        }
+      }
+    }
+
     const elements = [];
 
     if (messageData.timestamp) {
@@ -225,7 +215,7 @@ class Renderer {
 
     const messageEl = this._createSection(messageData);
     elements.push(messageEl);
-    return elements.length > 1 ? elements : messageEl;
+    return elements;
   }
 
   _createSection(messageData) {
@@ -252,10 +242,11 @@ class Renderer {
     const classes = ['message-section', this._roleKey(role), `layout-${layout}`];
     if (isError) classes.push('error');
     if (isHidden) classes.push('msg-hidden');
-    if (messageData.isEditing) classes.push('editing');
-    if (this._selectionMode) classes.push('selection-mode');
-    if (this._selectedIds.has(id)) classes.push('selected');
+if (messageData.isEditing) classes.push('editing');
+    if (this.selectionManager) this.selectionManager.applyClassesToSection(section, classes);
     section.className = classes.join(' ');
+    section.classList.add('msg-appear');
+    section.addEventListener('animationend', () => section.classList.remove('msg-appear'), { once: true });
 
     /* --- Header --- */
     section.appendChild(this._createHeader(messageData));
@@ -512,6 +503,41 @@ class Renderer {
     return wrap;
   }
 
+  _createGenStat(genTime, tokenCount, clockMargin = '2px') {
+    const stat = document.createElement('div');
+    stat.className = 'gen-stat';
+    const hasGen = genTime && genTime !== '0s';
+    const hasTokens = tokenCount && tokenCount > 0;
+    if (hasGen) {
+      const clock = document.createElement('span');
+      clock.innerHTML = ICON.clock;
+      clock.firstChild.style.cssText = `width:12px;height:12px;fill:currentColor;margin-right:${clockMargin};`;
+      stat.appendChild(clock.firstChild);
+      const gw = document.createElement('span');
+      gw.className = 'gen-time-wrapper';
+      const rn = new RollingNumber(genTime);
+      rn.el.classList.add('gen-time');
+      rn.el.classList.add('gen-time-badge');
+      gw.rollingNumber = rn;
+      gw.appendChild(rn.el);
+      stat.appendChild(gw);
+    }
+    if (hasTokens) {
+      const tc = document.createElement('div');
+      tc.className = 'token-count-inline';
+      if (hasGen) tc.style.marginLeft = '6px';
+      const doc = document.createElement('span');
+      doc.innerHTML = ICON.doc;
+      doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
+      tc.appendChild(doc.firstChild);
+      const t = document.createElement('span');
+      t.textContent = `${tokenCount}t`;
+      tc.appendChild(t);
+      stat.appendChild(tc);
+    }
+    return stat;
+  }
+
   /* ----- Bubble meta (inside body) ----- */
   _createBubbleMeta(m) {
     const meta = document.createElement('div');
@@ -527,35 +553,8 @@ class Renderer {
     const hasGen = m.genTime && m.genTime !== '0s';
     const hasTokens = m.tokens && m.tokens > 0 && !m.isTyping;
     if (hasGen || hasTokens) {
-      const stat = document.createElement('div');
-      stat.className = 'gen-stat';
+      const stat = this._createGenStat(m.genTime, m.tokens, '2px');
       stat.style.marginRight = 'auto';
-      if (hasGen) {
-        const clock = document.createElement('span');
-        clock.innerHTML = ICON.clock;
-        clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-        stat.appendChild(clock.firstChild);
-        const gw = document.createElement('span');
-        gw.className = 'gen-time-wrapper';
-        const gt = document.createElement('span');
-        gt.className = 'gen-time gen-time-badge';
-        gt.textContent = m.genTime;
-        gw.appendChild(gt);
-        stat.appendChild(gw);
-      }
-      if (hasTokens) {
-        const tc = document.createElement('div');
-        tc.className = 'token-count-inline';
-        if (hasGen) tc.style.marginLeft = '6px';
-        const doc = document.createElement('span');
-        doc.innerHTML = ICON.doc;
-        doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-        tc.appendChild(doc.firstChild);
-        const t = document.createElement('span');
-        t.textContent = `${m.tokens}t`;
-        tc.appendChild(t);
-        stat.appendChild(tc);
-      }
       meta.appendChild(stat);
     }
 
@@ -587,34 +586,7 @@ class Renderer {
     const hasGen = m.genTime && m.genTime !== '0s';
     const hasTokens = m.tokens && m.tokens > 0 && !m.isTyping;
     if (hasGen || hasTokens) {
-      const stat = document.createElement('div');
-      stat.className = 'gen-stat';
-      if (hasGen) {
-        const clock = document.createElement('span');
-        clock.innerHTML = ICON.clock;
-        clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:4px;';
-        stat.appendChild(clock.firstChild);
-        const gw = document.createElement('span');
-        gw.className = 'gen-time-wrapper';
-        const gt = document.createElement('span');
-        gt.className = 'gen-time gen-time-badge';
-        gt.textContent = m.genTime;
-        gw.appendChild(gt);
-        stat.appendChild(gw);
-      }
-      if (hasTokens) {
-        const tc = document.createElement('div');
-        tc.className = 'token-count-inline';
-        if (hasGen) tc.style.marginLeft = '6px';
-        const doc = document.createElement('span');
-        doc.innerHTML = ICON.doc;
-        doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-        tc.appendChild(doc.firstChild);
-        const t = document.createElement('span');
-        t.textContent = `${m.tokens}t`;
-        tc.appendChild(t);
-        stat.appendChild(tc);
-      }
+      const stat = this._createGenStat(m.genTime, m.tokens, '4px');
       metaCol.appendChild(stat);
     }
     footer.appendChild(metaCol);
@@ -677,7 +649,7 @@ class Renderer {
     /* --- Right: actions / edit buttons --- */
     if (m.isEditing) {
       footer.appendChild(this._createEditButtons(m.id));
-    } else if (!this._selectionMode) {
+    } else if (!this.selectionManager || !this.selectionManager.shouldHideActions()) {
       const actions = document.createElement('div');
       actions.className = 'msg-actions-btn';
       actions.dataset.action = 'open-actions';
@@ -815,10 +787,26 @@ class Renderer {
     const body = sectionEl.querySelector('.msg-body');
     if (!body) return;
 
-    /* Replace typing/error/normal as needed */
     const isError = sectionEl.classList.contains('error');
 
-    /* Clear non-meta children of body, preserving image + bubble-meta */
+    if (!isTyping && !isError && !animate) {
+      const existingHost = body.querySelector('.message-content');
+      if (existingHost && existingHost.shadowRoot) {
+        const glazeMsg = existingHost.shadowRoot.querySelector('.glaze-message');
+        if (glazeMsg) {
+          glazeMsg.innerHTML = this.formatter.format(text, isUser);
+          if (reasoning && reasoning.trim()) {
+            let reasoningEl = sectionEl.querySelector('.msg-reasoning');
+            if (reasoningEl) {
+              const rHost = reasoningEl.querySelector('.msg-reasoning-inner .message-content');
+              if (rHost) this._writeShadowContent(rHost, reasoning, isUser, false);
+            }
+          }
+          return;
+        }
+      }
+    }
+
     const meta = body.querySelector('.bubble-meta');
     const image = body.querySelector('.msg-image-attachment');
     body.innerHTML = '';
@@ -881,7 +869,37 @@ class Renderer {
   }
 
   updateMessageMeta(sectionEl, msg) {
-    if (!sectionEl) return;
+    if (msg.messageIndex !== undefined && msg.messageIndex !== null) {
+      sectionEl.dataset.messageIndex = String(msg.messageIndex);
+      const idxStr = `#${msg.messageIndex + 1}`;
+      
+      const headerName = sectionEl.querySelector('.msg-header .msg-name');
+      if (headerName) {
+        let idx = headerName.querySelector('.msg-index');
+        if (!idx) {
+          idx = document.createElement('span');
+          idx.className = 'msg-index gen-stat header-idx';
+          const label = headerName.querySelector('.msg-name-label');
+          if (label && label.nextSibling) {
+            headerName.insertBefore(idx, label.nextSibling);
+          } else {
+            headerName.appendChild(idx);
+          }
+        }
+        idx.textContent = idxStr;
+      }
+      
+      const bubbleMeta = sectionEl.querySelector('.bubble-meta');
+      if (bubbleMeta) {
+        let idx = bubbleMeta.querySelector('.msg-index');
+        if (!idx) {
+          idx = document.createElement('span');
+          idx.className = 'msg-index gen-stat';
+          bubbleMeta.insertBefore(idx, bubbleMeta.firstChild);
+        }
+        idx.textContent = idxStr;
+      }
+    }
 
     const hasGen = msg.genTime && msg.genTime !== '0s';
     const hasTokens = msg.tokens && msg.tokens > 0 && !msg.isTyping;
@@ -899,12 +917,22 @@ class Renderer {
       if (hasGen) {
         const timeStr = msg.genTime;
         if (genStatBubble) {
-          const badge = genStatBubble.querySelector('.gen-time-badge');
-          if (badge) badge.textContent = timeStr;
+          const wrapper = genStatBubble.querySelector('.gen-time-wrapper');
+          if (wrapper && wrapper.rollingNumber) {
+            wrapper.rollingNumber.setValue(timeStr);
+          } else {
+            const badge = genStatBubble.querySelector('.gen-time-badge');
+            if (badge) badge.textContent = timeStr;
+          }
         }
         if (genStatFooter) {
-          const badge = genStatFooter.querySelector('.gen-time-badge');
-          if (badge) badge.textContent = timeStr;
+          const wrapper = genStatFooter.querySelector('.gen-time-wrapper');
+          if (wrapper && wrapper.rollingNumber) {
+            wrapper.rollingNumber.setValue(timeStr);
+          } else {
+            const badge = genStatFooter.querySelector('.gen-time-badge');
+            if (badge) badge.textContent = timeStr;
+          }
         }
       }
 
@@ -921,67 +949,13 @@ class Renderer {
       }
 
       if (!genStatBubble && bubbleMeta && (hasGen || hasTokens)) {
-        const stat = document.createElement('div');
-        stat.className = 'gen-stat';
+        const stat = this._createGenStat(msg.genTime, msg.tokens, '2px');
         stat.style.marginRight = 'auto';
-        if (hasGen) {
-          const clock = document.createElement('span');
-          clock.innerHTML = ICON.clock;
-          clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-          stat.appendChild(clock.firstChild);
-          const gw = document.createElement('span');
-          gw.className = 'gen-time-wrapper';
-          const gt = document.createElement('span');
-          gt.className = 'gen-time gen-time-badge';
-          gt.textContent = msg.genTime;
-          gw.appendChild(gt);
-          stat.appendChild(gw);
-        }
-        if (hasTokens) {
-          const tc = document.createElement('div');
-          tc.className = 'token-count-inline';
-          if (hasGen) tc.style.marginLeft = '6px';
-          const doc = document.createElement('span');
-          doc.innerHTML = ICON.doc;
-          doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-          tc.appendChild(doc.firstChild);
-          const t = document.createElement('span');
-          t.textContent = `${msg.tokens}t`;
-          tc.appendChild(t);
-          stat.appendChild(tc);
-        }
         bubbleMeta.appendChild(stat);
       }
 
       if (!genStatFooter && footerMeta && (hasGen || hasTokens)) {
-        const stat = document.createElement('div');
-        stat.className = 'gen-stat';
-        if (hasGen) {
-          const clock = document.createElement('span');
-          clock.innerHTML = ICON.clock;
-          clock.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:4px;';
-          stat.appendChild(clock.firstChild);
-          const gw = document.createElement('span');
-          gw.className = 'gen-time-wrapper';
-          const gt = document.createElement('span');
-          gt.className = 'gen-time gen-time-badge';
-          gt.textContent = msg.genTime;
-          gw.appendChild(gt);
-          stat.appendChild(gw);
-        }
-        if (hasTokens) {
-          const tc = document.createElement('div');
-          tc.className = 'token-count-inline';
-          if (hasGen) tc.style.marginLeft = '6px';
-          const doc = document.createElement('span');
-          doc.innerHTML = ICON.doc;
-          doc.firstChild.style.cssText = 'width:12px;height:12px;fill:currentColor;margin-right:2px;';
-          tc.appendChild(doc.firstChild);
-          const t = document.createElement('span');
-          t.textContent = `${msg.tokens}t`;
-          tc.appendChild(t);
-          stat.appendChild(tc);
-        }
+        const stat = this._createGenStat(msg.genTime, msg.tokens, '4px');
         footerMeta.appendChild(stat);
       }
     }
@@ -1181,4 +1155,27 @@ class Renderer {
   }
 
   scrollToSearchMatch(index) { this.setSearch(this.searchQuery, index); }
+
+  animateRemoveSection(el, onDone) {
+    if (!el) { onDone?.(); return; }
+    if (el.classList.contains('native-lite')) { onDone?.(); return; }
+    const h = el.offsetHeight;
+    el.style.overflow = 'hidden';
+    el.style.pointerEvents = 'none';
+    el.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-8px)';
+    setTimeout(() => {
+      el.style.transition = 'max-height 0.14s ease, padding-top 0.14s ease, padding-bottom 0.14s ease, margin-top 0.14s ease, margin-bottom 0.14s ease';
+      el.style.maxHeight = h + 'px';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.maxHeight = '0';
+        el.style.paddingTop = '0';
+        el.style.paddingBottom = '0';
+        el.style.marginTop = '0';
+        el.style.marginBottom = '0';
+      }));
+      setTimeout(() => onDone?.(), 150);
+    }, 190);
+  }
 }

@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../../../core/constants/image_gen_patterns.dart';
 import '../../../core/models/chat_message.dart';
+import 'chat_message_mapper.dart';
 
 class ChatBridgeController {
   final InAppWebViewController _controller;
@@ -23,12 +25,23 @@ class ChatBridgeController {
   final Set<String> _pendingMemoryIds = {};
   final Set<String> _draftMemoryIds = {};
   final Map<String, String> _imgBase64Cache = {};
-  final Map<String, String> _stripThinkCache = {};
-  static final _imgResultRegex = RegExp(r'\[IMG:RESULT:(.*?)\]');
 
   ChatBridgeController(this._controller) {
     _setupHandlers();
   }
+
+  ChatMessageMapperContext get _ctx => ChatMessageMapperContext(
+    currentCharName: currentCharName,
+    currentCharColor: currentCharColor,
+    currentPersonaName: currentPersonaName,
+    charAvatarDataUrl: _charAvatarDataUrl,
+    personaAvatarDataUrl: _personaAvatarDataUrl,
+    isGenerating: isGenerating,
+    coveredMemoryIds: _coveredMemoryIds,
+    pendingMemoryIds: _pendingMemoryIds,
+    draftMemoryIds: _draftMemoryIds,
+    greetingTotal: currentGreetingTotal,
+  );
 
   void resolveRequest(String requestId, dynamic result) {
     final completer = _pendingRequests.remove(requestId);
@@ -105,7 +118,7 @@ class ChatBridgeController {
   }
 
   Future<String> _resolveImgResults(String text) async {
-    final matches = _imgResultRegex.allMatches(text).toList();
+    final matches = ImgGenPatterns.imgResultRegex.allMatches(text).toList();
     if (matches.isEmpty) return text;
     final uncached = <int, String>{};
     for (int i = 0; i < matches.length; i++) {
@@ -135,7 +148,7 @@ class ChatBridgeController {
         } catch (_) {}
       }));
     }
-    final result = text.replaceAllMapped(_imgResultRegex, (m) {
+    final result = text.replaceAllMapped(ImgGenPatterns.imgResultRegex, (m) {
       final payload = m.group(1) ?? '';
       final pipeIdx = payload.indexOf('|');
       final path = pipeIdx != -1 ? payload.substring(0, pipeIdx) : payload;
@@ -409,7 +422,7 @@ class ChatBridgeController {
   Future<void> setMessages(List<ChatMessage> messages, {int visibleStartIndex = 0}) async {
     final List<Map<String, dynamic>> mapped = [];
     for (int i = 0; i < messages.length; i++) {
-      final map = _toMap(messages[i], isLast: i == messages.length - 1, messageIndex: visibleStartIndex + i);
+      final map = ChatMessageMapper.toMap(messages[i], _ctx, isLast: i == messages.length - 1, messageIndex: visibleStartIndex + i);
       mapped.add(map);
     }
     final resolved = await Future.wait(mapped.map((m) => _resolveImgResults(m['text'] as String)));
@@ -421,7 +434,7 @@ class ChatBridgeController {
   }
 
   Future<void> appendMessage(ChatMessage message) async {
-    final map = _toMap(message);
+    final map = ChatMessageMapper.toMap(message, _ctx);
     map['text'] = await _resolveImgResults(map['text'] as String);
     final json = jsonEncode(map);
     return _callJs('appendMessage', json);
@@ -430,7 +443,7 @@ class ChatBridgeController {
   Future<void> appendMessages(List<ChatMessage> messages, {int startIndex = 0}) async {
     final List<Map<String, dynamic>> mapped = [];
     for (int i = 0; i < messages.length; i++) {
-      final map = _toMap(messages[i], isLast: i == messages.length - 1, messageIndex: startIndex + i);
+      final map = ChatMessageMapper.toMap(messages[i], _ctx, isLast: i == messages.length - 1, messageIndex: startIndex + i);
       mapped.add(map);
     }
     final resolved = await Future.wait(mapped.map((m) => _resolveImgResults(m['text'] as String)));
@@ -444,7 +457,7 @@ class ChatBridgeController {
   Future<void> prependMessages(List<ChatMessage> messages, {int visibleStartIndex = 0}) async {
     final List<Map<String, dynamic>> mapped = [];
     for (int i = 0; i < messages.length; i++) {
-      final map = _toMap(messages[i], messageIndex: visibleStartIndex + i);
+      final map = ChatMessageMapper.toMap(messages[i], _ctx, messageIndex: visibleStartIndex + i);
       mapped.add(map);
     }
     final resolved = await Future.wait(mapped.map((m) => _resolveImgResults(m['text'] as String)));
@@ -456,7 +469,7 @@ class ChatBridgeController {
   }
 
   Future<void> updateMessage(ChatMessage message) async {
-    final map = _toMap(message);
+    final map = ChatMessageMapper.toMap(message, _ctx, isStreamingUpdate: true);
     map['text'] = await _resolveImgResults(map['text'] as String);
     final json = jsonEncode(map);
     return _callJs('updateMessage', json);
@@ -555,6 +568,23 @@ class ChatBridgeController {
     return _eval('window.bridge?.setPerformanceMode(${enabled})');
   }
 
+  Future<void> setMessageSettings({
+    required bool batterySaver,
+    required bool hideMessageId,
+    required bool hideGenerationTime,
+    required bool hideTokenCount,
+    required bool disableSwipeRegeneration,
+  }) {
+    final json = jsonEncode({
+      'batterySaver': batterySaver,
+      'hideMessageId': hideMessageId,
+      'hideGenerationTime': hideGenerationTime,
+      'hideTokenCount': hideTokenCount,
+      'disableSwipeRegeneration': disableSwipeRegeneration,
+    });
+    return _callJs('setMessageSettings', json);
+  }
+
   Future<void> setSelectionMode(bool enabled) {
     return _eval('window.bridge?.setSelectionMode(${enabled})');
   }
@@ -581,98 +611,6 @@ class ChatBridgeController {
 
   String _escapeJsonStr(String s) {
     return '"${jsonEncode(s).substring(1, jsonEncode(s).length - 1)}"';
-  }
-
-  Map<String, dynamic> _toMap(ChatMessage m, {bool isLast = false, int? messageIndex, bool isStreamingUpdate = false}) {
-    final isAssistant = m.role == 'assistant' || m.role == 'character';
-    final isUser = m.role == 'user';
-
-    String? displayName;
-    String? avatarColor;
-    String? avatarUrl;
-
-    if (isAssistant) {
-      displayName = currentCharName ?? m.personaName ?? 'Character';
-      avatarColor = currentCharColor;
-      if (!isStreamingUpdate) avatarUrl = _charAvatarDataUrl;
-    } else if (isUser) {
-      displayName = m.personaName ?? currentPersonaName ?? 'You';
-      if (!isStreamingUpdate) avatarUrl = _personaAvatarDataUrl;
-    } else {
-      displayName = m.personaName ?? 'System';
-    }
-
-    String? memoryStatus;
-    if (m.memoryCoverage.isNotEmpty) {
-      final needsRebuild = m.memoryCoverage['needsRebuild'] as bool? ?? false;
-      final stale = m.memoryCoverage['stale'] as bool? ?? false;
-      if (needsRebuild) {
-        memoryStatus = 'REBUILD';
-      } else if (stale) {
-        memoryStatus = 'STALE';
-      }
-    }
-    if (memoryStatus == null && _coveredMemoryIds.contains(m.id)) {
-      memoryStatus = 'MEM';
-    }
-    if (memoryStatus == null && _pendingMemoryIds.contains(m.id)) {
-      memoryStatus = 'PENDING';
-    }
-    if (memoryStatus == null && _draftMemoryIds.contains(m.id)) {
-      memoryStatus = 'DRAFT';
-    }
-
-    return {
-      'id': m.id,
-      'role': m.role,
-      'text': _stripThinkTags(m.content),
-      'timestamp': m.timestamp,
-      'isUser': isUser,
-      'isAssistant': isAssistant,
-      'isSystem': m.role == 'system',
-      'displayName': displayName,
-      if (avatarColor != null) 'avatarColor': avatarColor,
-      if (avatarUrl != null) 'avatarUrl': avatarUrl,
-      if (m.imagePath != null) 'imagePath': m.imagePath,
-      if (m.personaName != null) 'personaName': m.personaName,
-      if (m.swipes.isNotEmpty) 'swipeIndex': m.swipeId,
-      if (m.swipes.isNotEmpty) 'swipeTotal': m.swipes.length,
-      if (m.genTime != null) 'genTime': m.genTime,
-      if (m.tokens != null) 'tokens': m.tokens,
-      'isError': m.isError,
-      if (m.isTyping) 'isTyping': true,
-      if (m.reasoning != null && m.reasoning!.isNotEmpty) 'reasoning': m.reasoning,
-      'isHidden': m.isHidden,
-      if (isLast) 'isLast': true,
-      if (messageIndex != null) 'messageIndex': messageIndex,
-      if (m.guidanceText != null && m.guidanceText!.isNotEmpty) 'guidanceText': m.guidanceText,
-      if (m.guidanceType != 'GENERATION') 'guidanceType': m.guidanceType,
-      if (m.greetingIndex != null) 'greetingIndex': m.greetingIndex,
-      if (m.greetingIndex != null && currentGreetingTotal > 1)
-        'greetingTotal': currentGreetingTotal,
-      if (memoryStatus != null) 'memoryStatus': memoryStatus,
-      if (m.triggeredLorebooks.isNotEmpty) 'triggeredLorebooks': m.triggeredLorebooks.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList(),
-      if (m.triggeredMemories.isNotEmpty) 'triggeredMemories': m.triggeredMemories.map((e) => {'name': e.name, 'lorebookName': e.lorebookName}).toList(),
-      'isGenerating': isGenerating,
-    };
-  }
-
-  static final _thinkTagRegex = RegExp(r'<think\b[^>]*>[\s\S]*?<\/think\b[^>]*>', caseSensitive: false);
-  static final _thinkTagAltRegex = RegExp(r'<think\b([^>]*?)(?:>|\n)([\s\S]*?)<\/think\b', caseSensitive: false);
-  static final _thinkingTagRegex = RegExp(r'<thinking\b[^>]*>[\s\S]*?<\/thinking\b[^>]*>', caseSensitive: false);
-  static final _thinkingTagAltRegex = RegExp(r'<thinking\b([^>]*?)(?:>|\n)([\s\S]*?)<\/thinking\b', caseSensitive: false);
-
-  String _stripThinkTags(String text) {
-    if (_stripThinkCache.containsKey(text)) return _stripThinkCache[text]!;
-    if (text.length < 8 && !text.contains('<think')) return text;
-    var result = text.replaceAll(_thinkTagRegex, '');
-    result = result.replaceAll(_thinkTagAltRegex, '');
-    result = result.replaceAll(_thinkingTagRegex, '');
-    result = result.replaceAll(_thinkingTagAltRegex, '');
-    result = result.trim();
-    if (_stripThinkCache.length > 500) _stripThinkCache.clear();
-    _stripThinkCache[text] = result;
-    return result;
   }
 
   void updateMemoryBookData({

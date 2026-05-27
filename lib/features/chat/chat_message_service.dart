@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/llm/tokenizer.dart';
@@ -31,11 +32,13 @@ class ChatMessageService {
         if (endIdx != -1) {
           newReasoning = text.substring(startIdx + tagStart.length, endIdx).trim();
           text = (text.substring(0, startIdx) + text.substring(endIdx + tagEnd.length)).trim();
-          isAllReasoning = text.isEmpty && newReasoning.isNotEmpty;
           if (newReasoning.isEmpty) newReasoning = null;
+        } else {
+          newReasoning = text.substring(startIdx + tagStart.length).trim();
+          text = '';
         }
+        isAllReasoning = text.isEmpty && (newReasoning != null && newReasoning.isNotEmpty);
       } else {
-        // User removed the think block entirely — clear reasoning
         newReasoning = null;
         isAllReasoning = false;
       }
@@ -237,7 +240,9 @@ class ChatMessageService {
       messages: newMessages,
       updatedAt: currentTimestampSeconds(),
     );
-    _ref.read(chatRepoProvider).put(updated);
+    _ref.read(chatRepoProvider).put(updated).catchError((Object e) {
+      debugPrint('[ChatMessageService] failed to persist session: $e');
+    });
     return updated;
   }
 }

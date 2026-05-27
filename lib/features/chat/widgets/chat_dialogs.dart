@@ -7,7 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/llm/prompt_isolate.dart';
 import '../../../core/llm/prompt_payload_builder.dart';
 import '../../../core/state/active_selection_provider.dart';
-import '../../../core/state/db_provider.dart';
+import '../../../features/personas/persona_list_provider.dart';
+import '../../../features/presets/preset_list_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/widgets/glaze_toast.dart';
@@ -94,7 +95,7 @@ void showRawResponseDialog(BuildContext context, WidgetRef ref, String charId) {
 }
 
 void showPresetPickerDialog(BuildContext context, WidgetRef ref) async {
-  final presets = await ref.read(presetRepoProvider).getAll();
+  final presets = ref.read(presetListProvider).value ?? [];
   final activeId = ref.read(activePresetIdProvider);
   if (!context.mounted) return;
 
@@ -127,7 +128,7 @@ void showPresetPickerDialog(BuildContext context, WidgetRef ref) async {
 }
 
 void showPersonaPickerDialog(BuildContext context, WidgetRef ref) async {
-  final personas = await ref.read(personaRepoProvider).getAll();
+  final personas = ref.read(personaListProvider).value ?? [];
   final activeId = ref.read(activePersonaIdProvider);
   if (!context.mounted) return;
 

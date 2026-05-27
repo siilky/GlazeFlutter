@@ -1,14 +1,19 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/preset.dart';
 import '../../core/state/active_selection_provider.dart';
-import '../../core/state/db_provider.dart';
 import '../../core/state/global_regex_provider.dart';
+import '../presets/preset_list_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
+import '../../shared/widgets/glaze_toast.dart';
 import '../../shared/widgets/sheet_view.dart';
 import '../presets/widgets/regex_tile.dart';
 
@@ -18,7 +23,7 @@ class RegexListScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final presetsAsync = ref.watch(presetsListProvider);
+    final presetsAsync = ref.watch(presetListProvider);
     final globalAsync = ref.watch(globalRegexProvider);
     final activePresetId = ref.watch(activePresetIdProvider);
 
@@ -127,56 +132,166 @@ class RegexListScreen extends ConsumerWidget {
   }
 
   void _showAddMenu(BuildContext context, WidgetRef ref) {
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       title: 'Add Regex',
       items: [
         BottomSheetItem(
-          icon: Icons.label,
-          iconColor: context.cs.primary,
-          label: 'Add to Active Preset',
+          icon: Icons.add_circle_outline,
+          label: 'Add New',
           onTap: () {
-            Navigator.pop(context);
-            _addPresetRegex(ref);
+            Navigator.of(context, rootNavigator: true).pop();
+            _showDestinationMenu(context, ref, isImport: false);
           },
         ),
         BottomSheetItem(
-          icon: Icons.public,
-          iconColor: context.cs.primary,
-          label: 'Add Globally',
+          icon: Icons.file_upload_outlined,
+          label: 'Import from File',
           onTap: () {
-            Navigator.pop(context);
-            _addGlobalRegex(ref);
+            Navigator.of(context, rootNavigator: true).pop();
+            _showDestinationMenu(context, ref, isImport: true);
           },
         ),
       ],
     );
   }
 
-  void _addPresetRegex(WidgetRef ref) {
+  void _showDestinationMenu(BuildContext context, WidgetRef ref, {required bool isImport}) {
+    GlazeBottomSheet.show<void>(
+      context,
+      title: isImport ? 'Import To' : 'Add To',
+      items: [
+        BottomSheetItem(
+          icon: Icons.public,
+          iconColor: context.cs.primary,
+          label: 'Globally',
+          onTap: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            if (isImport) {
+              _importRegex(context, ref, globally: true);
+            } else {
+              _addGlobalRegex(ref);
+            }
+          },
+        ),
+        BottomSheetItem(
+          icon: Icons.label,
+          iconColor: context.cs.primary,
+          label: 'To Active Preset',
+          onTap: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            if (isImport) {
+              _importRegex(context, ref, globally: false);
+            } else {
+              _addPresetRegex(ref);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _importRegex(BuildContext context, WidgetRef ref, {required bool globally}) async {
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.pickFiles(
+        type: Platform.isIOS ? FileType.any : FileType.custom,
+        allowedExtensions: Platform.isIOS ? null : ['json'],
+        allowMultiple: false,
+        withData: true,
+      );
+    } catch (_) {}
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.first;
+
+    try {
+      String jsonString;
+      if (picked.bytes != null && picked.bytes!.isNotEmpty) {
+        jsonString = utf8.decode(picked.bytes!);
+      } else if (picked.path != null && picked.path!.isNotEmpty) {
+        jsonString = await File(picked.path!).readAsString();
+      } else {
+        if (context.mounted) GlazeToast.show(context, 'Cannot read file');
+        return;
+      }
+
+      final dynamic decoded = jsonDecode(jsonString);
+      final List<dynamic> rawList;
+      if (decoded is List) {
+        rawList = decoded;
+      } else if (decoded is Map<String, dynamic>) {
+        rawList = [decoded];
+      } else {
+        if (context.mounted) GlazeToast.show(context, 'Invalid file format');
+        return;
+      }
+
+      if (globally) {
+        await ref.read(globalRegexProvider.notifier).importFromJsBackup(rawList);
+        if (context.mounted) {
+          GlazeToast.show(context, 'Imported ${rawList.length} script(s) globally');
+        }
+      } else {
+        final activePresetId = ref.read(activePresetIdProvider);
+        if (activePresetId == null) {
+          if (context.mounted) GlazeToast.show(context, 'No active preset');
+          return;
+        }
+        final presets = ref.read(presetListProvider).value ?? [];
+        final preset = presets.where((p) => p.id == activePresetId).firstOrNull;
+        if (preset == null) {
+          if (context.mounted) GlazeToast.show(context, 'Preset not found');
+          return;
+        }
+        final newRegexes = _normalizeRawRegexList(rawList);
+        await ref.read(presetListProvider.notifier).updatePreset(
+              preset.copyWith(regexes: [...preset.regexes, ...newRegexes]),
+            );
+        if (context.mounted) {
+          GlazeToast.show(context, 'Imported ${newRegexes.length} script(s) to "${preset.name}"');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) GlazeToast.error(context, 'Import failed: ', e);
+    }
+  }
+
+  List<PresetRegex> _normalizeRawRegexList(List<dynamic> rawList) {
+    final result = <PresetRegex>[];
+    for (int i = 0; i < rawList.length; i++) {
+      final r = rawList[i];
+      if (r is! Map<String, dynamic>) continue;
+      final m = Map<String, dynamic>.from(r);
+      if (!m.containsKey('id')) m['id'] = generateId();
+      if (!m.containsKey('name')) m['name'] = m['scriptName'] ?? 'Imported ${i + 1}';
+      if (!m.containsKey('regex')) m['regex'] = m['findRegex'] ?? '';
+      if (!m.containsKey('replacement')) m['replacement'] = m['replaceString'] ?? '';
+      if (r['isEnabled'] is bool) m['disabled'] = !(r['isEnabled'] as bool);
+      try {
+        result.add(PresetRegex.fromJson(m));
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  void _addPresetRegex(WidgetRef ref) async {
     final activePresetId = ref.read(activePresetIdProvider);
     if (activePresetId == null) return;
-    final repo = ref.read(presetRepoProvider);
-    repo.getAll().then((presets) {
-      final preset = presets.where((p) => p.id == activePresetId).firstOrNull;
-      if (preset == null) return;
-      final newRegex = PresetRegex(
-        id: generateId(),
-        name: 'New Script',
-        regex: '',
-      );
-      repo.put(preset.copyWith(regexes: [...preset.regexes, newRegex])).then((_) {
-        ref.invalidate(presetsListProvider);
-      });
-    });
+    final presets = ref.read(presetListProvider).value ?? [];
+    final preset = presets.where((p) => p.id == activePresetId).firstOrNull;
+    if (preset == null) return;
+    await ref.read(presetListProvider.notifier).updatePreset(
+          preset.copyWith(regexes: [
+            ...preset.regexes,
+            PresetRegex(id: generateId(), name: 'New Script', regex: ''),
+          ]),
+        );
   }
 
   void _addGlobalRegex(WidgetRef ref) {
-    ref.read(globalRegexProvider.notifier).addRegex(PresetRegex(
-      id: generateId(),
-      name: 'New Global Script',
-      regex: '',
-    ));
+    ref.read(globalRegexProvider.notifier).addRegex(
+          PresetRegex(id: generateId(), name: 'New Global Script', regex: ''),
+        );
   }
 }
 
@@ -245,8 +360,7 @@ class _PresetRegexItem extends ConsumerWidget {
       if (r.id == regex.id) return updated;
       return r;
     }).toList();
-    await ref.read(presetRepoProvider).put(preset.copyWith(regexes: updatedRegexes));
-    ref.invalidate(presetsListProvider);
+    await ref.read(presetListProvider.notifier).updatePreset(preset.copyWith(regexes: updatedRegexes));
   }
 }
 

@@ -64,30 +64,64 @@ All schema changes go in `AppDatabase.migration` in `app_db.dart`.
 Bump the schema version and add a `from → to` migration step.
 Never modify existing column types without a migration.
 
-Current version: **17**
+Current version: **19**
+
+Migration history:
+- v18: added `characters.picksHash`
+- v19: added `characters.createdAt` + data migration (`SET created_at = updated_at WHERE created_at = 0`)
 
 ---
 
 ## Embedding storage
 
 Table: `Embeddings`
-Schema: `{ id, sourceType, sourceId, vectors (BLOB), textHash, retrievalHints (BLOB), updatedAt }`
+Schema: `{ entryId, sourceType, sourceId, vectorsBlob (BLOB), textHash, retrievalHintsJson (JSON text), errorJson (JSON text), updatedAt }`
 
-- Vectors stored as binary float32 BLOB via `EmbeddingRepo.vectorListToBytes()`.
+- Vectors stored as binary float32 BLOB via `vectorListToBytes()` free function in `vector_math.dart` (not a method on `EmbeddingRepo`).
 - `textHash` used for dirty-check: if hash matches stored hash, skip re-embedding.
 - `sourceType`: `'lorebook_entry'` | `'memory_entry'`
+- `entryId` namespaced as `lorebookId_entryId` to prevent cross-lorebook collisions.
+- `retrievalHintsJson` is JSON text (not BLOB).
+- `errorJson` stores embedding error details (classification via `EmbeddingErrorLabel`).
 
 ---
 
 ## Deletion cascades
 
-`CharacterRepo.delete(charId)`:
-- Deletes all `ChatSession` rows for that character
-- Deletes all `Embedding` rows for that character's lorebook entries and memory entries
-- **Does not** delete `Lorebook` rows (lorebooks are global, not per-character) —
-  character-lorebook bindings are stored in activations (SharedPreferences), not in DB
+### `CharacterRepo.delete(charId)` (inside DB transaction, defensive)
 
-When adding a new table with per-character data, add its deletion to `CharacterRepo.delete()`.
+1. Gets session IDs for the character
+2. Deletes `MemoryBookRows` by session IDs
+3. Deletes `ChatSummaries` by session IDs
+4. Deletes `ChatSessions` by character ID
+5. Deletes `Characters` by charId
+
+This path is used by direct repo callers (e.g. sync engine). It is idempotent.
+
+**Does NOT delete:**
+- `Embeddings` — done separately in `CharactersNotifier.remove()`
+- `Lorebooks` — character-scoped lorebooks deleted separately in `CharactersNotifier.remove()`
+
+### `chatRepo.deleteByCharacterId(characterId)` (preferred path for bulk character-scoped cleanup)
+
+Deletes in order:
+1. `MemoryBookRows` for all sessions of the character
+2. `ChatSummaries` for all sessions of the character
+3. `ChatSessions` for the character
+
+Returns the list of deleted session IDs (for sync-deletion tracking).
+
+### `CharactersNotifier.remove(id)` (provider-level, wraps repo + extra cleanup)
+
+1. Deletes character-scoped lorebooks (`lorebookRepo.getByScopeAndTarget('character', id)`)
+2. Deletes embeddings for those lorebooks (`embeddingRepo.deleteBySourceId(lorebookId)`)
+3. Cleans stale IDs from `lorebookActivations` SharedPreferences map
+4. Calls `chatRepo.deleteByCharacterId(id)` — fully cleans `MemoryBookRows`, `ChatSummaries`, and `ChatSessions` for the character (see above)
+5. Calls `repo.delete(id)` — deletes the `Characters` row (its internal defensive cleanup of per-session rows is a no-op after step 4, since sessions are already gone)
+
+This order guarantees no orphan `MemoryBookRows` or `ChatSummaries` rows after character deletion.
+
+When adding a new table with per-character or per-session data, add its deletion to the appropriate cascade path (`deleteByCharacterId` for session-scoped data, or `CharactersNotifier.remove` for character-scoped auxiliary data).
 
 ---
 

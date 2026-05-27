@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/llm/memory_injection_service.dart';
 import '../../../core/llm/summary_service.dart';
 import '../../../core/models/chat_message.dart';
-import '../../../core/state/db_provider.dart';
 import '../../../core/state/lorebook_provider.dart';
 import '../../../features/chat/chat_provider.dart';
 import '../../../shared/theme/app_colors.dart';
@@ -68,7 +67,7 @@ class _ContextInfoPanelState extends ConsumerState<_ContextInfoPanel> {
       color: memoryResult.entries.isNotEmpty ? Colors.orange : context.cs.onSurfaceVariant,
     ));
 
-    final lorebooks = await ref.read(lorebookRepoProvider).getAll();
+    final lorebooks = ref.read(lorebooksProvider).value ?? [];
     final settings = ref.read(lorebookSettingsProvider);
     final activeLorebooks = lorebooks.where((lb) {
       if (!lb.enabled) return false;

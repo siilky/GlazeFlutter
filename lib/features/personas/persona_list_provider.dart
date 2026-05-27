@@ -20,6 +20,11 @@ class PersonaListNotifier extends AsyncNotifier<List<Persona>> {
     ref.invalidateSelf();
   }
 
+  Future<void> updatePersona(Persona persona) async {
+    await ref.read(personaRepoProvider).put(persona);
+    ref.invalidateSelf();
+  }
+
   Future<void> remove(String id) async {
     await ref.read(personaRepoProvider).delete(id);
     await SyncDeletionTracker.record('persona', id);

@@ -8,6 +8,7 @@ import '../../../core/models/character.dart';
 import '../../../core/services/character_book_converter.dart';
 import '../../../core/state/character_provider.dart';
 import '../../../core/state/db_provider.dart';
+import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_toast.dart';
 import '../../character_list/character_detail_screen.dart';
@@ -120,12 +121,11 @@ class _PicksDetailLauncherState extends ConsumerState<PicksDetailLauncher> {
           await importer.importFromBytes(_pngBytes!, '${char.id}.png');
 
       if (result.characterBookData != null) {
-        final lorebookRepo = ref.read(lorebookRepoProvider);
         final converted = convertCharacterBook(
           result.characterBookData!,
           characterWithHash.id,
         );
-        await lorebookRepo.put(converted);
+        await ref.read(lorebooksProvider.notifier).put(converted);
       }
 
       if (mounted) {
