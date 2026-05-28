@@ -1232,4 +1232,147 @@ void main() {
     expect(world.characters.data['c2']?.name, equals('Cloud Bob'),
         reason: 'Cloud version should be applied after resolve');
   });
+
+  test(
+      'chat with same session id but different messages surfaces conflict',
+      () async {
+    final deviceA = SyncWorld();
+    await deviceA.characters.put(makeChar('char1', name: 'Alice'));
+    await deviceA.chats.put(ChatSession(
+      id: 's1',
+      characterId: 'char1',
+      sessionIndex: 0,
+      updatedAt: 1000,
+      messages: [
+        const ChatMessage(
+          id: 'm1',
+          role: 'assistant',
+          content: 'Hello from cloud',
+          timestamp: 1000,
+        ),
+      ],
+    ));
+
+    final aManifest = await deviceA.manifestProvider.buildLocalManifest();
+    await deviceA.manifestProvider.writeLocalManifest(
+      aManifest.copyWith(lastSync: 5000),
+    );
+    await deviceA.engine.pushEntities(onProgress: (_) {});
+
+    final deviceB = SyncWorld();
+    deviceB.cloud.files.addAll(deviceA.cloud.files);
+    await deviceB.characters.put(makeChar('char1', name: 'Alice'));
+    await deviceB.chats.put(ChatSession(
+      id: 's1',
+      characterId: 'char1',
+      sessionIndex: 0,
+      updatedAt: 9000,
+      messages: [
+        const ChatMessage(
+          id: 'm2',
+          role: 'assistant',
+          content: 'Hello from local device',
+          timestamp: 9000,
+        ),
+      ],
+    ));
+
+    final bManifest = await deviceB.manifestProvider.buildLocalManifest();
+    await deviceB.manifestProvider.writeLocalManifest(
+      bManifest.copyWith(lastSync: 8000),
+    );
+
+    final conflicts = <SyncConflict>[];
+    await deviceB.engine.pullEntities(
+      onProgress: (_) {},
+      onConflict: (c) => conflicts.add(c),
+    );
+
+    expect(
+      conflicts.any((c) => c.type == 'chat' && c.id == 's1'),
+      isTrue,
+      reason:
+          'Divergent chat content must not be skipped when session ids match',
+    );
+    expect(
+      deviceB.chats.data['s1']?.messages.first.content,
+      equals('Hello from local device'),
+      reason: 'Unresolved conflict must keep local chat',
+    );
+  });
+
+  test('chat metadata hash reflects message content, not only session id', () {
+    const base = SessionMetadata(
+      sessionId: 's1',
+      characterId: 'char1',
+      sessionIndex: 0,
+      updatedAt: 1000,
+      messageCount: 0,
+      lastMessageContent: '',
+      lastMessageTimestamp: 0,
+    );
+    const withMessages = SessionMetadata(
+      sessionId: 's1',
+      characterId: 'char1',
+      sessionIndex: 0,
+      updatedAt: 1000,
+      messageCount: 3,
+      lastMessageContent: 'Hello',
+      lastMessageTimestamp: 2000,
+    );
+
+    final idOnlyHash = SyncSerialization.computeSyncHash('s1');
+    final metadataHash = SyncSerialization.computeChatMetadataHash(base);
+    final divergentHash = SyncSerialization.computeChatMetadataHash(withMessages);
+
+    expect(metadataHash, isNot(equals(idOnlyHash)),
+        reason: 'Manifest hash must not be session id alone');
+    expect(divergentHash, isNot(equals(metadataHash)),
+        reason: 'Message changes must change the manifest hash');
+  });
+
+  test('chat conflict detection uses metadata hash and updatedAt', () {
+    final localHash = SyncSerialization.computeChatMetadataHash(const SessionMetadata(
+      sessionId: 's1',
+      characterId: 'char1',
+      sessionIndex: 0,
+      updatedAt: 100,
+      messageCount: 0,
+      lastMessageContent: '',
+      lastMessageTimestamp: 0,
+    ));
+    final cloudHash = SyncSerialization.computeChatMetadataHash(const SessionMetadata(
+      sessionId: 's1',
+      characterId: 'char1',
+      sessionIndex: 0,
+      updatedAt: 5000,
+      messageCount: 2,
+      lastMessageContent: 'Cloud',
+      lastMessageTimestamp: 5000,
+    ));
+
+    final localEntry = SyncManifestEntry(
+      type: 'chat',
+      id: 's1',
+      path: cloudPath('chat', 's1'),
+      updatedAt: 100,
+      hash: localHash,
+    );
+    final cloudEntry = SyncManifestEntry(
+      type: 'chat',
+      id: 's1',
+      path: cloudPath('chat', 's1'),
+      updatedAt: 5000,
+      hash: cloudHash,
+    );
+
+    expect(SyncConflictDetector.needsConflict(localEntry, cloudEntry), isFalse);
+    expect(
+      SyncConflictDetector.needsConflict(
+        localEntry.copyWith(updatedAt: 9000),
+        cloudEntry,
+      ),
+      isTrue,
+    );
+  });
 }

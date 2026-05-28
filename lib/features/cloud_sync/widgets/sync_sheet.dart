@@ -838,10 +838,23 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
   Future<void> _resolveConflict(SyncConflict conflict, String choice) async {
     final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
-    await service.resolveConflict(conflict, choice);
-    ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
-    if (service.conflicts.isEmpty) {
-      ref.read(syncStatusProvider.notifier).state = SyncStatus.idle;
+    try {
+      await service.resolveConflict(conflict, choice);
+      ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
+      ref.read(syncStatusProvider.notifier).state = service.status;
+      if (service.conflicts.isEmpty && mounted) {
+        GlazeToast.show(
+          context,
+          choice == 'cloud' ? 'Cloud version applied' : 'Local version kept',
+        );
+      }
+    } catch (e) {
+      ref.read(syncLastErrorProvider.notifier).state = e.toString();
+      ref.read(syncStatusProvider.notifier).state = service.status;
+      ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
+      if (mounted) {
+        GlazeToast.errorWithCopy(context, 'Could not resolve conflict: ', e);
+      }
     }
   }
 
@@ -849,11 +862,25 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
     final service = ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return;
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
-    await service.resolveAllConflicts(choice);
-    ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
-    ref.read(syncStatusProvider.notifier).state = service.status;
-    if (mounted) {
-      GlazeToast.show(context, choice == 'cloud' ? 'All conflicts resolved: cloud versions applied' : 'All conflicts resolved: local versions kept');
+    try {
+      await service.resolveAllConflicts(choice);
+      ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
+      ref.read(syncStatusProvider.notifier).state = service.status;
+      if (mounted) {
+        GlazeToast.show(
+          context,
+          choice == 'cloud'
+              ? 'All conflicts resolved: cloud versions applied'
+              : 'All conflicts resolved: local versions kept',
+        );
+      }
+    } catch (e) {
+      ref.read(syncLastErrorProvider.notifier).state = e.toString();
+      ref.read(syncStatusProvider.notifier).state = service.status;
+      ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
+      if (mounted) {
+        GlazeToast.errorWithCopy(context, 'Could not resolve conflicts: ', e);
+      }
     }
   }
 

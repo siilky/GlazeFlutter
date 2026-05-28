@@ -88,10 +88,12 @@ class SyncManifestBuilder implements SyncManifestProvider {
 
     final sessions = await _chatRepo.getAllSessionMetadata();
     for (final s in sessions) {
-      final hash = SyncSerialization.computeSyncHash(s.sessionId);
+      final hash = SyncSerialization.computeChatMetadataHash(s);
       final key = entryKey('chat', s.sessionId);
       final prevEntry = previous.entries[key];
-      final updatedAt = prevEntry?.updatedAt ?? now;
+      final updatedAt = hash == prevEntry?.hash
+          ? prevEntry!.updatedAt
+          : now;
 
       entries[key] = SyncManifestEntry(
         type: 'chat',
@@ -137,9 +139,11 @@ class SyncManifestBuilder implements SyncManifestProvider {
       final prevEntry = previous.entries[key];
       final updatedAt = hash == prevEntry?.hash
           ? prevEntry!.updatedAt
-          : items.isEmpty
+          : prevEntry == null
               ? 0
-              : now;
+              : items.isEmpty
+                  ? 0
+                  : now;
 
       entries[key] = SyncManifestEntry(
         type: type,

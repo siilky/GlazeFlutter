@@ -155,6 +155,8 @@ class SyncEngine {
   }) async {
     final cloudManifest = await _downloadCloudManifest();
     if (cloudManifest == null) return;
+    final previousManifest = await _manifestBuilder.readLocalManifest();
+    final isFirstSync = previousManifest.lastSync == 0;
     final localManifest = await _manifestBuilder.buildLocalManifest();
 
     final entries = cloudManifest.entries.values.toList();
@@ -165,6 +167,13 @@ class SyncEngine {
       final localEntry = localManifest.entries[cloudEntry.key];
 
       if (cloudEntry.hash == localEntry?.hash && cloudEntry.deleted == localEntry?.deleted) {
+        continue;
+      }
+
+      // Before first successful sync, local manifest timestamps are not reliable
+      // (seeded defaults get updatedAt=now). Prefer cloud without surfacing conflicts.
+      if (isFirstSync && localEntry != null) {
+        pullEntries.add(cloudEntry);
         continue;
       }
 
@@ -204,7 +213,8 @@ class SyncEngine {
     required void Function(SyncProgress) onProgress,
     List<String>? resolvedAsCloud,
   }) async {
-    final cloudManifest = await _loadCloudManifestForPendingPull();
+    final cloudManifest =
+        await _loadCloudManifestForPendingPull() ?? await _downloadCloudManifest();
     if (cloudManifest == null) return;
     final localManifest = await _manifestBuilder.buildLocalManifest();
 
@@ -338,7 +348,10 @@ class SyncEngine {
     final updatedEntries = Map<String, SyncManifestEntry>.from(rebuiltManifest.entries);
     final rebuiltEntry = updatedEntries[conflict.key];
 
-    if (choice == 'local' && rebuiltEntry != null) {
+    if (choice == 'cloud') {
+      // Align manifest with cloud so the same conflict does not reappear.
+      updatedEntries[conflict.key] = conflict.cloudEntry;
+    } else if (choice == 'local' && rebuiltEntry != null) {
       updatedEntries[conflict.key] = rebuiltEntry.copyWith(
         updatedAt: conflict.localEntry.updatedAt,
       );
@@ -478,13 +491,28 @@ class SyncEngine {
           await _chatRepo.put(ChatSession.fromJson(data));
           break;
         case 'lorebooks':
-          await _applySingleton<Lorebook>(data, Lorebook.fromJson, _lorebookRepo);
+          await _applySingleton<Lorebook>(
+            data,
+            Lorebook.fromJson,
+            _lorebookRepo,
+            idOf: (lb) => lb.id,
+          );
           break;
         case 'api_presets':
-          await _applySingleton<ApiConfig>(data, ApiConfig.fromJson, _apiRepo);
+          await _applySingleton<ApiConfig>(
+            data,
+            ApiConfig.fromJson,
+            _apiRepo,
+            idOf: (a) => a.id,
+          );
           break;
         case 'theme_presets':
-          await _applySingleton<Preset>(data, Preset.fromJson, _presetRepo);
+          await _applySingleton<Preset>(
+            data,
+            Preset.fromJson,
+            _presetRepo,
+            idOf: (p) => p.id,
+          );
           break;
       }
     } catch (_) {}
@@ -493,8 +521,9 @@ class SyncEngine {
   Future<void> _applySingleton<T>(
     Map<String, dynamic> data,
     T Function(Map<String, dynamic>) fromJson,
-    dynamic repo,
-  ) async {
+    dynamic repo, {
+    String Function(T)? idOf,
+  }) async {
     final List<Map<String, dynamic>> items;
     if (data['__singleton'] == true) {
       items = (data['items'] as List).cast<Map<String, dynamic>>();
@@ -504,9 +533,32 @@ class SyncEngine {
       items = [data];
     }
 
+    final getAll = repo.getAll as Future<List<T>> Function();
     final put = repo.put as Future<void> Function(T);
+    final delete = repo.delete as Future<void> Function(String);
+
+    final cloudIds = <String>{};
+    final parsed = <T>[];
     for (final item in items) {
-      await put(fromJson(item));
+      final entity = fromJson(item);
+      parsed.add(entity);
+      if (idOf != null) {
+        cloudIds.add(idOf(entity));
+      }
+    }
+
+    if (idOf != null) {
+      final existing = await getAll();
+      for (final entity in existing) {
+        final id = idOf(entity);
+        if (!cloudIds.contains(id)) {
+          await delete(id);
+        }
+      }
+    }
+
+    for (final entity in parsed) {
+      await put(entity);
     }
   }
 
@@ -527,6 +579,18 @@ class SyncEngine {
           for (final lb in all) {
             await _lorebookRepo.delete(lb.id);
             await _embeddingRepo.deleteBySourceId(lb.id);
+          }
+          break;
+        case 'api_presets':
+          final apis = await _apiRepo.getAll();
+          for (final a in apis) {
+            await _apiRepo.delete(a.id);
+          }
+          break;
+        case 'theme_presets':
+          final presets = await _presetRepo.getAll();
+          for (final p in presets) {
+            await _presetRepo.delete(p.id);
           }
           break;
       }

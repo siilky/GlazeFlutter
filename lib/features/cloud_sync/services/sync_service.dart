@@ -224,66 +224,55 @@ class SyncService {
   }
 
   Future<void> resolveAllConflicts(String choice) async {
-    final engine = SyncEngine(
-      _adapter,
-      _manifestBuilder,
-      _characterRepo,
-      _chatRepo,
-      _personaRepo,
-      _presetRepo,
-      _apiRepo,
-      _lorebookRepo,
-      _embeddingRepo,
-      _imageStorage,
-    );
-    for (final conflict in _conflicts) {
-      await engine.resolveConflict(conflict, choice);
-      if (choice == 'cloud') {
-        _resolvedAsCloud.add(conflict.key);
+    final conflicts = List<SyncConflict>.from(_conflicts);
+    try {
+      for (final conflict in conflicts) {
+        await _engine.resolveConflict(conflict, choice);
+        if (choice == 'cloud') {
+          _resolvedAsCloud.add(conflict.key);
+        }
       }
-    }
-    _conflicts.clear();
-    if (_status == SyncStatus.conflict) {
-      await engine.applyPendingPull(
-        onProgress: (_) {},
-        resolvedAsCloud: _resolvedAsCloud,
-      );
-      _resolvedAsCloud.clear();
-      _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('gz_sync_last', _lastSyncTime!);
-      _status = SyncStatus.idle;
+      _conflicts.clear();
+      if (_status == SyncStatus.conflict) {
+        await _engine.applyPendingPull(
+          onProgress: (_) {},
+          resolvedAsCloud: choice == 'cloud' ? _resolvedAsCloud : null,
+        );
+        _resolvedAsCloud.clear();
+        _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('gz_sync_last', _lastSyncTime!);
+        _status = SyncStatus.idle;
+      }
+    } catch (e) {
+      _lastError = e.toString();
+      _status = SyncStatus.error;
+      rethrow;
     }
   }
 
   Future<void> resolveConflict(SyncConflict conflict, String choice) async {
-    final engine = SyncEngine(
-      _adapter,
-      _manifestBuilder,
-      _characterRepo,
-      _chatRepo,
-      _personaRepo,
-      _presetRepo,
-      _apiRepo,
-      _lorebookRepo,
-      _embeddingRepo,
-      _imageStorage,
-    );
-    await engine.resolveConflict(conflict, choice);
-    if (choice == 'cloud') {
-      _resolvedAsCloud.add(conflict.key);
-    }
-    _conflicts.removeWhere((c) => c.key == conflict.key);
-    if (_conflicts.isEmpty && _status == SyncStatus.conflict) {
-      await engine.applyPendingPull(
-        onProgress: (_) {},
-        resolvedAsCloud: _resolvedAsCloud,
-      );
-      _resolvedAsCloud.clear();
-      _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('gz_sync_last', _lastSyncTime!);
-      _status = SyncStatus.idle;
+    try {
+      await _engine.resolveConflict(conflict, choice);
+      if (choice == 'cloud') {
+        _resolvedAsCloud.add(conflict.key);
+      }
+      _conflicts.removeWhere((c) => c.key == conflict.key);
+      if (_conflicts.isEmpty && _status == SyncStatus.conflict) {
+        await _engine.applyPendingPull(
+          onProgress: (_) {},
+          resolvedAsCloud: choice == 'cloud' ? _resolvedAsCloud : null,
+        );
+        _resolvedAsCloud.clear();
+        _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('gz_sync_last', _lastSyncTime!);
+        _status = SyncStatus.idle;
+      }
+    } catch (e) {
+      _lastError = e.toString();
+      _status = SyncStatus.error;
+      rethrow;
     }
   }
 
