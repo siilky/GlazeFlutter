@@ -3,8 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/state/character_provider.dart';
+import '../../../core/state/chat_session_ops_provider.dart';
+import '../../../core/state/lorebook_provider.dart';
 import '../../../core/state/shared_prefs_provider.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../../shared/theme/theme_provider.dart';
+import '../../personas/persona_list_provider.dart';
+import '../../settings/api_list_provider.dart';
 import '../../../shared/widgets/glaze_toast.dart';
 import '../../../shared/widgets/sheet_view.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
@@ -794,6 +800,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
                 'conflictsCount': service.conflicts.length,
               };
             });
+            _invalidateDataProviders();
             if (service.conflicts.isNotEmpty) {
               GlazeToast.show(context, 'Pull completed with ${service.conflicts.length} conflicts');
             } else {
@@ -817,6 +824,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
                 'type': 'full',
               };
             });
+            _invalidateDataProviders();
             GlazeToast.show(context, 'Full sync completed');
           }
           break;
@@ -842,6 +850,9 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
       await service.resolveConflict(conflict, choice);
       ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
       ref.read(syncStatusProvider.notifier).state = service.status;
+      if (service.conflicts.isEmpty) {
+        _invalidateDataProviders();
+      }
       if (service.conflicts.isEmpty && mounted) {
         GlazeToast.show(
           context,
@@ -866,6 +877,7 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
       await service.resolveAllConflicts(choice);
       ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
       ref.read(syncStatusProvider.notifier).state = service.status;
+      _invalidateDataProviders();
       if (mounted) {
         GlazeToast.show(
           context,
@@ -884,6 +896,15 @@ class _SyncSheetState extends ConsumerState<SyncSheet> {
       ref.read(syncStatusProvider.notifier).state = service.status;
       ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
     }
+  }
+
+  void _invalidateDataProviders() {
+    ref.invalidate(charactersProvider);
+    ref.invalidate(personaListProvider);
+    ref.invalidate(apiListProvider);
+    ref.invalidate(lorebooksProvider);
+    ref.invalidate(chatSessionOpsProvider);
+    ref.read(themeProvider.notifier).reload();
   }
 
   void _setAutoSync(bool val) async {
