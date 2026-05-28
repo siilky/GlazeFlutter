@@ -30,6 +30,7 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
   final double bgOpacity;
   final double bgNoiseOpacity;
   final double bgNoiseIntensity;
+  final double bgDim;
   final List<ChatMessage> messages;
   final bool isGenerating;
   final bool isGeneratingImage;
@@ -80,6 +81,7 @@ class ChatWebViewWidget extends ConsumerStatefulWidget {
     this.bgOpacity = 1.0,
     this.bgNoiseOpacity = 0.0,
     this.bgNoiseIntensity = 1.0,
+    this.bgDim = 0.0,
     required this.messages,
     required this.isGenerating,
     this.isGeneratingImage = false,
@@ -321,8 +323,10 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
 
     if (widget.bgImagePath != old.bgImagePath ||
         widget.bgBlur != old.bgBlur ||
-        widget.bgOpacity != old.bgOpacity) {
+        widget.bgOpacity != old.bgOpacity ||
+        widget.bgDim != old.bgDim) {
       _bridge!.setBackgroundImage(widget.bgImagePath, widget.bgBlur.toInt(), widget.bgOpacity);
+      _bridge!.applyTheme({'bg-dim': widget.bgDim.toStringAsFixed(2)});
     }
 
     if (widget.bgNoiseOpacity != old.bgNoiseOpacity ||
@@ -755,6 +759,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       'font-size': '${widget.chatFontSize}px',
       'chat-font-size': '${widget.chatFontSize}px',
       'chat-layout': widget.chatLayout ?? 'default',
+      'bg-dim': widget.bgDim.clamp(0.0, 1.0).toStringAsFixed(2),
     };
   }
 

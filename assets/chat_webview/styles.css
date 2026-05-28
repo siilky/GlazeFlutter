@@ -975,7 +975,10 @@
   width: 100%;
   align-self: stretch;
 }
-.message-section.layout-default.user .msg-name { color: var(--user-text-color, var(--text-dark-gray)); }
+.message-section.layout-default {
+  --current-text-color: var(--text-color, #e0e0e0);
+}
+.message-section.layout-default.user .msg-name { color: var(--text-dark-gray); }
 .message-section.layout-default.char .msg-name { color: var(--text-dark-gray); }
 .message-section.layout-default .msg-reasoning {
   max-width: 100%;
@@ -1137,6 +1140,15 @@ html.has-bg-image #chat-container {
   z-index: -2;
   pointer-events: none;
   transition: opacity 0.3s, filter 0.3s;
+}
+#bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--bg-dim, 0);
+  pointer-events: none;
+  transition: opacity 0.3s;
 }
 
 #bg-noise-layer {
