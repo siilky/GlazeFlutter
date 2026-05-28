@@ -101,8 +101,20 @@ class PresetTile extends ConsumerWidget {
           'insertion_mode': b.insertionMode, if (b.depth != null) 'depth': b.depth,
         }).toList(),
         'regexes': preset.regexes.map((r) => <String, dynamic>{
-          'scriptName': r.name, 'findRegex': r.regex, 'replaceString': r.replacement,
-          'placement': r.placement, 'isEnabled': !r.disabled,
+          'scriptName': r.name,
+          'findRegex': r.regex,
+          'replaceString': r.replacement,
+          'trimStrings': r.trimOut.isEmpty
+              ? <String>[]
+              : r.trimOut.split('\n').where((t) => t.isNotEmpty).toList(),
+          'placement': r.placement,
+          'isEnabled': !r.disabled,
+          'markdownOnly': r.markdownOnly,
+          'promptOnly': r.promptOnly,
+          'runOnEdit': r.runOnEdit,
+          'substituteRegex': r.substituteRegex,
+          if (r.minDepth != null) 'minDepth': r.minDepth,
+          if (r.maxDepth != null) 'maxDepth': r.maxDepth,
         }).toList(),
         'reasoning': preset.reasoningEnabled,
       };

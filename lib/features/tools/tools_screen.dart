@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/state/active_selection_provider.dart';
+import '../../core/state/db_provider.dart';
 import '../../shared/shell/nav_height_provider.dart';
 import '../personas/persona_list_provider.dart';
 import '../presets/preset_list_provider.dart';
@@ -19,13 +20,29 @@ class PersonaInfo {
 }
 
 final _activePersonaInfoProvider = Provider<PersonaInfo?>((ref) {
+  final personas = ref.watch(personaListProvider).value ?? [];
   final activeId = ref.watch(activePersonaIdProvider);
-  if (activeId == null) return null;
-  final persona = (ref.watch(personaListProvider).value ?? [])
-      .where((p) => p.id == activeId)
-      .firstOrNull;
+  final connections = ref.watch(personaConnectionsProvider);
+  final persona = getEffectivePersona(
+    personas,
+    null,
+    null,
+    activeId,
+    connections,
+  );
   if (persona == null) return null;
   return PersonaInfo(name: persona.name, avatarPath: persona.avatarPath);
+});
+
+final _resolvedPersonaAvatarPathProvider = FutureProvider<String?>((ref) async {
+  final info = ref.watch(_activePersonaInfoProvider);
+  final raw = info?.avatarPath;
+  if (raw == null || raw.isEmpty) return null;
+  final storage = await ref.watch(imageStorageProvider.future);
+  final abs = storage.absolutePath(raw);
+  if (abs != null && await File(abs).exists()) return abs;
+  if (await File(raw).exists()) return raw;
+  return null;
 });
 
 final _activePresetNameProvider = FutureProvider<String>((ref) async {
@@ -62,6 +79,7 @@ class ToolsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bottomPad = ref.watch(navHeightProvider) + 20;
     final personaInfo = ref.watch(_activePersonaInfoProvider);
+    final resolvedAvatar = ref.watch(_resolvedPersonaAvatarPathProvider).valueOrNull;
     final presetName = ref.watch(_activePresetNameProvider).value ?? 'Default';
     final topPad = MediaQuery.of(context).padding.top + 66.0;
     return Scaffold(
@@ -75,7 +93,7 @@ class ToolsScreen extends ConsumerWidget {
                 iconPath: _kIconPersonas,
                 title: 'Personas',
                 subtitle: personaInfo?.name ?? 'user',
-                avatarPath: personaInfo?.avatarPath,
+                avatarPath: resolvedAvatar,
                 isAvatar: true,
                 onTap: () => context.push('/tools/personas'),
               ),
@@ -190,6 +208,7 @@ class _HeroCard extends StatelessWidget {
                 child: avatarPath != null && avatarPath!.isNotEmpty
                     ? Image.file(
                         File(avatarPath!),
+                        key: ValueKey(avatarPath),
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) =>
                             _AvatarGradientPlaceholder(subtitle: subtitle),

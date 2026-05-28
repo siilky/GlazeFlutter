@@ -543,7 +543,14 @@ PromptResult _assembleMessages({
       );
       finalMessages[i] = PromptMessage(
         role: msg.role,
-        content: applyRegexes(msg.content, placement, 2, regexScripts, ctx),
+        content: applyRegexes(
+          msg.content,
+          placement,
+          2,
+          regexScripts,
+          ctx,
+          isPrompt: true,
+        ),
         isLorebook: msg.isLorebook,
         blockName: msg.blockName,
         isHistory: msg.isHistory,
@@ -551,9 +558,17 @@ PromptResult _assembleMessages({
         depth: msg.depth,
       );
     } else {
+      final placement = msg.isLorebook ? 5 : 4;
       finalMessages[i] = PromptMessage(
         role: msg.role,
-        content: applyRegexes(msg.content, 4, 2, regexScripts, regexCtx),
+        content: applyRegexes(
+          msg.content,
+          placement,
+          2,
+          regexScripts,
+          regexCtx,
+          isPrompt: true,
+        ),
         isLorebook: msg.isLorebook,
         blockName: msg.blockName,
         isHistory: msg.isHistory,

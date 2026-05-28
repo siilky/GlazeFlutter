@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/generation_notification_service.dart';
 import '../../../core/state/shared_prefs_provider.dart';
+import '../chat_provider.dart';
 
 class SessionLifecycleTracker extends ConsumerStatefulWidget {
   final String charId;
@@ -20,13 +22,24 @@ class _SessionLifecycleTrackerState extends ConsumerState<SessionLifecycleTracke
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _enteredAt = DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncActiveContext());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    GenerationNotificationService.instance.setActiveContext(null, null);
     _flushTime();
     super.dispose();
+  }
+
+  void _syncActiveContext() {
+    if (!mounted) return;
+    final session = ref.read(chatProvider(widget.charId)).value?.session;
+    GenerationNotificationService.instance.setActiveContext(
+      widget.charId,
+      session?.id,
+    );
   }
 
   @override
@@ -52,5 +65,8 @@ class _SessionLifecycleTrackerState extends ConsumerState<SessionLifecycleTracke
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    ref.listen(chatProvider(widget.charId), (_, __) => _syncActiveContext());
+    return widget.child;
+  }
 }

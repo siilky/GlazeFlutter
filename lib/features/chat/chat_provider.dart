@@ -4,14 +4,17 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/llm/regex_service.dart';
 import '../../core/llm/tokenizer.dart';
 import '../../core/models/chat_message.dart';
+import '../../core/state/active_selection_provider.dart';
 import '../../core/services/generation_notification_service.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../core/state/db_provider.dart';
 import '../cloud_sync/sync_provider.dart' show notifySyncMessageGenerated;
 import '../chat_history/chat_history_provider.dart';
+import '../personas/persona_list_provider.dart';
 import 'abort_handler.dart';
 import 'chat_generation_service.dart';
 import 'chat_message_service.dart';
@@ -301,11 +304,55 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   Future<void> editMessage(int index, String newContent, {String? tagStart, String? tagEnd}) async {
     final current = state.value;
     if (current == null || current.session == null) return;
-    final updated = _messageSvc.editMessage(current.session!, index, newContent, tagStart: tagStart, tagEnd: tagEnd);
+    var updated = _messageSvc.editMessage(current.session!, index, newContent, tagStart: tagStart, tagEnd: tagEnd);
+    updated = await _applyRunOnEditRegexes(updated, index);
     _invalidateHistory();
     TokenBreakdownCache.invalidate();
     ref.read(cachedTokenBreakdownProvider(arg).notifier).state = null;
     state = AsyncData(current.copyWith(session: updated));
+  }
+
+  Future<ChatSession> _applyRunOnEditRegexes(ChatSession session, int index) async {
+    if (index < 0 || index >= session.messages.length) return session;
+    final scripts = await ref.read(activeRegexesProvider.future);
+    final editScripts = scripts.where((r) => r.runOnEdit).toList();
+    if (editScripts.isEmpty) return session;
+
+    final char = await ref.read(characterRepoProvider).getById(arg);
+    final msg = session.messages[index];
+    final placement = msg.role == 'user' ? 1 : 2;
+    final personas = ref.read(personaListProvider).value ?? [];
+    final persona = getEffectivePersona(
+      personas,
+      arg,
+      session.id,
+      ref.read(activePersonaIdProvider),
+      ref.read(personaConnectionsProvider),
+    );
+    final depth = session.messages.length - 1 - index;
+    final ctx = RegexApplyContext(
+      char: char,
+      persona: persona,
+      depth: depth,
+    );
+    final content = applyRegexes(
+      msg.content,
+      placement,
+      1,
+      editScripts,
+      ctx,
+      isMarkdown: true,
+    );
+    if (content == msg.content) return session;
+    final newMessages = List<ChatMessage>.from(session.messages);
+    newMessages[index] = msg.copyWith(content: content);
+    final updated = session.copyWith(
+      messages: newMessages,
+      updatedAt: currentTimestampSeconds(),
+    );
+    await ref.read(chatRepoProvider).put(updated);
+    ChatSessionService.updateCache(updated);
+    return updated;
   }
 
   Future<void> moveMessage(int fromIndex, int toIndex) async {
@@ -664,6 +711,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
           _abortHandler.restorationMessage = null;
         }
       }
+      await notifService.onGenerationAborted();
       if (!completer.isCompleted) completer.complete();
     }
   }
