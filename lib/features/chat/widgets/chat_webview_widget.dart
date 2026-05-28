@@ -244,6 +244,8 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     if (widget.charName != old.charName ||
         widget.charColor != old.charColor ||
         widget.personaName != old.personaName ||
+        widget.charAvatarPath != old.charAvatarPath ||
+        widget.personaAvatarPath != old.personaAvatarPath ||
         widget.chatLayout != old.chatLayout ||
         widget.greetingTotal != old.greetingTotal) {
       _bridge!.setIdentity(
