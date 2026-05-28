@@ -88,26 +88,45 @@ class FileExportService {
     return file.path;
   }
 
+  /// Scoped-storage-safe Downloads/Glaze path on Android; null if unavailable.
+  static Future<Directory?> _androidGlazeDir(String subfolder) async {
+    try {
+      final downloads = await getDownloadsDirectory();
+      if (downloads == null) return null;
+      final dir = Directory('${downloads.path}/Glaze/$subfolder');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      return dir;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<String> _saveToDownloads(
       String data, String filename, String subfolder) async {
-    final dir = Directory('/storage/emulated/0/Download/Glaze/$subfolder');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+    final dir = await _androidGlazeDir(subfolder);
+    if (dir != null) {
+      try {
+        final file = File('${dir.path}/$filename');
+        await file.writeAsString(data);
+        return file.path;
+      } catch (_) {}
     }
-    final file = File('${dir.path}/$filename');
-    await file.writeAsString(data);
-    return file.path;
+    return _share(data, filename);
   }
 
   static Future<String> _saveBytesToDownloads(
       List<int> bytes, String filename, String subfolder) async {
-    final dir = Directory('/storage/emulated/0/Download/Glaze/$subfolder');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+    final dir = await _androidGlazeDir(subfolder);
+    if (dir != null) {
+      try {
+        final file = File('${dir.path}/$filename');
+        await file.writeAsBytes(bytes);
+        return file.path;
+      } catch (_) {}
     }
-    final file = File('${dir.path}/$filename');
-    await file.writeAsBytes(bytes);
-    return file.path;
+    return _shareBytes(bytes, filename);
   }
 
   static Future<String> _saveToMacDownloads(
@@ -168,13 +187,15 @@ class FileExportService {
 
   static Future<String> _copyToDownloads(
       String sourcePath, String filename, String subfolder) async {
-    final dir = Directory('/storage/emulated/0/Download/Glaze/$subfolder');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+    final dir = await _androidGlazeDir(subfolder);
+    if (dir != null) {
+      try {
+        final destPath = '${dir.path}/$filename';
+        await File(sourcePath).copy(destPath);
+        return destPath;
+      } catch (_) {}
     }
-    final destPath = '${dir.path}/$filename';
-    await File(sourcePath).copy(destPath);
-    return destPath;
+    return _shareFile(sourcePath, filename);
   }
 
   static Future<String> _copyToMacDownloads(

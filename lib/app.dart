@@ -200,6 +200,7 @@ class _GlazeAppState extends ConsumerState<GlazeApp> with WidgetsBindingObserver
     WidgetsBinding.instance.addPostFrameCallback((_) {
       checkAndShowOnboarding(context);
       _listenNotificationNavigation();
+      _handleColdStartNotification();
     });
   }
 
@@ -227,6 +228,14 @@ class _GlazeAppState extends ConsumerState<GlazeApp> with WidgetsBindingObserver
         if (mounted) context.push('/chat/${data.charId}');
       },
     );
+  }
+
+  void _handleColdStartNotification() {
+    final data =
+        GenerationNotificationService.instance.consumePendingNotificationData();
+    if (data != null && mounted) {
+      context.push('/chat/${data.charId}');
+    }
   }
 
   @override

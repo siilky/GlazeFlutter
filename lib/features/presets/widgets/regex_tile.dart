@@ -62,8 +62,9 @@ class RegexTile extends StatelessWidget {
               options: const [
                 (1, 'User Input'),
                 (2, 'AI Output'),
-                (4, 'World Info'),
-                (5, 'Reasoning'),
+                (3, 'Slash Commands'),
+                (5, 'World Info'),
+                (6, 'Reasoning'),
               ],
               selected: regex.placement,
               onChanged: (v) => onChanged(regex.copyWith(placement: v)),
@@ -123,6 +124,29 @@ class RegexTile extends StatelessWidget {
             _MacroRulesSelector(
               value: regex.macroRules,
               onChanged: (v) => onChanged(regex.copyWith(macroRules: v)),
+            ),
+            const SizedBox(height: 12),
+            _SubHeader('ST Flags'),
+            _FlagSwitch(
+              label: 'Only Format Display (markdownOnly)',
+              value: regex.markdownOnly,
+              onChanged: (v) => onChanged(regex.copyWith(markdownOnly: v)),
+            ),
+            _FlagSwitch(
+              label: 'Only Format Prompt (promptOnly)',
+              value: regex.promptOnly,
+              onChanged: (v) => onChanged(regex.copyWith(promptOnly: v)),
+            ),
+            _FlagSwitch(
+              label: 'Run on Edit',
+              value: regex.runOnEdit,
+              onChanged: (v) => onChanged(regex.copyWith(runOnEdit: v)),
+            ),
+            const SizedBox(height: 8),
+            _SubHeader('Substitute Regex (find pattern)'),
+            _SubstituteRegexSelector(
+              value: regex.substituteRegex,
+              onChanged: (v) => onChanged(regex.copyWith(substituteRegex: v)),
             ),
           ],
         ),
@@ -263,6 +287,57 @@ class _CheckboxRow extends StatelessWidget {
               const SizedBox(width: 4),
             ],
           ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _FlagSwitch extends StatelessWidget {
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _FlagSwitch({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      title: Text(label, style: TextStyle(fontSize: 13, color: context.cs.onSurfaceVariant)),
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _SubstituteRegexSelector extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const _SubstituteRegexSelector({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const options = [
+      (0, 'None'),
+      (1, 'Raw'),
+      (2, 'Escaped'),
+    ];
+    return Wrap(
+      spacing: 8,
+      children: options.map((opt) {
+        final (val, label) = opt;
+        return ChoiceChip(
+          selected: value == val,
+          label: Text(label, style: TextStyle(fontSize: 12)),
+          onSelected: (_) => onChanged(val),
+          visualDensity: VisualDensity.compact,
         );
       }).toList(),
     );

@@ -37,6 +37,7 @@ class GenerationNotificationService {
       StreamController<NotificationNavigationData>.broadcast();
 
   bool _isGenerating = false;
+  bool _initialized = false;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   NotificationNavigationData? _pendingNotificationData;
   String? _activeCharId;
@@ -76,7 +77,9 @@ class GenerationNotificationService {
         settings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
       );
-    } catch (_) {
+      _initialized = true;
+    } catch (e, st) {
+      debugPrint('NOTIF: initialize failed: $e\n$st');
       return;
     }
 
@@ -216,7 +219,7 @@ class GenerationNotificationService {
       }
     }
 
-    if (!_isMobile) return;
+    if (!_isMobile || !_initialized) return;
 
     try {
       final notifId = _stableId(charId);
@@ -241,7 +244,7 @@ class GenerationNotificationService {
             importance: Importance.high,
             priority: Priority.high,
             styleInformation: messagingStyle,
-            icon: 'new_message',
+            icon: '@mipmap/ic_launcher',
             autoCancel: true,
             groupKey: charId,
           ),

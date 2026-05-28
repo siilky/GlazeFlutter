@@ -106,7 +106,18 @@ Map<String, dynamic> _normalizeRegex(Map<String, dynamic> json) {
   n['promptOnly'] = _coerceBool(n['promptOnly'], false);
   n['runOnEdit'] = _coerceBool(n['runOnEdit'], false);
   n['substituteRegex'] = _coerceInt(n['substituteRegex']) ?? 0;
+  if (n['placement'] is List) {
+    n['placement'] = _migrateGlazePlacementIds(
+      (n['placement'] as List).map((e) => e is int ? e : int.tryParse(e.toString()) ?? 1).toList(),
+    );
+  }
   return n;
+}
+
+/// Maps legacy Glaze WI placement (4) to SillyTavern World Info (5).
+/// Does not remap 5→6 so ST-imported WI scripts (placement 5) stay valid.
+List<int> _migrateGlazePlacementIds(List<int> placement) {
+  return placement.map((p) => p == 4 ? 5 : p).toList();
 }
 
 String _joinTrimForNormalize(dynamic trim) {

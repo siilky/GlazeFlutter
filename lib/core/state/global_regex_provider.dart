@@ -25,8 +25,12 @@ Map<String, dynamic> normalizeJsGlobalRegex(Map<String, dynamic> raw) {
     }
   }
   if (!map.containsKey('ephemerality')) {
-    final e = raw['runOnEdit'];
-    map['ephemerality'] = e == true ? [1, 2] : [2];
+    map['ephemerality'] = [2];
+  }
+  if (map['placement'] is List) {
+    map['placement'] = _migrateGlazePlacementIds(
+      (map['placement'] as List).map((e) => e is int ? e : int.tryParse(e.toString()) ?? 1).toList(),
+    );
   }
   // Preserve runOnEdit as a direct bool for ST compatibility
   if (raw.containsKey('runOnEdit')) {
@@ -61,6 +65,10 @@ bool _coerceToBool(dynamic v) {
   if (v is bool) return v;
   if (v is num) return v != 0;
   return false;
+}
+
+List<int> _migrateGlazePlacementIds(List<int> placement) {
+  return placement.map((p) => p == 4 ? 5 : p).toList();
 }
 
 class GlobalRegexNotifier extends AsyncNotifier<List<PresetRegex>> {

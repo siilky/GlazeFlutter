@@ -261,11 +261,8 @@ class RegexListScreen extends ConsumerWidget {
     for (int i = 0; i < rawList.length; i++) {
       final r = rawList[i];
       if (r is! Map<String, dynamic>) continue;
-      final m = Map<String, dynamic>.from(r);
+      final m = normalizeJsGlobalRegex(Map<String, dynamic>.from(r));
       if (!m.containsKey('id')) m['id'] = generateId();
-      if (!m.containsKey('name')) m['name'] = m['scriptName'] ?? 'Imported ${i + 1}';
-      if (!m.containsKey('regex')) m['regex'] = m['findRegex'] ?? '';
-      if (!m.containsKey('replacement')) m['replacement'] = m['replaceString'] ?? '';
       if (r['isEnabled'] is bool) m['disabled'] = !(r['isEnabled'] as bool);
       try {
         result.add(PresetRegex.fromJson(m));

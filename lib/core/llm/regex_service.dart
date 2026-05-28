@@ -26,25 +26,24 @@ String applyRegexes(
   int placementFilter,
   int ephemeralityFilter,
   List<PresetRegex> scripts,
-  RegexApplyContext ctx,
-) {
+  RegexApplyContext ctx, {
+  bool isMarkdown = false,
+  bool isPrompt = false,
+}) {
   var result = text;
 
   for (final script in scripts) {
     if (script.disabled) continue;
 
     final sPlacement = script.placement;
-    if (sPlacement.isNotEmpty && !sPlacement.contains(placementFilter)) continue;
+    if (sPlacement.isNotEmpty && !sPlacement.contains(placementFilter)) {
+      if (!(script.promptOnly && isPrompt)) continue;
+    }
+    if (script.promptOnly && !isPrompt) continue;
+    if (script.markdownOnly && !isMarkdown) continue;
 
     final sEphemerality = script.ephemerality;
     if (sEphemerality.isNotEmpty && !sEphemerality.contains(ephemeralityFilter)) continue;
-
-    // ST-style context flags: markdownOnly vs promptOnly
-    // Heuristic used in Glaze: placement 1/2 = history (often rendered as markdown),
-    // placement 4 = system/prompt blocks. If a script declares one of the flags,
-    // restrict application accordingly. Both false = apply to all contexts (current default).
-    if (script.markdownOnly && ![1, 2].contains(placementFilter)) continue;
-    if (script.promptOnly && placementFilter != 4) continue;
 
     if (ctx.depth != null) {
       final minD = script.minDepth;
@@ -72,6 +71,10 @@ String _applySingleScript(String text, PresetRegex script, RegexApplyContext ctx
   var pattern = script.regex;
   var replacement = script.replacement;
 
+  if (script.substituteRegex != 0 && ctx.char != null) {
+    pattern = _substituteFindRegex(pattern, script.substituteRegex, ctx);
+  }
+
   if (script.macroRules != '0' && ctx.char != null) {
     final macroCtx = MacroContext(
       charName: ctx.char!.name,
@@ -82,13 +85,17 @@ String _applySingleScript(String text, PresetRegex script, RegexApplyContext ctx
     );
 
     if (script.macroRules == '1') {
-      pattern = replaceMacros(pattern, macroCtx).text;
+      if (script.substituteRegex == 0) {
+        pattern = replaceMacros(pattern, macroCtx).text;
+      }
       replacement = replaceMacros(replacement, macroCtx).text;
     } else if (script.macroRules == '2') {
-      pattern = pattern
-          .replaceAllMapped(RegExp(r'{{user}}', caseSensitive: false), (_) => _escapeRegex(ctx.persona?.name ?? 'User'))
-          .replaceAllMapped(RegExp(r'{{char}}', caseSensitive: false), (_) => _escapeRegex(ctx.char!.name));
-      pattern = replaceMacros(pattern, macroCtx).text;
+      if (script.substituteRegex == 0) {
+        pattern = pattern
+            .replaceAllMapped(RegExp(r'{{user}}', caseSensitive: false), (_) => _escapeRegex(ctx.persona?.name ?? 'User'))
+            .replaceAllMapped(RegExp(r'{{char}}', caseSensitive: false), (_) => _escapeRegex(ctx.char!.name));
+        pattern = replaceMacros(pattern, macroCtx).text;
+      }
       replacement = replaceMacros(replacement, macroCtx).text;
     }
   }
@@ -99,11 +106,10 @@ String _applySingleScript(String text, PresetRegex script, RegexApplyContext ctx
   try {
     final regex = RegExp(parsed.pattern, multiLine: parsed.multiLine, dotAll: parsed.dotAll, caseSensitive: parsed.caseSensitive);
 
-    // Determine if we need custom replacement logic (backrefs or substituteRegex mode)
-    final hasBackrefs = RegExp(r'(\\\d|\$\d)').hasMatch(replacement);
-    final useSubst = script.substituteRegex != 0;
+    final hasBackrefs = script.substituteRegex == 0 &&
+        RegExp(r'(\$\d+|\\\d|\{\{match\}\}|\$<[^>]+>)').hasMatch(replacement);
 
-    if (hasBackrefs || useSubst) {
+    if (hasBackrefs) {
       processed = processed.replaceAllMapped(regex, (match) => _resolveReplacement(replacement, match));
     } else {
       processed = processed.replaceAll(regex, replacement);
@@ -113,19 +119,44 @@ String _applySingleScript(String text, PresetRegex script, RegexApplyContext ctx
   return processed;
 }
 
-/// Resolves a replacement string that may contain backreferences ($1, \1, $2, \2, etc.)
-/// against a Match (RegExpMatch in practice). Supports both $n (Dart/ST common) and \n (ST raw) forms.
+String _substituteFindRegex(String pattern, int mode, RegexApplyContext ctx) {
+  if (ctx.char == null) return pattern;
+  final macroCtx = MacroContext(
+    charName: ctx.char!.name,
+    userName: ctx.persona?.name ?? 'User',
+    charId: ctx.char!.id,
+    sessionId: '',
+    macroName: ctx.char!.macroName,
+  );
+  if (mode == 1) {
+    return replaceMacros(pattern, macroCtx).text;
+  }
+  if (mode == 2) {
+    var out = pattern
+        .replaceAllMapped(RegExp(r'{{user}}', caseSensitive: false), (_) => _escapeRegex(ctx.persona?.name ?? 'User'))
+        .replaceAllMapped(RegExp(r'{{char}}', caseSensitive: false), (_) => _escapeRegex(ctx.char!.name));
+    return replaceMacros(out, macroCtx).text;
+  }
+  return pattern;
+}
+
+/// Resolves backreferences (`$1`, `\1`), `{{match}}`, and named groups (`$<name>`).
 String _resolveReplacement(String template, Match match) {
-  // Replace $n and \n style backrefs. We scan from longest possible group index down
-  // to avoid partial overlaps (e.g., $10 before $1).
   final groupCount = match.groupCount;
   var result = template;
 
+  result = result.replaceAll('{{match}}', match.group(0) ?? '');
+  if (match is RegExpMatch) {
+    final regMatch = match;
+    result = result.replaceAllMapped(
+      RegExp(r'\$<([^>]+)>'),
+      (m) => regMatch.namedGroup(m.group(1)!) ?? '',
+    );
+  }
+
   for (int i = groupCount; i >= 0; i--) {
     final captured = match.group(i) ?? '';
-    // $n form
-    result = result.replaceAll('\$${i}', captured);
-    // \n form (raw backslash in the stored replacement string)
+    result = result.replaceAll('\$$i', captured);
     result = result.replaceAll('\\$i', captured);
   }
 

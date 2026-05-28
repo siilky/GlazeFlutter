@@ -7,21 +7,19 @@ void main() {
     RegexApplyContext ctx() => const RegexApplyContext();
 
     test('Hide html: paired + self-closing tags removed (backrefs + dotAll)', () {
-      // ST-style JSON as imported (scriptName/findRegex/replaceString shape)
       final script = PresetRegex.fromJson({
         'id': 'hide-html-1',
         'scriptName': 'Hide html',
         'findRegex':
             r'/<([a-zA-Z0-9]+)(?:[^>]*)?>[\s\S]*?<\/\1>|<[a-zA-Z0-9]+(?:[^>]*)?\s*\/?>/g',
         'replaceString': '',
-        'placement': [1, 2, 4],
+        'placement': [1, 2, 5],
         'isEnabled': true,
       });
 
       const input = 'See <div class="x">hello <b>world</b></div> and <br/> and <img src="a.png">';
       final out = applyRegexes(input, 2, 2, [script], ctx());
 
-      // Paired <div>...</div>, <b>...</b>, and self-closing <br/>, <img> should be stripped
       expect(out, equals('See  and  and '));
     });
 
@@ -30,8 +28,8 @@ void main() {
         'id': 'braille-blank',
         'scriptName': '[RM] ┌ braille blank jb',
         'findRegex': r'/ /g',
-        'replaceString': '\u2800', // braille blank
-        'placement': [1, 2, 4],
+        'replaceString': '\u2800',
+        'placement': [1, 2, 5],
         'isEnabled': true,
       });
 
@@ -46,7 +44,7 @@ void main() {
         'scriptName': 'Reverse braille',
         'findRegex': r'/\u2800/g',
         'replaceString': ' ',
-        'placement': [1, 2, 4],
+        'placement': [1, 2, 5],
         'isEnabled': true,
       });
 
@@ -56,14 +54,13 @@ void main() {
     });
 
     test('ReplaceSpace with substituteRegex:1 — U+3164 (hangul filler) -> space', () {
-      // ST script that uses substituteRegex flag (replacement treated as substitution)
       final script = PresetRegex.fromJson({
         'id': 'replace-space',
         'scriptName': 'ReplaceSpace',
-        'findRegex': r'/ㅤ/g', // U+3164
+        'findRegex': r'/ㅤ/g',
         'replaceString': ' ',
         'substituteRegex': 1,
-        'placement': [1, 2, 4],
+        'placement': [1, 2, 5],
         'isEnabled': true,
       });
 
@@ -72,42 +69,82 @@ void main() {
       expect(out, equals('hello world'));
     });
 
-    test('markdownOnly flag restricts to placement 1/2 (history)', () {
+    test('markdownOnly applies only when isMarkdown is true', () {
       final script = PresetRegex.fromJson({
         'id': 'md-only',
         'name': 'MD only',
         'regex': r'/X/g',
         'replacement': 'Y',
         'markdownOnly': true,
-        'placement': [1, 2, 4],
+        'placement': [1, 2],
       });
 
       const input = 'aXb';
-      // placement 4 (prompt) should be skipped
-      final prompt = applyRegexes(input, 4, 2, [script], ctx());
+      final prompt = applyRegexes(input, 1, 2, [script], ctx(), isPrompt: true);
       expect(prompt, equals('aXb'));
 
-      // placement 1 (user history) should apply
-      final userHist = applyRegexes(input, 1, 2, [script], ctx());
-      expect(userHist, equals('aYb'));
+      final md = applyRegexes(input, 1, 2, [script], ctx(), isMarkdown: true);
+      expect(md, equals('aYb'));
     });
 
-    test('promptOnly flag restricts to placement 4 (prompt)', () {
+    test('promptOnly applies only when isPrompt is true', () {
       final script = PresetRegex.fromJson({
         'id': 'prompt-only',
         'name': 'Prompt only',
         'regex': r'/X/g',
         'replacement': 'Y',
         'promptOnly': true,
-        'placement': [1, 2, 4],
+        'placement': [1, 2],
       });
 
       const input = 'aXb';
       final hist = applyRegexes(input, 2, 2, [script], ctx());
       expect(hist, equals('aXb'));
 
-      final prompt = applyRegexes(input, 4, 2, [script], ctx());
+      final prompt = applyRegexes(input, 4, 2, [script], ctx(), isPrompt: true);
       expect(prompt, equals('aYb'));
+    });
+
+    test('World Info placement 5 applies to lorebook blocks', () {
+      final script = PresetRegex.fromJson({
+        'id': 'wi-only',
+        'name': 'WI',
+        'regex': r'/foo/g',
+        'replacement': 'bar',
+        'placement': [5],
+      });
+
+      const input = 'foo';
+      expect(applyRegexes(input, 4, 2, [script], ctx(), isPrompt: true), equals('foo'));
+      expect(applyRegexes(input, 5, 2, [script], ctx(), isPrompt: true), equals('bar'));
+    });
+
+    test('{{match}} in replacement', () {
+      final script = PresetRegex.fromJson({
+        'id': 'match-ref',
+        'name': 'wrap',
+        'regex': r'/(\w+)/g',
+        'replacement': '[{{match}}]',
+        'placement': [2],
+      });
+
+      const input = 'hi';
+      final out = applyRegexes(input, 2, 2, [script], ctx());
+      expect(out, equals('[hi]'));
+    });
+
+    test('legacy placement 4 migrates to ST World Info (5)', () {
+      final script = PresetRegex.fromJson({
+        'id': 'legacy-wi',
+        'name': 'legacy',
+        'regex': r'/x/g',
+        'replacement': 'Z',
+        'placement': [4],
+      });
+
+      expect(script.placement, contains(5));
+      const input = 'x';
+      expect(applyRegexes(input, 5, 2, [script], ctx(), isPrompt: true), equals('Z'));
     });
   });
 }

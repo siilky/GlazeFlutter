@@ -1,4 +1,5 @@
 import '../../core/models/preset.dart';
+import '../../core/state/global_regex_provider.dart';
 import '../utils/id_generator.dart';
 import '../utils/time_helpers.dart';
 import '../services/preset_defaults.dart';
@@ -154,11 +155,8 @@ Preset parseSillyTavernPreset(Map<String, dynamic> json, String fileName) {
   if (regexSource != null) {
     for (int i = 0; i < regexSource.length; i++) {
       final r = regexSource[i] as Map<String, dynamic>;
-      final normalized = Map<String, dynamic>.from(r);
+      final normalized = normalizeJsGlobalRegex(r);
       if (!normalized.containsKey('id')) normalized['id'] = 'imported_r$i';
-      if (!normalized.containsKey('name')) normalized['name'] = r['scriptName'] ?? 'Regex $i';
-      if (!normalized.containsKey('regex')) normalized['regex'] = r['findRegex'] ?? '';
-      if (!normalized.containsKey('replacement')) normalized['replacement'] = r['replaceString'] ?? '';
       if (r['isEnabled'] is bool) {
         normalized['disabled'] = !(r['isEnabled'] as bool);
       }

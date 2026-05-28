@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../settings/api_list_provider.dart';
 
 import '../../core/models/chat_message.dart';
 import '../../core/services/chat_import_export.dart';
+import '../../core/services/file_export_service.dart';
 import '../../core/llm/summary_service.dart';
 import '../../core/state/db_provider.dart';
 import '../../core/utils/time_helpers.dart';
@@ -63,9 +64,12 @@ class ChatActionsService {
       outputDir: outputDir.path,
     );
 
-    await Share.shareXFiles([XFile(result.filePath)],
-        text: 'Chat with ${character.name}');
-    return result.filePath;
+    final filename = p.basename(result.filePath);
+    return FileExportService.exportFile(
+      sourcePath: result.filePath,
+      filename: filename,
+      subfolder: 'chats',
+    );
   }
 
   Future<void> exportSessionUI(
@@ -92,6 +96,9 @@ class ChatActionsService {
       }
     } on StateError catch (e) {
       if (context.mounted) GlazeToast.show(context, e.message);
+    } on Exception catch (e) {
+      if (e.toString().contains('Save cancelled')) return;
+      if (context.mounted) GlazeToast.error(context, 'Export failed: ', e);
     } catch (e) {
       if (context.mounted) GlazeToast.error(context, 'Export failed: ', e);
     }
