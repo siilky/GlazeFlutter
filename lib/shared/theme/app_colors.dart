@@ -37,8 +37,7 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
     charBubble: Color(0xFFEEEEF0),
   );
 
-  // Defaults matching Glaze JS: quote = vk-blue (#7996ce), italic = gray (#888)
-  static const _defaultQuote = Color(0xFF7996CE);
+  // Defaults matching Glaze JS: italic = gray (#888)
   static const _defaultItalic = Color(0xFF888888);
 
   // Vue base UI element bg (src/assets/css/base.css: --ui-bg-default-rgb)
@@ -61,9 +60,9 @@ class GlazeColors extends ThemeExtension<GlazeColors> {
       charBubble: charBubble,
       userText: _ensureContrast(preset.userTextParsed, userBubble),
       charText: _ensureContrast(preset.charTextParsed, charBubble),
-      // If preset sets a quote/italic color — use it; otherwise fall back to JS defaults
-      userQuote: preset.userQuoteParsed ?? _defaultQuote,
-      charQuote: preset.charQuoteParsed ?? _defaultQuote,
+      // If preset sets a quote/italic color — use it; otherwise fall back to accent
+      userQuote: preset.userQuoteParsed ?? accent,
+      charQuote: preset.charQuoteParsed ?? accent,
       userItalic: preset.userItalicParsed ?? _defaultItalic,
       charItalic: preset.charItalicParsed ?? _defaultItalic,
     );
