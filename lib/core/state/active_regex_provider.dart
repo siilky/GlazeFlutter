@@ -16,3 +16,8 @@ final activeRegexesProvider = FutureProvider<List<PresetRegex>>((ref) async {
   final globalRegexes = ref.watch(globalRegexProvider).valueOrNull?.where((r) => !r.disabled).toList() ?? <PresetRegex>[];
   return [...presetRegexes, ...globalRegexes];
 });
+
+final displayRegexesProvider = FutureProvider<List<PresetRegex>>((ref) async {
+  final all = await ref.watch(activeRegexesProvider.future);
+  return all.where((r) => r.ephemerality.contains(1) && !r.promptOnly).toList();
+});
