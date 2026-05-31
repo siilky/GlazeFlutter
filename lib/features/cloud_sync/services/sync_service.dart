@@ -104,6 +104,7 @@ class SyncService {
         apiRepo: _apiRepo,
         lorebookRepo: _lorebookRepo,
         themePresetRepo: _themePresetRepo,
+        imageStore: _imageStorage,
       );
 
   SyncEngine get _engine => SyncEngine(
@@ -234,24 +235,12 @@ class SyncService {
   Future<void> resolveAllConflicts(String choice) async {
     if (_conflicts.isEmpty) return;
     final conflicts = List<SyncConflict>.from(_conflicts);
-    final wasConflict = _status == SyncStatus.conflict;
     try {
       for (final conflict in conflicts) {
         await _engine.resolveConflict(conflict, choice);
         if (choice == 'cloud') {
           _resolvedAsCloud.add(conflict.key);
         }
-      }
-      if (wasConflict) {
-        await _engine.applyPendingPull(
-          onProgress: (_) {},
-          resolvedAsCloud: choice == 'cloud' ? List.from(_resolvedAsCloud) : null,
-        );
-        _resolvedAsCloud.clear();
-        _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('gz_sync_last', _lastSyncTime!);
-        _status = SyncStatus.idle;
       }
       _conflicts.clear();
     } catch (e) {
@@ -261,6 +250,9 @@ class SyncService {
     }
   }
 
+  /// Records the conflict resolution choice (updates manifest, tracks
+  /// cloud-resolved keys). Does NOT trigger a pull — call [applyPendingPull]
+  /// once all conflicts have been resolved.
   Future<void> resolveConflict(SyncConflict conflict, String choice) async {
     try {
       await _engine.resolveConflict(conflict, choice);
@@ -268,17 +260,29 @@ class SyncService {
         _resolvedAsCloud.add(conflict.key);
       }
       _conflicts.removeWhere((c) => c.key == conflict.key);
-      if (_conflicts.isEmpty && _status == SyncStatus.conflict) {
-        await _engine.applyPendingPull(
-          onProgress: (_) {},
-          resolvedAsCloud: choice == 'cloud' ? _resolvedAsCloud : null,
-        );
-        _resolvedAsCloud.clear();
-        _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('gz_sync_last', _lastSyncTime!);
-        _status = SyncStatus.idle;
-      }
+    } catch (e) {
+      _lastError = e.toString();
+      _status = SyncStatus.error;
+      rethrow;
+    }
+  }
+
+  /// Applies the pending pull after all conflicts have been resolved.
+  /// Should be called by the controller once [conflicts] is empty.
+  Future<void> applyPendingPullAfterResolve({
+    required void Function(SyncProgress) onProgress,
+  }) async {
+    try {
+      _status = SyncStatus.syncing;
+      await _engine.applyPendingPull(
+        onProgress: onProgress,
+        resolvedAsCloud: _resolvedAsCloud.isNotEmpty ? List.from(_resolvedAsCloud) : null,
+      );
+      _resolvedAsCloud.clear();
+      _lastSyncTime = DateTime.now().millisecondsSinceEpoch;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('gz_sync_last', _lastSyncTime!);
+      _status = SyncStatus.idle;
     } catch (e) {
       _lastError = e.toString();
       _status = SyncStatus.error;

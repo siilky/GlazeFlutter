@@ -48,6 +48,7 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
   }
 
   Future<void> _load() async {
+    if (mounted) setState(() => _loading = true);
     final chatState = ref.read(chatProvider(widget.charId)).value;
     final session = chatState?.session;
     if (session == null) {
@@ -57,7 +58,7 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
 
     final character = ref.read(characterByIdProvider(widget.charId));
 
-    final lorebooks = ref.watch(lorebooksProvider).value ?? [];
+    final lorebooks = ref.read(lorebooksProvider).value ?? [];
     final settings = ref.read(lorebookSettingsProvider);
     final activations = ref.read(lorebookActivationsProvider);
 
@@ -110,7 +111,8 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
     }
 
 
-    final result = computeLorebookCoverage(
+    // Run on the event loop to avoid blocking the current frame.
+    final result = await Future(() => computeLorebookCoverage(
       history: session.messages,
       char: character,
       textToScan: lastUserMsg,
@@ -119,8 +121,8 @@ class _CoveragePanelState extends ConsumerState<_CoveragePanel> {
       globalSettings: settings,
       activations: activations,
       vectorEntries: vectorEntries,
-      vectorEntryLorebookIds: _vectorEntryLorebookIds,
-    );
+      vectorEntryLorebookIds: Map<String, String>.from(_vectorEntryLorebookIds),
+    ));
 
     if (mounted)
       setState(() {
