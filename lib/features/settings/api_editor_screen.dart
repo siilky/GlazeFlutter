@@ -7,6 +7,7 @@ import '../../../core/services/api_connection_tester.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
 import '../../../shared/widgets/glaze_toast.dart';
+import '../../../shared/widgets/help_tip.dart';
 import 'api_list_provider.dart';
 import 'widgets/widgets.dart';
 
@@ -128,7 +129,7 @@ class _ApiEditorScreenState extends ConsumerState<ApiEditorScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionHeader('Connection'),
+        const _SectionHeader('Connection', helpTerm: 'api'),
         TextField(
           controller: _endpointCtrl,
           decoration: const InputDecoration(
@@ -143,7 +144,10 @@ class _ApiEditorScreenState extends ConsumerState<ApiEditorScreen>
         TextField(
           controller: _keyCtrl,
           decoration: InputDecoration(
-            labelText: 'API Key',
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [Text('API Key'), HelpTip(term: 'apikey')],
+            ),
             prefixIcon: const Icon(Icons.key),
             suffixIcon: IconButton(
               icon: const Icon(Icons.download),
@@ -154,13 +158,19 @@ class _ApiEditorScreenState extends ConsumerState<ApiEditorScreen>
           obscureText: true,
         ),
         SwitchListTile(
-          title: const Text('Streaming response'),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Text('Streaming response'),
+              HelpTip(term: 'streaming'),
+            ],
+          ),
           subtitle: const Text('Show text as it is being generated'),
           value: _stream,
           onChanged: (v) => setState(() => _stream = v),
         ),
         const SizedBox(height: 12),
-        const _SectionHeader('Generation Parameters'),
+        const _SectionHeader('Generation Parameters', helpTerm: 'guided'),
         ParamSlider(label: 'Temperature', value: _temperature, min: 0, max: 2, onChanged: (v) => setState(() => _temperature = v)),
         ParamSlider(label: 'Top P', value: _topP, min: 0, max: 1, onChanged: (v) => setState(() => _topP = v)),
         Row(children: [
@@ -169,7 +179,7 @@ class _ApiEditorScreenState extends ConsumerState<ApiEditorScreen>
           Expanded(child: TextField(controller: _contextSizeCtrl, decoration: const InputDecoration(labelText: 'Context Size', prefixIcon: Icon(Icons.data_array)), keyboardType: TextInputType.number)),
         ]),
         const SizedBox(height: 12),
-        const _SectionHeader('Reasoning'),
+        const _SectionHeader('Reasoning', helpTerm: 'preset-reasoning'),
         SwitchListTile(
           title: const Text('Show Native Reasoning'),
           subtitle: const Text("Shows reasoning_content. Doesn't affect model's reasoning."),
@@ -215,7 +225,7 @@ class _ApiEditorScreenState extends ConsumerState<ApiEditorScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionHeader('Embeddings'),
+        const _SectionHeader('Embeddings', helpTerm: 'embeddings'),
         SwitchListTile(
           title: const Text('Vector Search'),
           subtitle: const Text('Enable semantic search for lorebook entries'),
@@ -414,11 +424,24 @@ class _ApiEditorScreenState extends ConsumerState<ApiEditorScreen>
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader(this.title);
+  final String? helpTerm;
+  const _SectionHeader(this.title, {this.helpTerm});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.cs.onSurfaceVariant)),
-  );
+  Widget build(BuildContext context) {
+    final label = Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: context.cs.onSurfaceVariant,
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: helpTerm == null
+          ? label
+          : Row(mainAxisSize: MainAxisSize.min, children: [label, HelpTip(term: helpTerm!)]),
+    );
+  }
 }

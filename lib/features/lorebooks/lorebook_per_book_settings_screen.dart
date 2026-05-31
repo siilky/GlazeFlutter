@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/lorebook.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
+import '../../../shared/widgets/help_tip.dart';
 
 class LorebookPerBookSettingsScreen extends StatefulWidget {
   final LorebookSettings? settings;
@@ -102,7 +103,7 @@ class _LorebookPerBookSettingsScreenState
               padding: const EdgeInsets.all(16),
               children: [
                 // ── Scanning ──────────────────────────────────────────────
-                _SectionHeader('Scanning'),
+                _SectionHeader('Scanning', helpTerm: 'lorebook-recursion'),
                 _NumberField(
                   label: 'Scan Depth',
                   value: _settings.scanDepth ?? 0,
@@ -125,7 +126,7 @@ class _LorebookPerBookSettingsScreenState
                 const SizedBox(height: 24),
 
                 // ── Matching ──────────────────────────────────────────────
-                _SectionHeader('Matching'),
+                _SectionHeader('Matching', helpTerm: 'lorebook-keys'),
                 _SwitchField(
                   label: 'Recursive Scan',
                   value: _settings.recursiveScan,
@@ -230,21 +231,25 @@ class _LorebookPerBookSettingsScreenState
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader(this.title);
+  final String? helpTerm;
+  const _SectionHeader(this.title, {this.helpTerm});
 
   @override
   Widget build(BuildContext context) {
+    final label = Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: context.cs.primary,
+        letterSpacing: 0.5,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: context.cs.primary,
-          letterSpacing: 0.5,
-        ),
-      ),
+      child: helpTerm == null
+          ? label
+          : Row(mainAxisSize: MainAxisSize.min, children: [label, HelpTip(term: helpTerm!)]),
     );
   }
 }

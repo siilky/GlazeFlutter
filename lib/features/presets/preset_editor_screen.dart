@@ -12,6 +12,7 @@ import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/generic_editor.dart';
+import '../../shared/widgets/help_tip.dart';
 import 'preset_list_provider.dart';
 import 'preset_export.dart';
 import 'widgets/preset_block_row.dart';
@@ -410,12 +411,13 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _SectionLabel('Reasoning'),
+          const _SectionLabel('Reasoning', helpTerm: 'preset-reasoning'),
           const SizedBox(height: 8),
           _SettingsToggle(
             label: 'Parse Inline Reasoning',
             description: 'Extract reasoning tags from model output',
             value: _parseInlineReasoning,
+            helpTerm: 'preset-reasoning-inline',
             onChanged: (v) {
               setState(() => _parseInlineReasoning = v);
               _scheduleSave();
@@ -450,6 +452,7 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
             label: 'Merge Prompts',
             description: 'Combine adjacent blocks into one message',
             value: _mergePrompts,
+            helpTerm: 'preset-merge',
             onChanged: (v) {
               setState(() => _mergePrompts = v);
               _scheduleSave();
@@ -793,17 +796,23 @@ class _BlocksBadge extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
-  const _SectionLabel(this.text);
+  final String? helpTerm;
+  const _SectionLabel(this.text, {this.helpTerm});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
+    final label = Text(
       text,
       style: TextStyle(
         fontSize: 13,
         color: context.cs.onSurfaceVariant,
         fontWeight: FontWeight.w500,
       ),
+    );
+    if (helpTerm == null) return label;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [label, HelpTip(term: helpTerm!)],
     );
   }
 }
@@ -815,29 +824,38 @@ class _SettingsToggle extends StatelessWidget {
   final String description;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final String? helpTerm;
 
   const _SettingsToggle({
     required this.label,
     required this.description,
     required this.value,
     required this.onChanged,
+    this.helpTerm,
   });
 
   @override
   Widget build(BuildContext context) {
+    final labelWidget = Text(
+      label,
+      style: TextStyle(
+        fontSize: 14,
+        color: context.cs.onSurface,
+      ),
+    );
     return Row(
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: context.cs.onSurface,
-                ),
-              ),
+              if (helpTerm != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [labelWidget, HelpTip(term: helpTerm!)],
+                )
+              else
+                labelWidget,
               const SizedBox(height: 2),
               Text(
                 description,

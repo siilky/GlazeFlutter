@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'dart:isolate';
+import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/app_db.dart';
 import 'backup/backup_exporter.dart';
 import 'backup/flutter_backup_importer.dart';
 import 'backup/js_backup_importer.dart';
+import 'backup/st_backup_importer.dart';
+import 'backup/tavo_backup_importer.dart';
 import 'image_storage_service.dart';
 
 class BackupService {
@@ -18,10 +22,28 @@ class BackupService {
   Future<String> exportBackup() => BackupExporter(_db, _imageStorage).export();
 
   Future<void> importBackup(
-    String jsonString, {
+    Uint8List bytes, {
     void Function(String stage)? onProgress,
   }) async {
+    if (_isZip(bytes)) {
+      onProgress?.call('Reading archive...');
+      final archive = ZipDecoder().decodeBytes(bytes);
+      if (_isTavoArchive(archive)) {
+        await TavoBackupImporter(_db, _imageStorage)
+            .import(bytes, onProgress: onProgress);
+        return;
+      }
+      if (_isSillyTavernArchive(archive)) {
+        await StBackupImporter(_db, _imageStorage)
+            .import(bytes, onProgress: onProgress);
+        return;
+      }
+      throw const FormatException(
+          'ZIP is neither a Tavo (.tbk) nor SillyTavern backup');
+    }
+
     onProgress?.call('Parsing backup...');
+    final jsonString = utf8.decode(bytes, allowMalformed: true);
     final data = await Isolate.run(
       () => jsonDecode(jsonString) as Map<String, dynamic>,
     );
@@ -29,7 +51,7 @@ class BackupService {
         data.containsKey('tables') ||
         data.containsKey('characters');
     if (!isGlazeBackup) {
-      throw FormatException('Not a valid Glaze backup file');
+      throw const FormatException('Not a valid Glaze backup file');
     }
 
     if (data['_source'] == 'flutter') {
@@ -72,14 +94,44 @@ class BackupService {
           final parsed = personaConnsRaw is String
               ? jsonDecode(personaConnsRaw) as Map<String, dynamic>
               : personaConnsRaw as Map<String, dynamic>;
-          final conns = {
-            'character': parsed['character'] ?? {},
-            'chat': parsed['chat'] ?? {},
+          final conns = <String, dynamic>{
+            'character': parsed['character'] ?? <String, dynamic>{},
+            'chat': parsed['chat'] ?? <String, dynamic>{},
           };
           await prefs.setString('personaConnections', jsonEncode(conns));
         } catch (_) {}
       }
     }
+  }
+
+  bool _isZip(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    return bytes[0] == 0x50 &&
+        bytes[1] == 0x4B &&
+        bytes[2] == 0x03 &&
+        bytes[3] == 0x04;
+  }
+
+  bool _isTavoArchive(Archive archive) {
+    for (final f in archive.files) {
+      if (f.isFile && f.name.toLowerCase().endsWith('data.mdb')) return true;
+    }
+    return false;
+  }
+
+  bool _isSillyTavernArchive(Archive archive) {
+    for (final f in archive.files) {
+      if (!f.isFile) continue;
+      final n = f.name;
+      if (n.startsWith('characters/') ||
+          n.startsWith('worlds/') ||
+          n.startsWith('OpenAI Settings/') ||
+          n.startsWith('chats/') ||
+          n.toLowerCase().endsWith('settings.json')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<void> _deleteOrphanedSessions() async {

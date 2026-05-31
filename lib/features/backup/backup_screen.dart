@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app.dart';
+import '../../core/services/onboarding_service.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_toast.dart';
 import '../../shared/widgets/sheet_view.dart';
@@ -11,7 +12,8 @@ import '../../shared/widgets/glaze_bottom_sheet.dart';
 import 'backup_provider.dart';
 
 class BackupScreen extends ConsumerStatefulWidget {
-  const BackupScreen({super.key});
+  final bool fromOnboarding;
+  const BackupScreen({super.key, this.fromOnboarding = false});
 
   @override
   ConsumerState<BackupScreen> createState() => _BackupScreenState();
@@ -126,7 +128,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     final result = await FilePicker.pickFiles(
       type: Platform.isIOS ? FileType.any : FileType.custom,
       allowMultiple: false,
-      allowedExtensions: Platform.isIOS ? null : ['glz', 'json'],
+      allowedExtensions: Platform.isIOS ? null : ['glz', 'json', 'zip', 'tbk'],
     );
     if (result == null || result.files.isEmpty) return;
 
@@ -167,16 +169,16 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     });
 
     try {
-      if (ext == 'glz' || ext == 'json') {
+      if (ext == 'glz' || ext == 'json' || ext == 'zip' || ext == 'tbk') {
         setState(() {
           _importStage = 1;
           _importProgressText = 'Parsing backup...';
         });
         final file = File(path);
-        final jsonString = await file.readAsString();
+        final bytes = await file.readAsBytes();
         final service = await ref.read(backupServiceProvider.future);
         await service.importBackup(
-          jsonString,
+          bytes,
           onProgress: (stage) {
             if (!mounted) return;
             setState(() {
@@ -203,7 +205,11 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     }
   }
 
-  void _reloadApp() {
+  Future<void> _reloadApp() async {
+    if (widget.fromOnboarding) {
+      await markOnboardingComplete();
+    }
+    if (!mounted) return;
     final rootNav = Navigator.of(context, rootNavigator: true);
     rootNav.pop();
     WidgetsBinding.instance.addPostFrameCallback((_) {

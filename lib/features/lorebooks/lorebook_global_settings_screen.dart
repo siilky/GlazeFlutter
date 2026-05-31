@@ -5,6 +5,7 @@ import '../../../core/models/lorebook.dart';
 import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_scaffold.dart';
+import '../../../shared/widgets/help_tip.dart';
 
 class LorebookGlobalSettingsScreen extends ConsumerStatefulWidget {
   const LorebookGlobalSettingsScreen({super.key});
@@ -36,7 +37,7 @@ class _LorebookGlobalSettingsScreenState extends ConsumerState<LorebookGlobalSet
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _SectionHeader('Search'),
+                _SectionHeader('Search', helpTerm: 'lorebook-keys'),
                 _DropdownField<String>(
                   label: 'Key Search Mode',
                   value: settings.keySearchMode,
@@ -88,7 +89,7 @@ class _LorebookGlobalSettingsScreenState extends ConsumerState<LorebookGlobalSet
                 ),
                 const SizedBox(height: 24),
 
-                _SectionHeader('Token Budget'),
+                _SectionHeader('Token Budget', helpTerm: 'lorebook-budget'),
                 _DropdownField<String>(
                   label: 'Reserve Mode',
                   value: settings.reserveMode,
@@ -174,13 +175,17 @@ class _LorebookGlobalSettingsScreenState extends ConsumerState<LorebookGlobalSet
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader(this.title);
+  final String? helpTerm;
+  const _SectionHeader(this.title, {this.helpTerm});
 
   @override
   Widget build(BuildContext context) {
+    final label = Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: context.cs.primary, letterSpacing: 0.5));
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: context.cs.primary, letterSpacing: 0.5)),
+      child: helpTerm == null
+          ? label
+          : Row(mainAxisSize: MainAxisSize.min, children: [label, HelpTip(term: helpTerm!)]),
     );
   }
 }

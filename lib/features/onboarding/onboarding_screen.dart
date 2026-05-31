@@ -180,6 +180,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 duration: const Duration(milliseconds: 320),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
+                layoutBuilder: (currentChild, previousChildren) {
+                  return Stack(
+                    alignment: Alignment.topCenter,
+                    children: <Widget>[
+                      ...previousChildren,
+                      ?currentChild,
+                    ],
+                  );
+                },
                 transitionBuilder: (child, anim) {
                   final dir = (child.key == ValueKey(_currentSlide)) ? _direction : -_direction;
                   return FadeTransition(
@@ -284,7 +293,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           actionIcon: Icons.download_rounded,
           actionTitle: 'Restore from Backup',
           actionSub: 'Backups',
-          onAction: () => _openSheet(const BackupScreen()),
+          onAction: () => _openSheet(const BackupScreen(fromOnboarding: true)),
         );
       case OnboardingSlideType.api:
         return _buildActionSlide(

@@ -12,9 +12,11 @@ import '../../core/state/db_provider.dart';
 import '../../core/utils/id_generator.dart';
 import '../../core/utils/time_helpers.dart';
 import '../../core/state/lorebook_provider.dart';
+import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/sheet_view.dart';
 import '../../shared/widgets/glaze_toast.dart';
 import '../../shared/widgets/generic_editor.dart';
+import '../../shared/widgets/help_tip.dart';
 
 class CharacterEditorScreen extends ConsumerStatefulWidget {
   final String charId;
@@ -433,7 +435,20 @@ class _CharacterEditorScreenState extends ConsumerState<CharacterEditorScreen> {
     ];
 
     return SheetView(
-      title: widget.isNew ? 'New Character' : 'Edit Character',
+      titleWidget: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.isNew ? 'New Character' : 'Edit Character',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: context.cs.onSurface,
+            ),
+          ),
+          const HelpTip(term: 'character'),
+        ],
+      ),
       showBack: true,
       onBack: _goBack,
       actions: widget.isNew

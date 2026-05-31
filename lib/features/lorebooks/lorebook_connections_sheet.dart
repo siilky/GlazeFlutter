@@ -10,6 +10,7 @@ import '../../../core/state/lorebook_provider.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/widgets/glaze_toast.dart';
+import '../../../shared/widgets/help_tip.dart';
 
 class LorebookConnectionsSheet extends ConsumerStatefulWidget {
   final String lorebookId;
@@ -46,12 +47,18 @@ class _LorebookConnectionsSheetState
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Connections: ${lb.name}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Connections: ${lb.name}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const HelpTip(term: 'connections'),
+                ],
               ),
               IconButton(
                 icon: const Icon(Icons.close),

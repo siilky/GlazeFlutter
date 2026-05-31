@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_colors.dart';
+import '../../../shared/widgets/help_tip.dart';
 import '../../../shared/widgets/sheet_view.dart';
 import '../image_gen_models.dart';
 import '../image_gen_provider.dart';
@@ -117,8 +118,7 @@ class _ImageGenSheetState extends ConsumerState<ImageGenSheet> {
             'Image Generation',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(width: 8),
-          const Icon(Icons.help_outline, size: 16, color: Colors.grey),
+          const HelpTip(term: 'image-gen'),
           const Spacer(),
           Switch(
             value: s.enabled,

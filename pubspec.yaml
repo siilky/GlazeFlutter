@@ -40,6 +40,10 @@ dependencies:
   flex_color_scheme: ^8.4.0
   soft_edge_blur: ^0.1.3
   flutter_inappwebview: ^6.1.5
+  easy_localization: ^3.0.7
+
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +60,7 @@ flutter:
     - assets/logos/
     - assets/hydall.jpg
     - assets/chat_webview/
+    - assets/translations/
     - .env
   fonts:
     - family: Inter

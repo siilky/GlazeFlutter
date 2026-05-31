@@ -15,6 +15,7 @@ import '../../../core/utils/id_generator.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../../shared/widgets/glaze_toast.dart';
+import '../../../shared/widgets/help_tip.dart';
 import '../../../shared/widgets/sheet_view.dart';
 
 /// Full regex manager sheet (list + inline editor) shown from the preset editor.
@@ -305,7 +306,20 @@ class _RegexSheetState extends ConsumerState<RegexSheet> {
     final isEdit = _view == 'edit';
 
     return SheetView(
-      title: isEdit ? 'Regex Editor' : 'Regex Scripts',
+      titleWidget: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isEdit ? 'Regex Editor' : 'Regex Scripts',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: context.cs.onSurface,
+            ),
+          ),
+          const HelpTip(term: 'regex'),
+        ],
+      ),
       showBack: isEdit,
       onBack: isEdit ? _goBack : null,
       body: isEdit && _activeScript != null
@@ -603,7 +617,7 @@ class _RegexEditViewState extends State<_RegexEditView> {
             _SettingsTextField(label: 'Script Name', controller: _nameCtrl, onChanged: (v) => _update(s.copyWith(name: v))),
             _SettingsTextField(label: 'Find Regex', controller: _regexCtrl, onChanged: (v) => _update(s.copyWith(regex: v))),
             _SettingsTextField(label: 'Replace With', controller: _replacementCtrl, onChanged: (v) => _update(s.copyWith(replacement: v)), maxLines: 3),
-            _SettingsTextField(label: 'Trim Out', controller: _trimOutCtrl, onChanged: (v) => _update(s.copyWith(trimOut: v)), maxLines: 2),
+            _SettingsTextField(label: 'Trim Out', controller: _trimOutCtrl, onChanged: (v) => _update(s.copyWith(trimOut: v)), maxLines: 2, helpTerm: 'regex-trimout'),
           ],
         ),
         const SizedBox(height: 12),
@@ -638,6 +652,7 @@ class _RegexEditViewState extends State<_RegexEditView> {
         _MenuGroup(
           title: 'Affects',
           compact: true,
+          helpTerm: 'regex-placement',
           children: placements.map((opt) {
             return _CheckboxOption(
               label: opt.$2,
@@ -685,12 +700,14 @@ class _RegexEditViewState extends State<_RegexEditView> {
         _MenuGroup(
           title: 'Macros in Find Regex',
           compact: true,
+          helpTerm: 'regex-macros',
           children: [_MacroSelector(label: macroLabel, onTap: _openMacroSelector)],
         ),
         const SizedBox(height: 12),
         _MenuGroup(
           title: 'Ephemerality',
           compact: true,
+          helpTerm: 'regex-ephemerality',
           children: ephemeralities.map((opt) {
             return _CheckboxOption(
               label: opt.$2,
@@ -714,11 +731,16 @@ class _MenuGroup extends StatelessWidget {
   final String title;
   final List<Widget> children;
   final bool compact;
+  final String? helpTerm;
 
-  const _MenuGroup({required this.title, required this.children, this.compact = false});
+  const _MenuGroup({required this.title, required this.children, this.compact = false, this.helpTerm});
 
   @override
   Widget build(BuildContext context) {
+    final titleText = Text(
+      title.toUpperCase(),
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: context.cs.onSurfaceVariant, letterSpacing: 0.6),
+    );
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.04),
@@ -730,10 +752,9 @@ class _MenuGroup extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(16, compact ? 8 : 12, 16, compact ? 4 : 8),
-            child: Text(
-              title.toUpperCase(),
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: context.cs.onSurfaceVariant, letterSpacing: 0.6),
-            ),
+            child: helpTerm == null
+                ? titleText
+                : Row(mainAxisSize: MainAxisSize.min, children: [titleText, HelpTip(term: helpTerm!)]),
           ),
           Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
           for (int i = 0; i < children.length; i++) ...[
@@ -751,17 +772,21 @@ class _SettingsTextField extends StatelessWidget {
   final TextEditingController controller;
   final ValueChanged<String>? onChanged;
   final int maxLines;
+  final String? helpTerm;
 
-  const _SettingsTextField({required this.label, required this.controller, this.onChanged, this.maxLines = 1});
+  const _SettingsTextField({required this.label, required this.controller, this.onChanged, this.maxLines = 1, this.helpTerm});
 
   @override
   Widget build(BuildContext context) {
+    final labelText = Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.cs.onSurfaceVariant));
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.cs.onSurfaceVariant)),
+          helpTerm == null
+              ? labelText
+              : Row(mainAxisSize: MainAxisSize.min, children: [labelText, HelpTip(term: helpTerm!)]),
           const SizedBox(height: 6),
           TextField(
             controller: controller,

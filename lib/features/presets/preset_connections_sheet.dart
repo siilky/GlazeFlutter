@@ -8,6 +8,7 @@ import '../../core/state/character_provider.dart';
 import '../../core/state/chat_session_ops_provider.dart';
 import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
+import '../../shared/widgets/help_tip.dart';
 import '../../shared/widgets/sheet_view.dart';
 import 'preset_list_provider.dart';
 
@@ -44,7 +45,22 @@ class _PresetConnectionsSheetState
             ?? Preset(id: widget.presetId, name: 'Preset');
 
         return SheetView(
-          title: 'Connections: ${preset.name}',
+          titleWidget: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  'Connections: ${preset.name}',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const HelpTip(term: 'connections'),
+            ],
+          ),
           showBack: true,
           fitContent: true,
           body: ListView(

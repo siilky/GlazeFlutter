@@ -12,6 +12,7 @@ import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/glaze_toast.dart';
+import '../../shared/widgets/help_tip.dart';
 import 'lorebook_connections_sheet.dart';
 import 'lorebook_per_book_settings_screen.dart';
 import 'widgets/entry_editor_dialog.dart';
@@ -578,7 +579,20 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: GlazeAppBar(
-                    title: 'Edit Lorebook',
+                    titleWidget: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Edit Lorebook',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: context.cs.onSurface,
+                          ),
+                        ),
+                        const HelpTip(term: 'lorebook'),
+                      ],
+                    ),
                     leading: BackButton(
                       onPressed: () => Navigator.pop(context),
                     ),

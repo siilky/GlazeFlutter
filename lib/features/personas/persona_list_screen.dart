@@ -16,6 +16,7 @@ import '../../shared/theme/app_colors.dart';
 import '../../shared/widgets/generic_editor.dart';
 import '../../shared/widgets/glaze_bottom_sheet.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
+import '../../shared/widgets/help_tip.dart';
 import '../../shared/widgets/sheet_view.dart';
 import 'persona_connections_sheet.dart';
 import 'persona_list_provider.dart';
@@ -30,7 +31,20 @@ class PersonaListScreen extends ConsumerWidget {
 
     return SheetView(
       startExpanded: startExpanded,
-      title: 'Personas',
+      titleWidget: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Personas',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: context.cs.onSurface,
+            ),
+          ),
+          const HelpTip(term: 'persona'),
+        ],
+      ),
       showBack: true,
       onBack: startExpanded
           ? () => context.go('/tools')

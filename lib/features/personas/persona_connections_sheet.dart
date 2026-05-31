@@ -7,6 +7,7 @@ import '../../../core/state/character_provider.dart';
 import '../../../core/state/chat_session_ops_provider.dart';
 import '../../../features/personas/persona_list_provider.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../../shared/widgets/help_tip.dart';
 import '../../../shared/widgets/sheet_view.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 
@@ -44,7 +45,22 @@ class _PersonaConnectionsSheetState
         final persona = personas.where((p) => p.id == widget.personaId).firstOrNull ?? Persona(id: widget.personaId, name: 'Persona');
 
         return SheetView(
-          title: 'Connections: ${persona.name}',
+          titleWidget: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  'Connections: ${persona.name}',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const HelpTip(term: 'connections'),
+            ],
+          ),
           showBack: true,
           fitContent: true,
           body: ListView(
