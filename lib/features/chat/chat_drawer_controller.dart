@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 const String kKeyboardHeightPref = 'chat_last_keyboard_height';
 const double _kDefaultKeyboardHeight = 320;
 
+/// Identifies which content the drawer is currently showing.
+enum DrawerPanel { magic, quickReplies }
+
 class ChatDrawerController extends ChangeNotifier {
   final FocusNode _inputFocus = FocusNode();
   final AnimationController _drawerAnimController;
@@ -14,6 +17,7 @@ class ChatDrawerController extends ChangeNotifier {
 
   bool _drawerOpen = false;
   bool _switchingToDrawer = false;
+  DrawerPanel _activePanel = DrawerPanel.magic;
   double _lastKeyboardHeight = _kDefaultKeyboardHeight;
   double _activeDrawerHeight = _kDefaultKeyboardHeight;
 
@@ -45,6 +49,7 @@ class ChatDrawerController extends ChangeNotifier {
   FocusNode get inputFocus => _inputFocus;
   bool get drawerOpen => _drawerOpen;
   bool get switchingToDrawer => _switchingToDrawer;
+  DrawerPanel get activePanel => _activePanel;
   double get lastKeyboardHeight => _lastKeyboardHeight;
   double get activeDrawerHeight => _activeDrawerHeight;
   bool get isDrawerAnimating => _drawerAnimController.isAnimating;
@@ -63,29 +68,38 @@ class ChatDrawerController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  void toggleDrawer(BuildContext context) {
+  void toggleDrawer(
+    BuildContext context, {
+    DrawerPanel panel = DrawerPanel.magic,
+  }) {
     if (_drawerOpen) {
-      _drawerOpen = false;
-      _drawerAnimController.reverse();
-      notifyListeners();
-    } else {
-      HapticFeedback.selectionClick();
-      _activeDrawerHeight = _lastKeyboardHeight;
-
-      final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
-      if (keyboardHeight > 0 || _inputFocus.hasFocus) {
-        _switchingToDrawer = true;
-        if (_batterySaverMode) {
-          _drawerOpen = true;
-          _drawerAnimController.forward();
-        }
-        _inputFocus.unfocus();
-        notifyListeners();
+      if (_activePanel == panel) {
+        _drawerOpen = false;
+        _drawerAnimController.reverse();
       } else {
+        _activePanel = panel;
+        HapticFeedback.selectionClick();
+      }
+      notifyListeners();
+      return;
+    }
+    _activePanel = panel;
+    HapticFeedback.selectionClick();
+    _activeDrawerHeight = _lastKeyboardHeight;
+
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    if (keyboardHeight > 0 || _inputFocus.hasFocus) {
+      _switchingToDrawer = true;
+      if (_batterySaverMode) {
         _drawerOpen = true;
         _drawerAnimController.forward();
-        notifyListeners();
       }
+      _inputFocus.unfocus();
+      notifyListeners();
+    } else {
+      _drawerOpen = true;
+      _drawerAnimController.forward();
+      notifyListeners();
     }
   }
 

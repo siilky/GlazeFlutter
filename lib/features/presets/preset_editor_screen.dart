@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/llm/tokenizer.dart';
 import '../../core/models/preset.dart';
 import '../../core/services/preset_defaults.dart';
 import '../../core/utils/id_generator.dart';
@@ -295,7 +296,11 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
                   onTap: _showRegexSheet,
                 ),
                 const Spacer(),
-                _BlocksBadge(count: _blocks.length),
+                _BlocksBadge(
+                  count: _blocks
+                      .where((b) => b.enabled && !b.isStashed && b.content.isNotEmpty)
+                      .fold(0, (sum, b) => sum + estimateTokens(b.content)),
+                ),
               ],
             ),
           ),
@@ -544,10 +549,16 @@ class PresetEditorBodyState extends ConsumerState<PresetEditorBody> {
   }
 
   void _showRegexSheet() {
-    GlazeBottomSheet.show(
-      context,
-      child: RegexSheet(
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      isScrollControlled: true,
+      builder: (_) => RegexSheet(
         regexes: _regexes,
+        presetName: _nameCtrl.text,
         onChanged: (list) {
           setState(() => _regexes = list);
           _scheduleSave();
@@ -733,7 +744,7 @@ class _BlocksBadge extends StatelessWidget {
           Icon(Icons.description, size: 14, color: context.cs.onSurfaceVariant),
           const SizedBox(width: 4),
           Text(
-            '$count blocks',
+            '${count}t',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,

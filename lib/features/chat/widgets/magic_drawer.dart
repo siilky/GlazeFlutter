@@ -6,8 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:soft_edge_blur/soft_edge_blur.dart';
-
 import 'package:go_router/go_router.dart';
 
 import '../../../core/services/chat_import_export.dart';
@@ -32,6 +30,7 @@ import '../../regex/regex_list_screen.dart';
 import '../../settings/api_settings_screen.dart';
 import 'authors_note_sheet.dart';
 import 'chat_stats_sheet.dart';
+import 'drawer_panel_scaffold.dart';
 import 'lorebook_coverage_sheet.dart';
 import 'lorebook_quick_sheet.dart';
 import 'magic_drawer_models.dart';
@@ -742,77 +741,14 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
       ),
     );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: context.colors.charBubble,
-        border: Border(top: BorderSide(color: context.cs.outlineVariant)),
+    return DrawerPanelScaffold(
+      disableEffects: batterySaver || widget.disableEffects,
+      loading: _loading,
+      header: MagicDrawerHeader(
+        editing: _editing,
+        onToggleEditing: _toggleEditing,
       ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: batterySaver
-                || widget.disableEffects
-                ? scrollable
-                : SoftEdgeBlur(
-                    edges: [
-                      EdgeBlur(
-                        type: EdgeType.topEdge,
-                        size: 68,
-                        sigma: 24,
-                        tintColor: context.cs.surface.withValues(alpha: 0.4),
-                        controlPoints: [
-                          ControlPoint(
-                            position: 0.5,
-                            type: ControlPointType.visible,
-                          ),
-                          ControlPoint(
-                            position: 1.0,
-                            type: ControlPointType.transparent,
-                          ),
-                        ],
-                      ),
-                    ],
-                    child: scrollable,
-                  ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Center(
-                  child: Container(
-                    width: 32,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[600],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: MagicDrawerHeader(
-              editing: _editing,
-              onToggleEditing: _toggleEditing,
-            ),
-          ),
-          if (_loading)
-            const Positioned.fill(
-              child: ColoredBox(
-                color: Color(0x22000000),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ),
-        ],
-      ),
+      content: scrollable,
     );
   }
 }

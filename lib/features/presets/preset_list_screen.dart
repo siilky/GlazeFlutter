@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/import/silly_tavern_preset_parser.dart';
+import '../../core/llm/tokenizer.dart';
 import '../../core/models/preset.dart';
 import '../../core/state/active_selection_provider.dart';
 import '../../shared/theme/app_colors.dart';
@@ -247,6 +248,10 @@ class _PresetListScreenState extends ConsumerState<PresetListScreen> {
   }
 }
 
+int _presetTokenCount(Preset preset) => preset.blocks
+    .where((b) => b.enabled && !b.isStashed && b.content.isNotEmpty)
+    .fold(0, (sum, b) => sum + estimateTokens(b.content));
+
 // ─── ps-card ─────────────────────────────────────────────────────────────────
 
 class _PsCard extends ConsumerWidget {
@@ -330,7 +335,7 @@ class _PsCard extends ConsumerWidget {
                         children: [
                           _SmallBadge(
                             icon: Icons.description,
-                            label: '${preset.blocks.length}',
+                            label: '${_presetTokenCount(preset)}',
                           ),
                           if (preset.author != null &&
                               preset.author!.isNotEmpty) ...[

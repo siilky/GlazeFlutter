@@ -382,7 +382,24 @@ class _ChatSearchDelegate extends SearchDelegate<String> {
         final s = filtered[i];
         return ListTile(
           leading: s.avatarPath != null && s.avatarPath!.isNotEmpty
-              ? CircleAvatar(backgroundImage: FileImage(File(_thumbOrAvatar(s.avatarPath!))))
+              ? ClipOval(
+                  child: SizedBox.square(
+                    dimension: 40,
+                    child: Image.file(
+                      File(_thumbOrAvatar(s.avatarPath!)),
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, e, st) => CircleAvatar(
+                        backgroundColor: context.cs.primary,
+                        child: Text(
+                          s.characterName.isNotEmpty
+                              ? s.characterName[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(color: Colors.black),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
               : CircleAvatar(
                   backgroundColor: context.cs.primary,
                   child: Text(
@@ -673,23 +690,30 @@ class _SessionTile extends ConsumerWidget {
   Widget _buildAvatar(BuildContext context, WidgetRef ref) {
     ref.watch(avatarVersionProvider);
     if (info.avatarPath != null && info.avatarPath!.isNotEmpty) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundImage: FileImage(File(_thumbOrAvatar(info.avatarPath!))),
-        onBackgroundImageError: (_, __) {},
+      return ClipOval(
+        child: SizedBox.square(
+          dimension: 48,
+          child: Image.file(
+            File(_thumbOrAvatar(info.avatarPath!)),
+            fit: BoxFit.cover,
+            errorBuilder: (ctx, e, st) => _defaultAvatar(context),
+          ),
+        ),
       );
     }
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: context.cs.primary,
-      child: Text(
-        info.characterName.isNotEmpty
-            ? info.characterName[0].toUpperCase()
-            : '?',
-        style: const TextStyle(color: Colors.black, fontSize: 18),
-      ),
-    );
+    return _defaultAvatar(context);
   }
+
+  Widget _defaultAvatar(BuildContext context) => CircleAvatar(
+        radius: 24,
+        backgroundColor: context.cs.primary,
+        child: Text(
+          info.characterName.isNotEmpty
+              ? info.characterName[0].toUpperCase()
+              : '?',
+          style: const TextStyle(color: Colors.black, fontSize: 18),
+        ),
+      );
 
   Widget _buildTime(BuildContext context) {
     final text = _formatTime();
@@ -797,23 +821,31 @@ class _GroupHeader extends ConsumerWidget {
   Widget _buildAvatar(BuildContext context, WidgetRef ref, ChatSessionInfo info) {
     ref.watch(avatarVersionProvider);
     if (info.avatarPath != null && info.avatarPath!.isNotEmpty) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundImage: FileImage(File(_thumbOrAvatar(info.avatarPath!))),
-        onBackgroundImageError: (_, __) {},
+      return ClipOval(
+        child: SizedBox.square(
+          dimension: 48,
+          child: Image.file(
+            File(_thumbOrAvatar(info.avatarPath!)),
+            fit: BoxFit.cover,
+            errorBuilder: (ctx, e, st) => _defaultGroupAvatar(context, info),
+          ),
+        ),
       );
     }
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: context.cs.primary,
-      child: Text(
-        info.characterName.isNotEmpty
-            ? info.characterName[0].toUpperCase()
-            : '?',
-        style: const TextStyle(color: Colors.black, fontSize: 18),
-      ),
-    );
+    return _defaultGroupAvatar(context, info);
   }
+
+  Widget _defaultGroupAvatar(BuildContext context, ChatSessionInfo info) =>
+      CircleAvatar(
+        radius: 24,
+        backgroundColor: context.cs.primary,
+        child: Text(
+          info.characterName.isNotEmpty
+              ? info.characterName[0].toUpperCase()
+              : '?',
+          style: const TextStyle(color: Colors.black, fontSize: 18),
+        ),
+      );
 
   Widget _buildTime(BuildContext context, ChatSessionInfo info) {
     if (info.lastMessageTime == 0) return const SizedBox.shrink();

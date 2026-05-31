@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,9 +16,9 @@ class ChatInputBar extends StatefulWidget {
   final bool isGeneratingImage;
   final VoidCallback? onStop;
   final VoidCallback? onMagicDrawer;
-  final VoidCallback? onAttach;
+  final void Function(String text, String? guidanceText, String imageDataUrl)? onSendWithImage;
   final VoidCallback? onFullScreen;
-  final VoidCallback? onContinue;
+  final VoidCallback? onQuickReplies;
   final VoidCallback? onImpersonate;
   final bool virtualKeyboardSend;
   final bool enterToSend;
@@ -24,6 +27,9 @@ class ChatInputBar extends StatefulWidget {
   /// When true, the magic-drawer button shows the active state. The host
   /// also uses this to interpret onMagicDrawer as a toggle.
   final bool isDrawerOpen;
+
+  /// When true, the quick-replies (Continue) button shows the active state.
+  final bool isQuickRepliesOpen;
 
   /// Optional focus node from the host so it can mediate keyboard ↔ drawer
   /// transitions (Telegram-style: keyboard and drawer replace each other).
@@ -55,14 +61,15 @@ class ChatInputBar extends StatefulWidget {
     this.isGeneratingImage = false,
     this.onStop,
     this.onMagicDrawer,
-    this.onAttach,
+    this.onSendWithImage,
     this.onFullScreen,
-    this.onContinue,
+    this.onQuickReplies,
     this.onImpersonate,
     this.virtualKeyboardSend = false,
     this.enterToSend = true,
     this.batterySaver = false,
     this.isDrawerOpen = false,
+    this.isQuickRepliesOpen = false,
     this.focusNode,
     this.initialDraft = '',
     this.onDraftChanged,
@@ -91,6 +98,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
   bool _guidanceMode = false;
   Timer? _debounce;
   final _internalFocusNode = FocusNode();
+  Uint8List? _attachedImageBytes;
+  String? _attachedImageDataUrl;
 
   @override
   void initState() {
@@ -106,6 +115,36 @@ class _ChatInputBarState extends State<ChatInputBar> {
       if (mounted) {
         widget.onDraftChanged?.call(_controller.text);
       }
+    });
+    setState(() {});
+  }
+
+  Future<void> _pickImage() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    var bytes = file.bytes;
+    if (bytes == null && file.path != null) {
+      bytes = await File(file.path!).readAsBytes();
+    }
+    if (bytes == null || !mounted) return;
+    final ext = (file.extension ?? 'png').toLowerCase();
+    final mime = (ext == 'jpg' || ext == 'jpeg') ? 'image/jpeg' : 'image/png';
+    final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
+    setState(() {
+      _attachedImageBytes = bytes;
+      _attachedImageDataUrl = dataUrl;
+    });
+  }
+
+  void _clearImage() {
+    setState(() {
+      _attachedImageBytes = null;
+      _attachedImageDataUrl = null;
     });
   }
 
@@ -154,14 +193,26 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _handleSend() {
     final text = _controller.text;
-    if (text.trim().isEmpty) return;
-    if (_guidanceMode && _guidanceController.text.trim().isNotEmpty) {
+    final hasImage = _attachedImageDataUrl != null;
+    if (text.trim().isEmpty && !hasImage) return;
+    final imageDataUrl = _attachedImageDataUrl;
+    if (imageDataUrl != null) {
+      final guidance = _guidanceMode && _guidanceController.text.trim().isNotEmpty
+          ? _guidanceController.text.trim()
+          : null;
+      widget.onSendWithImage?.call(text, guidance, imageDataUrl);
+    } else if (_guidanceMode && _guidanceController.text.trim().isNotEmpty) {
       widget.onSendWithGuidance?.call(text, _guidanceController.text.trim());
     } else {
+      if (text.trim().isEmpty) return;
       widget.onSend(text);
     }
     _controller.clear();
     _guidanceController.clear();
+    setState(() {
+      _attachedImageBytes = null;
+      _attachedImageDataUrl = null;
+    });
   }
 
   @override
@@ -286,12 +337,24 @@ class _ChatInputBarState extends State<ChatInputBar> {
       );
     }
 
+    final hasContent = _controller.text.trim().isNotEmpty ||
+        (_guidanceMode && _guidanceController.text.trim().isNotEmpty) ||
+        _attachedImageDataUrl != null;
+    final isGenerating = widget.isGenerating || widget.isGeneratingImage;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_attachedImageBytes != null) ...[
+            _AttachedImagePreview(
+              imageBytes: _attachedImageBytes!,
+              onClear: _clearImage,
+            ),
+            const SizedBox(height: 8),
+          ],
           if (_guidanceMode) ...[
             Container(
               constraints: const BoxConstraints(minHeight: 44),
@@ -402,7 +465,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   const SizedBox(width: 8),
                   _CircleBtn(
                     icon: Icons.attach_file,
-                    onTap: widget.onAttach,
+                    onTap: _pickImage,
                     batterySaver: widget.batterySaver,
                   ),
                   const SizedBox(width: 8),
@@ -424,44 +487,82 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   const SizedBox(width: 8),
                   _CircleBtn(
                     icon: Icons.keyboard_double_arrow_right,
-                    onTap: widget.onContinue,
+                    onTap: widget.onQuickReplies,
+                    color: widget.isQuickRepliesOpen ? Colors.amber : null,
                     batterySaver: widget.batterySaver,
                   ),
                 ],
               ),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _controller,
-                builder: (context, value, child) {
-                  final hasText = value.text.trim().isNotEmpty || (_guidanceMode && _guidanceController.text.trim().isNotEmpty);
-                  final isGenerating = widget.isGenerating || widget.isGeneratingImage;
-
-                  IconData icon;
+              _SendBtn(
+                icon: isGenerating
+                    ? Icons.stop_rounded
+                    : hasContent
+                        ? (_guidanceMode && _controller.text.trim().isEmpty
+                            ? Icons.check_rounded
+                            : Icons.send_rounded)
+                        : Icons.account_circle_rounded,
+                batterySaver: widget.batterySaver,
+                onTap: () {
                   if (isGenerating) {
-                    icon = Icons.stop_rounded;
-                  } else if (hasText) {
-                    icon = (_guidanceMode && value.text.trim().isEmpty) ? Icons.check_rounded : Icons.send_rounded;
+                    widget.onStop?.call();
+                  } else if (hasContent) {
+                    _handleSend();
                   } else {
-                    icon = Icons.account_circle_rounded;
+                    widget.onImpersonate?.call();
                   }
-
-                  return _SendBtn(
-                    icon: icon,
-                    batterySaver: widget.batterySaver,
-                    onTap: () {
-                      if (isGenerating) {
-                        widget.onStop?.call();
-                      } else if (hasText) {
-                        _handleSend();
-                      } else {
-                        widget.onImpersonate?.call();
-                      }
-                    },
-                  );
                 },
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AttachedImagePreview extends StatelessWidget {
+  final Uint8List imageBytes;
+  final VoidCallback onClear;
+
+  const _AttachedImagePreview({required this.imageBytes, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 150, maxHeight: 150),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(
+                imageBytes,
+                fit: BoxFit.contain,
+              ),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: onClear,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

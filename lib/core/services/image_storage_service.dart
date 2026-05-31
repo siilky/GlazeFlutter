@@ -24,13 +24,13 @@ class ImageStorageService implements SyncImageStore {
 
   Future<void> _migrateOldThumbnails([SharedPreferences? prefsArg]) async {
     final prefs = prefsArg ?? await SharedPreferences.getInstance();
-    if (prefs.getBool('gz_thumb_v2_migrated') == true) return;
+    if (prefs.getBool('gz_thumb_v3_migrated') == true) return;
 
     final thumbDir = Directory(p.join(baseDir, 'thumbnails'));
     if (await thumbDir.exists()) {
       await thumbDir.delete(recursive: true);
     }
-    await prefs.setBool('gz_thumb_v2_migrated', true);
+    await prefs.setBool('gz_thumb_v3_migrated', true);
   }
 
   Future<String> saveAvatar(String characterId, Uint8List imageBytes) async {
@@ -106,16 +106,8 @@ class ImageStorageService implements SyncImageStore {
     try {
       final image = img.decodeImage(imageBytes);
       if (image == null) return null;
-      if (image.width <= maxDimension && image.height <= maxDimension) {
-        return Uint8List.fromList(img.encodeJpg(image, quality: 90));
-      }
-      final resized = img.copyResize(
-        image,
-        width: maxDimension,
-        height: maxDimension,
-        maintainAspect: true,
-      );
-      return Uint8List.fromList(img.encodeJpg(resized, quality: 90));
+      final cropped = img.copyResizeCropSquare(image, size: maxDimension);
+      return Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
     } catch (_) {
       return null;
     }

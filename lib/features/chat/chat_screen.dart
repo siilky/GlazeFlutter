@@ -22,15 +22,15 @@ import '../../shared/theme/theme_provider.dart';
 import '../../shared/widgets/glaze_scaffold.dart';
 import '../../shared/widgets/image_viewer.dart';
 import '../settings/app_settings_provider.dart';
-import 'chat_drawer_controller.dart';
+import 'chat_drawer_controller.dart' show ChatDrawerController, DrawerPanel, kKeyboardHeightPref;
 import 'chat_provider.dart';
 import 'controllers/chat_message_selection_controller.dart';
 import 'chat_search_delegate.dart';
 import 'chat_state.dart';
 import 'widgets/chat_header.dart';
 import 'widgets/chat_input_bar.dart';
-import '../image_gen/widgets/image_gen_sheet.dart';
 import 'widgets/magic_drawer.dart';
+import 'widgets/quick_replies_panel.dart';
 import 'widgets/chat_webview_widget.dart';
 import 'widgets/webview_callbacks.dart';
 import '../../core/models/chat_message.dart';
@@ -943,13 +943,22 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                       bottom: -widget.drawerCtrl.activeDrawerHeight *
                           (1 - progress),
                       height: widget.drawerCtrl.activeDrawerHeight,
-                      child: MagicDrawerPanel(
-                        charId: widget.charId,
-                        onClose: () =>
-                            widget.drawerCtrl.closeDrawer(),
-                        disableEffects: batterySaver &&
-                            widget.drawerCtrl.isDrawerAnimating,
-                      ),
+                      child: widget.drawerCtrl.activePanel ==
+                              DrawerPanel.quickReplies
+                          ? QuickRepliesPanel(
+                              charId: widget.charId,
+                              onClose: () =>
+                                  widget.drawerCtrl.closeDrawer(),
+                              disableEffects: batterySaver &&
+                                  widget.drawerCtrl.isDrawerAnimating,
+                            )
+                          : MagicDrawerPanel(
+                              charId: widget.charId,
+                              onClose: () =>
+                                  widget.drawerCtrl.closeDrawer(),
+                              disableEffects: batterySaver &&
+                                  widget.drawerCtrl.isDrawerAnimating,
+                            ),
                     ),
                   Positioned(
                     left: 0,
@@ -1036,11 +1045,20 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                                       );
                                       if (mounted) setState(() {});
                                     },
-                                    isDrawerOpen: widget
-                                            .drawerCtrl
-                                            .drawerOpen ||
-                                        widget.drawerCtrl
-                                            .switchingToDrawer,
+                                    isDrawerOpen: (widget
+                                                .drawerCtrl
+                                                .drawerOpen ||
+                                            widget.drawerCtrl
+                                                .switchingToDrawer) &&
+                                        widget.drawerCtrl.activePanel ==
+                                            DrawerPanel.magic,
+                                    isQuickRepliesOpen: (widget
+                                                .drawerCtrl
+                                                .drawerOpen ||
+                                            widget.drawerCtrl
+                                                .switchingToDrawer) &&
+                                        widget.drawerCtrl.activePanel ==
+                                            DrawerPanel.quickReplies,
                                     virtualKeyboardSend:
                                         widget.virtualKeyboardSend,
                                     enterToSend: widget.enterToSend,
@@ -1066,6 +1084,20 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                                           .sendMessage(
                                             text,
                                             guidanceText: guidance,
+                                          );
+                                    },
+                                    onSendWithImage:
+                                        (text, guidanceText, imageDataUrl) {
+                                      ref
+                                          .read(
+                                            chatProvider(
+                                              widget.charId,
+                                            ).notifier,
+                                          )
+                                          .sendMessage(
+                                            text,
+                                            guidanceText: guidanceText,
+                                            imageDataUrl: imageDataUrl,
                                           );
                                     },
                                     isGenerating:
@@ -1101,24 +1133,13 @@ class _ChatBodyState extends ConsumerState<_ChatBody> {
                                     onMagicDrawer: () => widget
                                         .drawerCtrl
                                         .toggleDrawer(context),
-                                    onAttach: () =>
-                                        showModalBottomSheet<void>(
-                                      context: context,
-                                      useRootNavigator: true,
-                                      isScrollControlled: true,
-                                      backgroundColor:
-                                          Colors.transparent,
-                                      builder: (_) =>
-                                          const ImageGenSheet(),
-                                    ),
                                     onFullScreen: () {},
-                                    onContinue: () => ref
-                                        .read(
-                                          chatProvider(
-                                            widget.charId,
-                                          ).notifier,
-                                        )
-                                        .continueMessage(),
+                                    onQuickReplies: () => widget
+                                        .drawerCtrl
+                                        .toggleDrawer(
+                                          context,
+                                          panel: DrawerPanel.quickReplies,
+                                        ),
                                     onImpersonate: () => ref
                                         .read(
                                           chatProvider(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/llm/tokenizer.dart';
 import '../../../core/models/preset.dart';
 import '../../../shared/theme/app_colors.dart';
 
@@ -89,7 +90,7 @@ class PresetBlockRow extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '~${(block.content.length / 4).round()}',
+                          '${estimateTokens(block.content)}',
                           style: TextStyle(
                             fontSize: 11,
                             color: context.cs.onSurfaceVariant,

@@ -200,7 +200,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
   Future<void> saveDraft(String draftText) =>
       _draftCtrl.saveDraft(draftText);
 
-  Future<void> sendMessage(String text, {String? guidanceText}) async {
+  Future<void> sendMessage(String text, {String? guidanceText, String? imageDataUrl}) async {
     final current = state.value;
     if (current == null || current.isGenerating) return;
 
@@ -210,6 +210,7 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       content: text,
       timestamp: DateTime.now().millisecondsSinceEpoch,
       tokens: estimateTokens(text),
+      imagePath: imageDataUrl,
     );
 
     final updatedMessages = [...current.messages, userMsg];
