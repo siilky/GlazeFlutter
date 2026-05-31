@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/state/character_provider.dart';
@@ -227,19 +230,28 @@ class SyncController {
   Future<String?> resolveConflict(SyncConflict conflict, String choice) async {
     final service = _ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return null;
+
+    // Optimistically remove from UI immediately — the user should not wait
+    // for a manifest-rewrite before seeing the conflict row disappear.
+    final optimistic = _ref.read(syncConflictsProvider)
+        .where((c) => c.key != conflict.key)
+        .toList();
+    _ref.read(syncConflictsProvider.notifier).state = optimistic;
+
     try {
       await service.resolveConflict(conflict, choice);
+      // Sync provider state with service truth (in case of partial failure).
       _ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
-      _ref.read(syncStatusProvider.notifier).state = service.status;
+
       if (service.conflicts.isEmpty) {
-        invalidateDataProviders();
-        return choice == 'cloud' ? 'Cloud version applied' : 'Local version kept';
+        return await _applyPendingPullAndFinalize(service);
       }
       return null;
     } catch (e) {
+      // Roll back optimistic removal on error.
+      _ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
       _ref.read(syncLastErrorProvider.notifier).state = e.toString();
       _ref.read(syncStatusProvider.notifier).state = service.status;
-      _ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
       return 'Could not resolve conflict: $e';
     }
   }
@@ -247,32 +259,71 @@ class SyncController {
   Future<String?> resolveAllConflicts(String choice) async {
     final service = _ref.read(syncServiceProvider).valueOrNull;
     if (service == null) return null;
-    _ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
+    // Optimistically clear all conflict rows immediately.
+    _ref.read(syncConflictsProvider.notifier).state = [];
     try {
       await service.resolveAllConflicts(choice);
       _ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
-      _ref.read(syncStatusProvider.notifier).state = service.status;
-      invalidateDataProviders();
-      return choice == 'cloud'
-          ? 'All conflicts resolved: cloud versions applied'
-          : 'All conflicts resolved: local versions kept';
+      return await _applyPendingPullAndFinalize(service);
     } catch (e) {
       _ref.read(syncLastErrorProvider.notifier).state = e.toString();
       _ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
+      _ref.read(syncStatusProvider.notifier).state = service.status;
       return 'Could not resolve conflicts: $e';
+    }
+  }
+
+  /// Called after all conflicts are resolved. Applies the pending pull,
+  /// shows progress, invalidates data providers, and returns a toast message.
+  Future<String?> _applyPendingPullAndFinalize(SyncService service) async {
+    _ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
+    try {
+      await service.applyPendingPullAfterResolve(
+        onProgress: (p) {
+          _ref.read(syncProgressProvider.notifier).state = p;
+        },
+      );
+      invalidateDataProviders();
+      return 'Sync complete';
+    } catch (e) {
+      _ref.read(syncLastErrorProvider.notifier).state = e.toString();
+      return 'Sync failed: $e';
     } finally {
       _ref.read(syncStatusProvider.notifier).state = service.status;
-      _ref.read(syncConflictsProvider.notifier).state = List.from(service.conflicts);
+      _ref.read(syncProgressProvider.notifier).state = null;
     }
   }
 
   void invalidateDataProviders() {
+    // Evict all cached avatar images so that Image.file widgets re-read the
+    // updated files from disk immediately (without a full app restart).
+    _evictAvatarImageCache();
+
     _ref.invalidate(charactersProvider);
     _ref.invalidate(personaListProvider);
     _ref.invalidate(apiListProvider);
     _ref.invalidate(lorebooksProvider);
     _ref.invalidate(chatSessionOpsProvider);
     _ref.read(themeProvider.notifier).reload();
+
+    // Bump the version counter so widgets that watch avatarVersionProvider
+    // (chat_header, character_list) rebuild and pick up the new paths.
+    bumpAvatarVersion(_ref);
+  }
+
+  void _evictAvatarImageCache() {
+    try {
+      // Collect avatar paths from characters currently in the provider.
+      final chars = _ref.read(charactersProvider).value ?? [];
+      for (final c in chars) {
+        if (c.avatarPath != null && c.avatarPath!.isNotEmpty) {
+          FileImage(File(c.avatarPath!)).evict();
+        }
+      }
+      // Also clear live images (includes images whose path hasn't changed but
+      // whose bytes on disk have been replaced by the sync pull).
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    } catch (_) {}
   }
 
   Future<void> setAutoSync(bool val) async {
