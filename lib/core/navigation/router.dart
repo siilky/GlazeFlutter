@@ -26,9 +26,13 @@ import '../../shared/shell/shell_screen.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
-final routerProvider = Provider<GoRouter>(
-  (ref) => GoRouter(
-    navigatorKey: rootNavigatorKey,
+/// Constructs a [GoRouter] with the given [navigatorKey].
+///
+/// Extracted so tests can call `buildRouter(GlobalKey())` to get a fresh
+/// router with a fresh key per test — sharing [rootNavigatorKey] across
+/// tests causes GoRouter to silently skip navigation after the first test.
+GoRouter buildRouter(GlobalKey<NavigatorState> navigatorKey) => GoRouter(
+    navigatorKey: navigatorKey,
     onException: (_, state, router) {
       final uri = state.uri;
       if (uri.scheme.isNotEmpty && uri.scheme != 'http' && uri.scheme != 'https') {
@@ -164,5 +168,8 @@ final routerProvider = Provider<GoRouter>(
       GoRoute(path: '/sync', builder: (_, __) => const SyncSheet()),
       GoRoute(path: '/about', builder: (_, __) => const AboutScreen()),
     ],
-  ),
+  );
+
+final routerProvider = Provider<GoRouter>(
+  (ref) => buildRouter(rootNavigatorKey),
 );
