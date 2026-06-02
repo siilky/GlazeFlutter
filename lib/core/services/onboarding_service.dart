@@ -23,6 +23,7 @@ Future<void> resetOnboarding([SharedPreferences? prefs]) async {
 
 Future<void> checkAndShowOnboarding(BuildContext context) async {
   if (await isOnboardingComplete()) return;
+  if (!context.mounted) return;
   showOnboarding(context);
 }
 

@@ -156,6 +156,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
 
   Future<void> _indexEntries() async {
     await ref.read(apiListProvider.future);
+    if (!mounted) return;
     final config = ref.read(embeddingConfigProvider);
     if (config.endpoint.isEmpty) {
       GlazeToast.show(
@@ -200,6 +201,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           }
         });
         await _loadEmbeddingStatuses();
+        if (!mounted) return;
         final statusParts = [
           'index_done'.tr(namedArgs: {'count': '${result.indexed}'}),
           if (result.skipped > 0) 'index_skipped'.tr(namedArgs: {'skipped': '${result.skipped}'}),
@@ -218,6 +220,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           _indexStatus = '';
         });
         await _loadEmbeddingStatuses();
+        if (!mounted) return;
         GlazeToast.error(context, '${'settings_err_failed'.tr()} ', e);
       }
     }
@@ -225,6 +228,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
 
   void _retryFailed() async {
     await ref.read(apiListProvider.future);
+    if (!mounted) return;
     final config = ref.read(embeddingConfigProvider);
     if (config.endpoint.isEmpty) {
       GlazeToast.show(context, 'vector_error_config_endpoint'.tr());
@@ -259,6 +263,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           }
         });
         await _loadEmbeddingStatuses();
+        if (!mounted) return;
         final statusParts = [
           'index_done'.tr(namedArgs: {'count': '${result.indexed}'}),
           if (result.skipped > 0) 'index_skipped'.tr(namedArgs: {'skipped': '${result.skipped}'}),
@@ -274,6 +279,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           _indexStatus = '';
         });
         await _loadEmbeddingStatuses();
+        if (!mounted) return;
         GlazeToast.error(context, '${'settings_err_failed'.tr()} ', e);
       }
     }
@@ -304,6 +310,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     if (confirmed != true) return;
 
     await ref.read(apiListProvider.future);
+    if (!mounted) return;
     final config = ref.read(embeddingConfigProvider);
     if (config.endpoint.isEmpty) {
       GlazeToast.show(context, 'vector_error_config_endpoint'.tr());
@@ -346,6 +353,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           }
         });
         await _loadEmbeddingStatuses();
+        if (!mounted) return;
         final statusParts = [
           'index_done'.tr(namedArgs: {'count': '${result.indexed}'}),
           if (result.failed > 0) 'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
@@ -357,6 +365,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
       if (mounted) {
         setState(() { _isIndexing = false; _indexStatus = ''; });
         await _loadEmbeddingStatuses();
+        if (!mounted) return;
         GlazeToast.error(context, '${'settings_err_failed'.tr()} ', e);
       }
     }

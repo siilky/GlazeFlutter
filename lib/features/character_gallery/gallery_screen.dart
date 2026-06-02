@@ -293,13 +293,13 @@ class _GalleryViewerState extends ConsumerState<_GalleryViewer> {
                 final service =
                     await ref.read(galleryServiceProvider.future);
                 await service.setAsAvatar(entry.characterId, entry.id);
-                if (mounted) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('import_success'.tr())),
                   );
                 }
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   GlazeToast.error(context, '${'settings_err_failed'.tr()} ', e);
                 }
               }
@@ -328,9 +328,9 @@ class _GalleryViewerState extends ConsumerState<_GalleryViewer> {
                             await ref.read(galleryServiceProvider.future);
                         await service.deleteImage(entry.characterId, entry.id);
                         ref.invalidate(galleryProvider(widget.charId));
-                        if (mounted) Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       } catch (e) {
-                        if (mounted) {
+                        if (context.mounted) {
                           GlazeToast.error(context, '${'settings_err_failed'.tr()} ', e);
                         }
                       }

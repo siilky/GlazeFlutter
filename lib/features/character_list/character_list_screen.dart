@@ -313,6 +313,7 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
           ],
         );
         if (source == null) return;
+        if (!context.mounted) return;
         if (source == _ImportSource.gallery) {
           await _importFromGallery(context, ref);
         } else {

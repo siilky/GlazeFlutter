@@ -135,6 +135,7 @@ class LorebookListScreen extends ConsumerWidget {
       updatedAt: currentTimestampSeconds(),
     );
     ref.read(lorebooksProvider.notifier).addLorebook(lorebook).then((_) {
+      if (!context.mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => LorebookEditorScreen(lorebookId: id)),
       );
