@@ -84,17 +84,50 @@ import '../image_storage_service.dart';class BackupExporter {
       ArchiveFile.bytes('preferences.json', prefsBytes),
     );
 
-    // 4. avatars/* — copy directly from disk into the zip via streams.
+    // 4. avatars/characters/<id>.png and avatars/personas/<id>.png —
+    // copy directly from disk into the zip via streams. We do not
+    // encode them as base64, which is the main memory win over v1.
+    final avatarIds = <String>{};
+    final charactersRows =
+        await _db.customSelect('SELECT char_id FROM characters').get();
+    for (final row in charactersRows) {
+      final id = row.data['char_id'] as String?;
+      if (id != null && id.isNotEmpty) avatarIds.add(id);
+    }
+    final personasRows =
+        await _db.customSelect('SELECT persona_id FROM personas').get();
+    final personaIds = <String>{};
+    for (final row in personasRows) {
+      final id = row.data['persona_id'] as String?;
+      if (id != null && id.isNotEmpty) personaIds.add(id);
+    }
+
     final avatarsDir = Directory(p.join(_imageStorage.baseDir, 'avatars'));
     if (await avatarsDir.exists()) {
       await for (final entity in avatarsDir.list(followLinks: false)) {
         if (entity is! File) continue;
-        final name = p.basename(entity.path);
-        // Heuristic: characters stored as <id>.png, personas as <id>.png.
-        // We pack them all under avatars/flat; the importer already
-        // matches the file to a character or persona by looking it up
-        // via the characters / personas table.
-        encoder.addFile(entity, 'avatars/$name');
+        final id = p.basenameWithoutExtension(entity.path);
+        final ext = p.extension(entity.path).replaceFirst('.', '');
+        final inArchive = ext.isEmpty
+            ? 'avatars/$id'
+            : 'avatars/$id.$ext';
+        // If the id is a known character or persona, group it under the
+        // matching subfolder so the importer can route it correctly.
+        String? subfolder;
+        if (avatarIds.contains(id)) {
+          subfolder = 'characters';
+        } else if (personaIds.contains(id)) {
+          subfolder = 'personas';
+        }
+        if (subfolder != null) {
+          final out = ext.isEmpty
+              ? 'avatars/$subfolder/$id'
+              : 'avatars/$subfolder/$id.$ext';
+          encoder.addFile(entity, out);
+        } else {
+          // Unknown id — keep the flat path for forward-compat.
+          encoder.addFile(entity, inArchive);
+        }
       }
     }
 

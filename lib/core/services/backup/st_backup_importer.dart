@@ -43,7 +43,14 @@ class StBackupImporter {
   late final ChatRepo _chatRepo;
   late final CharacterImporter _charImporter;
 
-  StBackupImporter(this._db, this._imageStorage, [this._cancel = noCancel]);
+  StBackupImporter(this._db, this._imageStorage, [this._cancel = noCancel]) {
+    _charRepo = CharacterRepo(_db);
+    _personaRepo = PersonaRepo(_db);
+    _lorebookRepo = LorebookRepo(_db);
+    _presetRepo = PresetRepo(_db);
+    _chatRepo = ChatRepo(_db);
+    _charImporter = CharacterImporter(_imageStorage);
+  }
 
   Future<StImportResult> importFromFile(
     String filePath, {
