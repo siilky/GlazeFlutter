@@ -139,6 +139,8 @@ class StreamGenerationService {
         omitTopP: apiConfig.omitTopP,
         omitReasoning: apiConfig.omitReasoning,
         omitReasoningEffort: apiConfig.omitReasoningEffort,
+        sessionId: session.id,
+        cacheControlTtl: apiConfig.cacheControlTtl,
         onUpdate: (delta, reasoningDelta) {
           if (_isAborted()) return;
           accumulator.consumeDelta(delta, reasoningDelta: reasoningDelta);
