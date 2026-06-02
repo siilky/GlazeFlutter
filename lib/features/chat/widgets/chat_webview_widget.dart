@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:collection/collection.dart';
@@ -18,6 +17,7 @@ import '../chat_state.dart';
 import '../editing_message_provider.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../../shared/theme/app_colors.dart';
+import '../../../../shared/theme/theme_font_provider.dart';
 import 'webview_callbacks.dart';
 
 const String _kStreamingId = '__streaming__';
@@ -646,24 +646,40 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       },
     );
 
+    final bgImageBytes = ref.watch(bgImageBytesProvider);
+
     return Stack(
       children: [
-        // Flutter-rendered background image (visible through transparent WebView).
-        if (widget.bgImagePath != null) ...[
+        // Theme surface color — always visible behind the transparent WebView
+        // so there's no white flash when no bg image is set.
+        Positioned.fill(
+          child: ColoredBox(color: Theme.of(context).colorScheme.surface),
+        ),
+        // Background image rendered in Flutter so it shows through the
+        // transparent WebView. Uses decoded bytes (same as GlazeBackground)
+        // because preset.bgImage is a base64 data URI, not a file path.
+        if (bgImageBytes != null) ...[
           Positioned.fill(
             child: Opacity(
               opacity: widget.bgOpacity,
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(
-                  sigmaX: widget.bgBlur,
-                  sigmaY: widget.bgBlur,
-                ),
-                child: Image.file(
-                  File(widget.bgImagePath!),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
-              ),
+              child: widget.bgBlur > 0
+                  ? ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(
+                        sigmaX: widget.bgBlur,
+                        sigmaY: widget.bgBlur,
+                        tileMode: TileMode.clamp,
+                      ),
+                      child: Image.memory(
+                        bgImageBytes,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
+                    )
+                  : Image.memory(
+                      bgImageBytes,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
             ),
           ),
           if (widget.bgDim > 0)
