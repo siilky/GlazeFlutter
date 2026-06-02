@@ -22,6 +22,8 @@ import '../../features/settings/app_settings_screen.dart';
 import '../../features/settings/theme_preset_screen.dart';
 import '../../features/tools/tools_screen.dart';
 import '../../features/glossary/glossary_sheet.dart';
+import '../../features/extensions/screens/extensions_screen.dart';
+import '../../features/extensions/screens/preset_editor_screen.dart';
 import '../../shared/shell/shell_screen.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -279,6 +281,24 @@ GoRouter buildRouter(GlobalKey<NavigatorState> navigatorKey) => GoRouter(
           state: state,
           child: const SyncSheet(),
         ),
+      ),
+      GoRoute(
+        path: '/extensions',
+        pageBuilder: (_, state) => _overlayPage(
+          state: state,
+          child: const ExtensionsScreen(),
+        ),
+        routes: [
+          GoRoute(
+            path: 'preset-editor/:presetId',
+            pageBuilder: (_, state) => _overlayPage(
+              state: state,
+              child: PresetEditorScreen(
+                presetId: state.pathParameters['presetId']!,
+              ),
+            ),
+          ),
+        ],
       ),
     ],
   );

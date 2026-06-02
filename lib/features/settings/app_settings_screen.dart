@@ -96,6 +96,13 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen> {
                   size: 20, color: Color(0xFF99A2AD)),
               onTap: () => setState(() => _currentScreen = 'interface'),
             ),
+            MenuItem(
+              icon: Icons.extension_outlined,
+              label: 'Расширения',
+              trailing: const Icon(Icons.chevron_right,
+                  size: 20, color: Color(0xFF99A2AD)),
+              onTap: () => context.push('/extensions'),
+            ),
           ],
         ),
       ],

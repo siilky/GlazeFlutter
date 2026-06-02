@@ -503,6 +503,15 @@ class ChatNotifier extends FamilyAsyncNotifier<ChatState, String> {
       onStateUpdate: (s) { if (_abortHandler.isCurrentGen(genId)) state = AsyncData(s); },
     );
 
+    // Process extensions (infoblocks and images)
+    if (character != null && result.session != null) {
+      await service.processExtensions(
+        charId: arg,
+        session: result.session!,
+        character: character,
+      );
+    }
+
     _abortHandler.imgGenCancelToken = null;
 
     if (!_abortHandler.isCurrentGen(genId)) {
