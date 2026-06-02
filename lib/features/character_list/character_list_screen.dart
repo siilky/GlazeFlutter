@@ -280,7 +280,7 @@ class _CharacterListScreenState extends ConsumerState<CharacterListScreen> {
           label: 'Import from URL',
           onTap: () {
             Navigator.of(context, rootNavigator: true).pop();
-            GlazeBottomSheet.show(
+            GlazeBottomSheet.show<void>(
               context,
               title: 'Import by URL',
               child: const ImportUrlDialog(),

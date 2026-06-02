@@ -177,7 +177,7 @@ class LorebookListScreen extends ConsumerWidget {
   }
 
   void _deleteLorebook(BuildContext context, WidgetRef ref, Lorebook lb) {
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       title: 'Delete Lorebook',
       bigInfo: BottomSheetBigInfo(

@@ -287,7 +287,7 @@ class _EmptyHint extends StatelessWidget {
 }
 
 void showPresetConnections(BuildContext context, String presetId) {
-  showModalBottomSheet(
+  showModalBottomSheet<void>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

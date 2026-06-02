@@ -43,7 +43,7 @@ void showRawPromptDialog(
 
   if (!context.mounted) return;
 
-  GlazeBottomSheet.show(
+  GlazeBottomSheet.show<void>(
     context,
     title: 'Raw Prompt',
     headerAction: IconButton(
@@ -74,7 +74,7 @@ void showRawResponseDialog(BuildContext context, WidgetRef ref, String charId) {
     return;
   }
 
-  GlazeBottomSheet.show(
+  GlazeBottomSheet.show<void>(
     context,
     title: 'Raw Response',
     headerAction: IconButton(
@@ -99,7 +99,7 @@ void showPresetPickerDialog(BuildContext context, WidgetRef ref) async {
   final activeId = ref.read(activePresetIdProvider);
   if (!context.mounted) return;
 
-  GlazeBottomSheet.show(
+  GlazeBottomSheet.show<void>(
     context,
     title: 'Select Preset',
     items: [
@@ -132,7 +132,7 @@ void showPersonaPickerDialog(BuildContext context, WidgetRef ref) async {
   final activeId = ref.read(activePersonaIdProvider);
   if (!context.mounted) return;
 
-  GlazeBottomSheet.show(
+  GlazeBottomSheet.show<void>(
     context,
     title: 'Select Persona',
     items: [
@@ -165,7 +165,7 @@ void confirmClearChatDialog(
   WidgetRef ref,
   String charId,
 ) {
-  GlazeBottomSheet.show(
+  GlazeBottomSheet.show<void>(
     context,
     title: 'Clear Chat',
     bigInfo: const BottomSheetBigInfo(

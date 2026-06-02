@@ -185,7 +185,7 @@ class _PresetListScreenState extends ConsumerState<PresetListScreen> {
   }
 
   void _showAddSheet(BuildContext context, WidgetRef ref) {
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       title: 'Add Preset',
       items: [
@@ -397,7 +397,7 @@ class _PsCard extends ConsumerWidget {
   }
 
   void _showContextMenu(BuildContext context) {
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       title: preset.name,
       items: [

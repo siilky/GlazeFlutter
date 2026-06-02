@@ -443,7 +443,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
 
   void _showTestDialog() {
     final testCtrl = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
@@ -725,7 +725,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                           icon: const Icon(Icons.link, size: 18),
                           tooltip: 'header_connections'.tr(),
                           onPressed: () {
-                            GlazeBottomSheet.show(
+                            GlazeBottomSheet.show<void>(
                               context,
                               child: LorebookConnectionsSheet(lorebookId: widget.lorebookId),
                             );

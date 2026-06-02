@@ -114,7 +114,7 @@ class _SummarySheetState extends ConsumerState<SummarySheet> {
     final chatApi = ref.read(activeApiConfigProvider);
     if (chatApi == null || chatApi.mode == 'embedding') {
       if (mounted) {
-        GlazeBottomSheet.show(
+        GlazeBottomSheet.show<void>(
           context,
           title: 'Summary',
           bigInfo: const BottomSheetBigInfo(
@@ -198,7 +198,7 @@ class _SummarySheetState extends ConsumerState<SummarySheet> {
 }
 
 void showSummarySheet(BuildContext context, String charId) {
-  showModalBottomSheet(
+  showModalBottomSheet<void>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

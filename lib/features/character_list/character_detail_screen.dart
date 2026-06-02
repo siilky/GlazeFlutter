@@ -162,7 +162,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
 
   void _openActionsMenu() {
     final rootNav = Navigator.of(context, rootNavigator: true);
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       items: [
         BottomSheetItem(
@@ -203,7 +203,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
     if (!context.mounted) return;
 
     final rootNav = Navigator.of(context, rootNavigator: true);
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       title: 'action_delete_char'.tr(),
       bigInfo: BottomSheetBigInfo(
@@ -234,7 +234,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
     final sessions = await ref.read(chatSessionOpsProvider.notifier).getSessionsByCharacter(cId);
     if (!context.mounted) return;
 
-    GlazeBottomSheet.show(
+    GlazeBottomSheet.show<void>(
       context,
       title: 'btn_open_chat'.tr(),
       items: [

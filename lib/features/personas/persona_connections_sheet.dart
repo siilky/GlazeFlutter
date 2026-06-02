@@ -321,7 +321,7 @@ class _EmptyHint extends StatelessWidget {
 }
 
 void showPersonaConnections(BuildContext context, String personaId) {
-  showModalBottomSheet(
+  showModalBottomSheet<void>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

@@ -38,7 +38,7 @@ final chatHistoryProvider =
     );
 
 class ChatHistoryNotifier extends AsyncNotifier<List<ChatSessionInfo>> {
-  StreamSubscription? _sub;
+  StreamSubscription<dynamic>? _sub;
   List<ChatSessionInfo>? _lastResult;
 
   @override

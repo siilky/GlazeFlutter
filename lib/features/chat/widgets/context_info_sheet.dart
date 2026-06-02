@@ -11,7 +11,7 @@ import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/glaze_bottom_sheet.dart';
 
 void showContextInfoSheet(BuildContext context, WidgetRef ref, String charId) {
-  GlazeBottomSheet.show(context, child: _ContextInfoPanel(charId: charId));
+  GlazeBottomSheet.show<void>(context, child: _ContextInfoPanel(charId: charId));
 }
 
 class _ContextInfoPanel extends ConsumerStatefulWidget {
