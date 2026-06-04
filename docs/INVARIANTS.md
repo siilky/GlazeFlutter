@@ -232,6 +232,26 @@ double-count the memory tokens — once via the `id='memory'`
 hard-block attribution and once via the merged preset buffer that
 included the expanded content.
 
+**Preset-only accounting** (`contentForAccounting` /
+`MacroContext.forPresetAccounting()`): counts only text that belongs
+to the preset file. **Blanked** (counted elsewhere): character fields
+(`{{char}}`, `{{description}}`, `{{personality}}`, `{{scenario}}`,
+`{{mesExamples}}`), persona (`{{user}}`, `{{persona}}`), and runtime
+injections (`{{summary}}`, `{{memory}}`, `{{lorebooks}}`,
+`{{guidance}}`). Those appear in `macroTokens` and/or dedicated
+`StaticBlock` buckets (`description`, `personality`, `memory`, …).
+
+**Still counted as preset**: literal block text, `{{setvar::}}` /
+`{{setglobalvar::}}` definitions, `{{getvar::}}` expansions of
+in-preset variables, and custom global vars set inside the preset.
+
+Dedicated injection blocks (`char_card`, `char_personality`, …):
+`contentForAccounting` uses **raw block content only**, not injected
+character/persona payloads.
+
+`presetNetTokens` equals `sourceTokens['preset']` (no further
+subtraction — external macros are already excluded in accounting).
+
 ### INV-PS7: Macro resolution order is fixed
 
 Within a single `MacroEngine.replaceMacros()` call, macros resolve in this order:

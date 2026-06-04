@@ -548,8 +548,13 @@ PromptResult _assembleMessages({
       }
     } else {
       final content = block.content.trim();
+      final accountingContent = block.contentForAccounting.trim();
+
+      // setvar-only blocks: no LLM-visible text, but definitions count toward preset.
       if (content.isEmpty) {
-        // worldInfoAfter also fires after char_card even when char_card resolves empty (mirrors JS:743)
+        if (accountingContent.isNotEmpty) {
+          attributionBlocks.add(StaticBlock(id: block.id, content: accountingContent));
+        }
         if (block.id == 'char_card') injectLoreAfter();
         continue;
       }
@@ -561,7 +566,6 @@ PromptResult _assembleMessages({
       // sourceTokens['summary'] / sourceTokens['lorebooks']. The
       // dynamic injections are counted separately via dedicated
       // StaticBlocks (hard-block injection) and macroTokens.
-      final accountingContent = block.contentForAccounting.trim();
       attributionBlocks.add(StaticBlock(id: block.id, content: accountingContent));
 
       // appendToLastMessage blocks are merged into the last user message in

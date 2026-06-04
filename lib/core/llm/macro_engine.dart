@@ -41,6 +41,32 @@ class MacroContext {
     this.macroName,
   });
 
+  /// Context for preset-only token accounting: external injections (character,
+  /// persona, memory, lorebooks, summary, guidance) are blanked; in-preset
+  /// session/global vars and setvar/getvar still resolve.
+  MacroContext forPresetAccounting() {
+    return MacroContext(
+      charName: '',
+      charDescription: null,
+      charScenario: null,
+      charPersonality: null,
+      charMesExample: null,
+      userName: '',
+      personaPrompt: null,
+      reasoningStart: reasoningStart,
+      reasoningEnd: reasoningEnd,
+      sessionVars: sessionVars,
+      globalVars: globalVars,
+      charId: charId,
+      sessionId: sessionId,
+      summaryContent: null,
+      memoryContent: null,
+      lorebooksContent: null,
+      guidanceText: null,
+      macroName: null,
+    );
+  }
+
   MacroContext copyWith({
     Map<String, String>? sessionVars,
     Map<String, String>? globalVars,
@@ -60,7 +86,7 @@ class MacroContext {
       charMesExample: charMesExample,
       userName: userName,
       personaPrompt: personaPrompt,
-      reasoningStart: reasoningEnd,
+      reasoningStart: reasoningStart,
       reasoningEnd: reasoningEnd,
       sessionVars: sessionVars ?? this.sessionVars,
       globalVars: globalVars ?? this.globalVars,
@@ -366,6 +392,41 @@ int? _rollDice(String spec) {
     total += random.nextInt(sides) + 1;
   }
   return total;
+}
+
+/// Extracts payload values from `{{setvar::name::value}}` / `{{setglobalvar::…}}`
+/// without mutating [vars]. Used for preset token accounting.
+List<String> extractSetvarPayloads(String text, String keyword) {
+  final tag = '{{$keyword::';
+  final values = <String>[];
+  var i = 0;
+  while (i < text.length) {
+    final idx = text.indexOf(tag, i);
+    if (idx < 0) break;
+    final afterTag = idx + tag.length;
+    final secondDblColon = text.indexOf('::', afterTag);
+    if (secondDblColon < 0) break;
+    final valueStart = secondDblColon + 2;
+    var depth = 1;
+    var pos = valueStart;
+    while (pos < text.length && depth > 0) {
+      if (pos + 1 < text.length && text[pos] == '{' && text[pos + 1] == '{') {
+        depth++;
+        pos += 2;
+      } else if (pos + 1 < text.length && text[pos] == '}' && text[pos + 1] == '}') {
+        depth--;
+        if (depth == 0) break;
+        pos += 2;
+      } else {
+        pos++;
+      }
+    }
+    if (depth != 0) break;
+    final value = text.substring(valueStart, pos).trim();
+    if (value.isNotEmpty) values.add(value);
+    i = pos + 2;
+  }
+  return values;
 }
 
 String _replaceSetVar(String text, String keyword, Map<String, String> vars, void Function() markChanged) {

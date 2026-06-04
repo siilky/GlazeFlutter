@@ -37,6 +37,7 @@ void main() {
         charName: 'Alice',
         charId: 'c1',
         sessionId: 's1',
+        charPersonality: 'Cheerful and helpful.',
         summaryContent: summary,
         memoryContent: memory,
         lorebooksContent: lorebooks,
@@ -148,7 +149,26 @@ void main() {
   });
 
   group('static macros still expand in contentForAccounting', () {
-    test('{{char}} is expanded in both content and contentForAccounting', () {
+    test('{{personality}} is expanded in content, blanked in contentForAccounting', () {
+      final result = resolveBlockContent(
+        id: 'custom',
+        rawContent: 'P: {{personality}}',
+        role: 'system',
+        char: makeChar(),
+        persona: null,
+        macroCtx: makeCtx(),
+        sessionVars: const {},
+        globalVars: const {},
+        summaryContent: null,
+        summaryPrefix: null,
+        notifyObj: NotifyObj(),
+      );
+      expect(result, isNotNull);
+      expect(result!.content, contains('Cheerful'));
+      expect(result.contentForAccounting, 'P: ');
+    });
+
+    test('{{char}} is expanded in content, blanked in contentForAccounting', () {
       final result = resolveBlockContent(
         id: 'custom',
         rawContent: 'Hello {{char}}!',
@@ -164,8 +184,8 @@ void main() {
       );
       expect(result, isNotNull);
       expect(result!.content, 'Hello Alice!');
-      expect(result.contentForAccounting, 'Hello Alice!',
-          reason: '{{char}} is a static macro and must expand in both');
+      expect(result.contentForAccounting, 'Hello !',
+          reason: '{{char}} is external; preset accounting keeps chrome only');
     });
   });
 

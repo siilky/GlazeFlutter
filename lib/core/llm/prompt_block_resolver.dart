@@ -2,6 +2,7 @@ import '../models/character.dart';
 import '../models/chat_message.dart';
 import '../models/persona.dart';
 import 'macro_engine.dart';
+import 'preset_macro_attribution.dart';
 
 class NotifyObj {
   Map<String, String> sessionVars = {};
@@ -14,9 +15,9 @@ class ResolvedContent {
   /// Fully expanded content — this is what actually gets sent to the LLM
   /// (all macros resolved: {{summary}}, {{memory}}, {{lorebooks}}, etc.).
   final String content;
-  /// Accounting-only content — dynamic macro injections (summary, memory,
-  /// lorebooks, guidance) are blanked out so that the preset's "static
-  /// chrome" tokens are not double-counted. See docs/INVARIANTS.md INV-PS5.
+  /// Preset-only content for token accounting: external injections (character,
+  /// persona, memory, lorebooks, summary, guidance) are blanked; in-preset
+  /// setvar/getvar/globalvars still count. See docs/INVARIANTS.md INV-PS5.
   final String contentForAccounting;
   const ResolvedContent({
     required this.role,
@@ -87,23 +88,21 @@ ResolvedContent? resolveBlockContent({
     notifyObj.varsChanged = true;
   }
 
-  if (macroResult.text.trim().isEmpty) return null;
+  if (macroResult.text.trim().isEmpty) {
+    final setvarPayload = setvarDefinitionsForAccounting(content);
+    if (setvarPayload.isEmpty) return null;
+    return ResolvedContent(
+      role: resolvedRole,
+      content: macroResult.text,
+      contentForAccounting: setvarPayload,
+    );
+  }
 
-  // Accounting content: same as `content` but with dynamic macro injections
-  // (summary, memory, lorebooks, guidance) blanked out, so that the preset's
-  // "static chrome" tokens are attributed to `sourceTokens['preset']` and
-  // NOT to `sourceTokens['memory']`/`sourceTokens['summary']`/etc. The
-  // dynamic content is counted separately via dedicated StaticBlocks
-  // (hard block injection) or via macroTokens (per-caller accounting in
-  // `prompt_builder.dart`). Static macros ({{char}}, {{user}}, {{setvar}},
-  // {{getvar}}, etc.) still expand so the lengths stay comparable.
-  final accountingCtx = macroCtx.copyWith(
-    summaryContent: null,
-    memoryContent: null,
-    lorebooksContent: null,
-    guidanceText: null,
-  );
-  final accountingResult = replaceMacros(content, accountingCtx);
+  // Preset-only accounting: blank external injections; keep in-preset vars.
+  final accountingSource =
+      isPresetExternalInjectionBlock(id) ? rawContent : content;
+  final accountingResult =
+      replaceMacros(accountingSource, macroCtx.forPresetAccounting());
 
   return ResolvedContent(
     role: resolvedRole,
