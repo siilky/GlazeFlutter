@@ -206,7 +206,22 @@ lib/
 │   ├── character_gallery/            # Gallery screen + provider
 │   ├── regex/                        # Global regex list screen
 │   ├── cloud_sync/                   # Cloud sync UI, provider, services (Dropbox/GDrive)
-│   ├── image_gen/                    # Image generation UI, provider, services
+│   ├── image_gen/                    # Image generation UI, provider, services (split api-type branches in widgets/)
+│   │   ├── image_gen_provider.dart       # Settings + active model
+│   │   ├── image_gen_models.dart        # Freezed data classes
+│   │   ├── services/                    # Provider adapters: routmy/openai/gemini/naistera
+│   │   │   ├── image_gen_service.dart   # Orchestrator
+│   │   │   ├── image_gen_http.dart      # HTTP client
+│   │   │   ├── routmy_image_provider.dart
+│   │   │   ├── openai_image_provider.dart
+│   │   │   ├── gemini_image_provider.dart
+│   │   │   └── naistera_image_provider.dart
+│   │   └── widgets/
+│   │       ├── image_gen_sheet.dart        # Thin orchestrator: switch on apiType
+│   │       ├── image_content_renderer.dart # Inline [IMG:GEN] tags
+│   │       ├── rows.dart                  # 5 reusable form-row widgets
+│   │       ├── connection_fields.dart      # buildNaistera/Routmy/OpenaiConnectionFields
+│   │       └── model_fields.dart          # buildNaistera/Routmy/Openai/GeminiModelFields
 │   ├── onboarding/                   # First-run onboarding screen
 │   ├── picks/                        # Featured picks grid + detail launcher
 │   ├── tools/                        # Developer tools screen (tokenizer, coverage, etc.)
