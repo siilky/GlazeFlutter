@@ -47,10 +47,10 @@ class MacroContext {
     String? charScenario,
     String? charPersonality,
     String? charDescription,
-    String? summaryContent,
-    String? memoryContent,
-    String? lorebooksContent,
-    String? guidanceText,
+    Object? summaryContent = _sentinel,
+    Object? memoryContent = _sentinel,
+    Object? lorebooksContent = _sentinel,
+    Object? guidanceText = _sentinel,
   }) {
     return MacroContext(
       charName: charName,
@@ -66,13 +66,15 @@ class MacroContext {
       globalVars: globalVars ?? this.globalVars,
       charId: charId,
       sessionId: sessionId,
-      summaryContent: summaryContent ?? this.summaryContent,
-      memoryContent: memoryContent ?? this.memoryContent,
-      lorebooksContent: lorebooksContent ?? this.lorebooksContent,
-      guidanceText: guidanceText ?? this.guidanceText,
+      summaryContent: identical(summaryContent, _sentinel) ? this.summaryContent : summaryContent as String?,
+      memoryContent: identical(memoryContent, _sentinel) ? this.memoryContent : memoryContent as String?,
+      lorebooksContent: identical(lorebooksContent, _sentinel) ? this.lorebooksContent : lorebooksContent as String?,
+      guidanceText: identical(guidanceText, _sentinel) ? this.guidanceText : guidanceText as String?,
       macroName: macroName,
     );
   }
+
+  static const Object _sentinel = Object();
 
   Map<String, dynamic> toJson() => {
     'charName': charName,

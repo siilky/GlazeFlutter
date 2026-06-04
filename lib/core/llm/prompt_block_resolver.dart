@@ -11,8 +11,18 @@ class NotifyObj {
 
 class ResolvedContent {
   final String role;
+  /// Fully expanded content — this is what actually gets sent to the LLM
+  /// (all macros resolved: {{summary}}, {{memory}}, {{lorebooks}}, etc.).
   final String content;
-  const ResolvedContent({required this.role, required this.content});
+  /// Accounting-only content — dynamic macro injections (summary, memory,
+  /// lorebooks, guidance) are blanked out so that the preset's "static
+  /// chrome" tokens are not double-counted. See docs/INVARIANTS.md INV-PS5.
+  final String contentForAccounting;
+  const ResolvedContent({
+    required this.role,
+    required this.content,
+    required this.contentForAccounting,
+  });
 }
 
 ResolvedContent? resolveBlockContent({
@@ -44,7 +54,7 @@ ResolvedContent? resolveBlockContent({
     case 'user_persona':
       content = _userPersonaContent(persona);
     case 'chat_history':
-      return ResolvedContent(role: resolvedRole, content: '');
+      return ResolvedContent(role: resolvedRole, content: '', contentForAccounting: '');
     case 'summary':
       if (summaryContent != null && summaryContent.isNotEmpty) {
         final prefix = summaryPrefix ?? 'Summary: ';
@@ -69,6 +79,7 @@ ResolvedContent? resolveBlockContent({
 
   if (content.isEmpty) return null;
 
+  // Fully-expanded content (everything resolved, what the LLM actually sees).
   final macroResult = replaceMacros(content, macroCtx);
   if (macroResult.varsChanged) {
     notifyObj.sessionVars = macroResult.sessionVars;
@@ -78,7 +89,27 @@ ResolvedContent? resolveBlockContent({
 
   if (macroResult.text.trim().isEmpty) return null;
 
-  return ResolvedContent(role: resolvedRole, content: macroResult.text);
+  // Accounting content: same as `content` but with dynamic macro injections
+  // (summary, memory, lorebooks, guidance) blanked out, so that the preset's
+  // "static chrome" tokens are attributed to `sourceTokens['preset']` and
+  // NOT to `sourceTokens['memory']`/`sourceTokens['summary']`/etc. The
+  // dynamic content is counted separately via dedicated StaticBlocks
+  // (hard block injection) or via macroTokens (per-caller accounting in
+  // `prompt_builder.dart`). Static macros ({{char}}, {{user}}, {{setvar}},
+  // {{getvar}}, etc.) still expand so the lengths stay comparable.
+  final accountingCtx = macroCtx.copyWith(
+    summaryContent: null,
+    memoryContent: null,
+    lorebooksContent: null,
+    guidanceText: null,
+  );
+  final accountingResult = replaceMacros(content, accountingCtx);
+
+  return ResolvedContent(
+    role: resolvedRole,
+    content: macroResult.text,
+    contentForAccounting: accountingResult.text,
+  );
 }
 
 String _userPersonaContent(Persona? persona) {

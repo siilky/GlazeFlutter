@@ -210,6 +210,28 @@ macro resolves to `MacroContext.summaryContent` (user-authored
 summary only — no memory piggyback). It is the user's responsibility
 to place `{{summary}}` in a preset block if they want it injected.
 
+**Accounting rule** (token breakdown): preset chrome is attributed
+to `sourceTokens['preset']` and dynamic macro injections
+(`{{summary}}`, `{{memory}}`, `{{lorebooks}}`, `{{guidance}}`) are
+attributed to their dedicated buckets (`sourceTokens['summary']`,
+`sourceTokens['memory']`, etc.) — never both.
+
+Concretely, `resolveBlockContent` returns TWO flavours of the
+resolved content:
+
+* `content` — fully expanded (what the LLM actually sees), used
+  for `messages` and the merged `PromptMessage` system block.
+* `contentForAccounting` — same shape, but with dynamic macro
+  injections blanked out (`replaceMacros` is run against a context
+  where `summaryContent` / `memoryContent` / `lorebooksContent` /
+  `guidanceText` are null). This is what `attributionBlocks` see, so
+  `sourceTokens['preset']` reports ONLY the preset's static chrome.
+
+Before this split, a preset block that contained `{{memory}}` would
+double-count the memory tokens — once via the `id='memory'`
+hard-block attribution and once via the merged preset buffer that
+included the expanded content.
+
 ### INV-PS7: Macro resolution order is fixed
 
 Within a single `MacroEngine.replaceMacros()` call, macros resolve in this order:

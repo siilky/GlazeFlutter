@@ -136,7 +136,14 @@ class _ResolvedRelativeBlock {
   final String id;
   final String name;
   final String role;
+  /// Fully expanded content — what the LLM sees. Used for `messages` and
+  /// `appendedEntries` (which merge into the last user message).
   final String content;
+  /// Accounting-only content with dynamic macro injections blanked out.
+  /// Used for `attributionBlocks` and `mergeBuffer` so that the preset's
+  /// "static chrome" tokens are not double-counted alongside the dedicated
+  /// `sourceTokens['memory']` / `sourceTokens['summary']` etc. buckets.
+  final String contentForAccounting;
   final bool isSummary;
   final bool appendToLastMessage;
   const _ResolvedRelativeBlock({
@@ -144,6 +151,7 @@ class _ResolvedRelativeBlock {
     required this.name,
     required this.role,
     required this.content,
+    required this.contentForAccounting,
     this.isSummary = false,
     this.appendToLastMessage = false,
   });
@@ -331,12 +339,12 @@ PromptResult buildPrompt(PromptPayload payload) {
       if (anMode == 'depth') {
         depthBlocks.add(_ResolvedDepthBlock(id: id, role: resolved.role, content: resolved.content, depth: anDepth, isSummary: blockIsSummary));
       } else {
-        relativeBlocks.add(_ResolvedRelativeBlock(id: id, name: rawBlock.name, role: resolved.role, content: resolved.content, isSummary: blockIsSummary, appendToLastMessage: rawBlock.appendToLastMessage));
+        relativeBlocks.add(_ResolvedRelativeBlock(id: id, name: rawBlock.name, role: resolved.role, content: resolved.content, contentForAccounting: resolved.contentForAccounting, isSummary: blockIsSummary, appendToLastMessage: rawBlock.appendToLastMessage));
       }
     } else if (rawBlock.insertionMode == 'depth' && id != 'chat_history') {
       depthBlocks.add(_ResolvedDepthBlock(id: id, role: resolved.role, content: resolved.content, depth: rawBlock.depth ?? 0, isSummary: blockIsSummary));
     } else {
-      relativeBlocks.add(_ResolvedRelativeBlock(id: id, name: rawBlock.name, role: resolved.role, content: resolved.content, isSummary: blockIsSummary, appendToLastMessage: rawBlock.appendToLastMessage));
+      relativeBlocks.add(_ResolvedRelativeBlock(id: id, name: rawBlock.name, role: resolved.role, content: resolved.content, contentForAccounting: resolved.contentForAccounting, isSummary: blockIsSummary, appendToLastMessage: rawBlock.appendToLastMessage));
     }
   }
 
@@ -546,7 +554,15 @@ PromptResult _assembleMessages({
         continue;
       }
 
-      attributionBlocks.add(StaticBlock(id: block.id, content: content));
+      // attributionBlocks feed the token breakdown. We pass the
+      // "accounting" content (dynamic macros blanked out) so that the
+      // preset's static chrome is attributed to sourceTokens['preset']
+      // and NOT double-counted under sourceTokens['memory'] /
+      // sourceTokens['summary'] / sourceTokens['lorebooks']. The
+      // dynamic injections are counted separately via dedicated
+      // StaticBlocks (hard-block injection) and macroTokens.
+      final accountingContent = block.contentForAccounting.trim();
+      attributionBlocks.add(StaticBlock(id: block.id, content: accountingContent));
 
       // appendToLastMessage blocks are merged into the last user message in
       // applyAppendToLastMessage (see appendedEntries above). They must NOT
