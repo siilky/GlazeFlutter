@@ -170,7 +170,13 @@ lib/
 │   │   │   ├── image_gen_processor.dart
 │   │   │   └── magic_drawer_layout_service.dart
 │   │   ├── bridge/                       # WebView ↔ Flutter bridge
-│   │   │   ├── chat_bridge_controller.dart  # Dart-side bridge methods
+│   │   │   ├── chat_bridge_controller.dart  # Host: shared state + 22 callbacks + facade delegations
+│   │   │   ├── bridge_handlers.dart         # Declarative registry of JS handler names + argument kinds
+│   │   │   ├── bridge_message_commands.dart # set/append/update/remove messages, scroll
+│   │   │   ├── bridge_theme_commands.dart   # applyTheme, fonts, background, performance
+│   │   │   ├── bridge_identity_commands.dart # setIdentity, applyLayout, regex context
+│   │   │   ├── bridge_layout_commands.dart  # padding, search, edit, selection, settings
+│   │   │   ├── bridge_memory_commands.dart  # memory book data updates + state sets
 │   │   │   ├── chat_message_mapper.dart     # ChatMessage → JS map conversion
 │   │   │   └── chat_webview_keep_alive.dart # Keep-alive key provider
 │   │   ├── state/
