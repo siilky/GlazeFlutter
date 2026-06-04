@@ -152,16 +152,23 @@ lib/
 │       └── memory_settings_provider.dart # MemoryGlobalSettings + notifier
 ├── features/
 │   ├── chat/
-│   │   ├── chat_provider.dart        # ChatNotifier: full ChatState lifecycle per charId
+│   │   ├── chat_provider.dart        # ChatNotifier: state owner, delegates to controllers + scenarios
 │   │   ├── chat_state.dart           # ChatState + StreamingState value objects
 │   │   ├── editing_message_provider.dart # Tracks which message is being edited
 │   │   ├── chat_screen.dart          # UI: WebView + ChatInputBar + header
-│   │   ├── chat_generation_service.dart  # Orchestrates one generation cycle (SSE stream)
+│   │   ├── chat_generation_service.dart  # Thin facade: generate / processImageTags / processExtensions
 │   │   ├── chat_session_service.dart     # Creates/finds sessions, alternate greetings
 │   │   ├── chat_message_service.dart     # Message-level mutations (edit/delete/hide/reorder)
 │   │   ├── chat_actions_service.dart     # Branch/clear/rename/delete session
 │   │   ├── initial_message_builder.dart  # Selects greeting, runs macros, returns first msg
 │   │   ├── memory_draft_generator.dart   # LLM-based memory auto-generation
+│   │   ├── abort_handler.dart        # genId + cancel tokens + restoration snapshot
+│   │   ├── services/
+│   │   │   ├── generation_pipeline.dart  # Post-SSE orchestrator: regen/normal dispatch + image tags + extensions + sync + notification
+│   │   │   ├── saved_message_writer.dart # Pure builders: writeAssistant/writeError/writeRegenError/sanitizeReasoningMarkers
+│   │   │   ├── stream_generation_service.dart # SSE pipeline runner
+│   │   │   ├── image_gen_processor.dart
+│   │   │   └── magic_drawer_layout_service.dart
 │   │   ├── bridge/                       # WebView ↔ Flutter bridge
 │   │   │   ├── chat_bridge_controller.dart  # Dart-side bridge methods
 │   │   │   ├── chat_message_mapper.dart     # ChatMessage → JS map conversion
@@ -465,9 +472,9 @@ Issues tracked for refactor:
 
 2. **`magic_drawer_stats_service.dart`** (~236 lines) — named "service" but lives in `features/chat/widgets/`. Move to `features/chat/` (provider or service level).
 
-3. **`prompt_payload_builder.dart`** (~240 lines) — reads 7+ Riverpod providers directly. Becoming a God object. Split: pure `PromptInputsCollector` (reads providers) + pure `PromptPayloadAssembler` (builds payload from collected inputs, no Riverpod dep).
+3. **`prompt_payload_builder.dart`** (~240 lines) — reads 7+ Riverpod providers directly. Becoming a God object. Split: pure `PromptInputsCollector` (reads providers) + pure `PromptPayloadAssembler` (builds payload from collected inputs, no Riverpod dep). **Resolved 2026-06** — split into `prompt_inputs_collector.dart` + `prompt_payload_assembler.dart`; `prompt_payload_builder.dart` kept as thin orchestrator owning async vector/memory work.
 
-4. **`chat_provider.dart`** (~1000 lines) — `ChatNotifier` does generate + swipe + edit + delete + branch + clear + image gen + continue. Split responsibilities across dedicated notifiers or move action logic to services, leaving notifier as thin state owner.
+4. **`chat_provider.dart`** (~1000 lines) — `ChatNotifier` does generate + swipe + edit + delete + branch + clear + image gen + continue. Split responsibilities across dedicated notifiers or move action logic to services, leaving notifier as thin state owner. **Resolved 2026-06** — `chat_provider.dart` slimmed to ~350 lines; generation pipeline moved to `services/generation_pipeline.dart` and message-save helpers to `services/saved_message_writer.dart`. `_messagePreview` extracted to `utils/message_preview.dart`.
 
 5. ~~**`lorebook_vector_search.dart`** — contained Riverpod provider declarations mixed with service logic.~~ **Fixed** — providers extracted to `lorebook_providers.dart`.
 
