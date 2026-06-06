@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/block_config.dart';
@@ -24,13 +25,13 @@ import 'extension_post_gen_service.dart';
 /// Lifecycle:
 ///   * One scheduler per app (singleton).
 ///   * `start()` is idempotent.
-///   * `dispose()` cancels all timers.
-///
-/// Battery / lifecycle hooks are intentionally out of scope for the
-/// first implementation (see plan item #20). The scheduler simply runs
-/// while the app is alive; pausing on background requires a
-/// `WidgetsBindingObserver` and is a follow-up.
-class PeriodicTriggerScheduler {
+///   * `dispose()` cancels all timers and removes the binding observer.
+///   * The scheduler pauses on `paused` / `inactive` / `hidden` and
+///     resumes on `resumed`. When resuming, the elapsed wall-clock
+///     time during the pause is *not* carried over — the next tick is
+///     scheduled `periodicIntervalSeconds` after resume so a long
+///     backgrounding period never produces a burst of catch-up ticks.
+class PeriodicTriggerScheduler with WidgetsBindingObserver {
   PeriodicTriggerScheduler(this._ref);
 
   final Ref _ref;
@@ -38,11 +39,17 @@ class PeriodicTriggerScheduler {
   ProviderSubscription<List<ExtensionPreset>>? _presetSub;
   ProviderSubscription<dynamic>? _settingsSub;
   bool _started = false;
+  AppLifecycleState _lifecycle = AppLifecycleState.resumed;
+  final bool _isLifecycleListener = true;
 
   /// Starts the scheduler. Idempotent.
   void start() {
     if (_started) return;
     _started = true;
+
+    if (_isLifecycleListener) {
+      WidgetsBinding.instance.addObserver(this);
+    }
 
     // Rebuild the timer set whenever the preset list OR the settings
     // change. Both providers are watched via subscriptions so the
@@ -59,7 +66,43 @@ class PeriodicTriggerScheduler {
     );
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycle = state;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // Resume: rebuild timers so any that were paused are
+        // recreated (we re-read the active preset). The next tick
+        // fires `periodicIntervalSeconds` from now, not from when
+        // the timer was first scheduled — the previous timers were
+        // cancelled on pause.
+        _rebuildTimers();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Pause: drop every active timer. Rebuilding on resume will
+        // recreate them. We don't run any "catch-up" tick when the
+        // app comes back to the foreground — periodic scripts are
+        // side-effect-only, and a long pause (e.g. overnight) must
+        // not produce a flood of catch-up ticks.
+        _cancelAll();
+    }
+  }
+
+  @visibleForTesting
+  AppLifecycleState get currentLifecycle => _lifecycle;
+
+  /// Visible for tests: drive a synthetic lifecycle state without
+  /// touching the binding observer. The production path uses
+  /// [didChangeAppLifecycleState] from the binding.
+  @visibleForTesting
+  void debugLifecycleState(AppLifecycleState state) {
+    didChangeAppLifecycleState(state);
+  }
+
   void _rebuildTimers() {
+    if (_lifecycle != AppLifecycleState.resumed) return;
     final settings = _ref.read(extensionsSettingsProvider);
     final activeId = settings.activePresetId;
     if (!settings.enabled || activeId == null || activeId.isEmpty) {
@@ -137,6 +180,9 @@ class PeriodicTriggerScheduler {
   int get activeTimerCount => _timers.length;
 
   void dispose() {
+    if (_isLifecycleListener) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     _cancelAll();
     _presetSub?.close();
     _settingsSub?.close();

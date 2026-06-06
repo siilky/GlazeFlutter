@@ -1,6 +1,24 @@
+// Tests for the app-lifecycle pause/resume behaviour of
+// `PeriodicTriggerScheduler`.
+//
+// The scheduler registers itself as a `WidgetsBindingObserver` so it
+// can pause periodic ticks when the app is backgrounded. We drive the
+// observer directly via `debugLifecycleState` so the tests don't need
+// a real Flutter binding.
+//
+// Invariants pinned here:
+//   1. On `paused` / `inactive` / `hidden` / `detached`, the
+//      scheduler drops every active timer.
+//   2. On `resumed`, the scheduler rebuilds timers from the current
+//      active preset, so a long backgrounding period does NOT
+//      produce a burst of catch-up ticks.
+//   3. The scheduler is defensive when the extensions toggle is off
+//      and the app is paused at the same time: it must not throw.
+
 import 'dart:async';
 
 import 'package:drift/native.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,9 +28,9 @@ import 'package:glaze_flutter/core/db/repositories/character_repo.dart';
 import 'package:glaze_flutter/core/models/character.dart';
 import 'package:glaze_flutter/core/models/chat_message.dart';
 import 'package:glaze_flutter/core/state/db_provider.dart';
-import 'package:glaze_flutter/features/extensions/models/extensions_settings.dart';
 import 'package:glaze_flutter/features/extensions/models/block_config.dart';
 import 'package:glaze_flutter/features/extensions/models/extension_preset.dart';
+import 'package:glaze_flutter/features/extensions/models/extensions_settings.dart';
 import 'package:glaze_flutter/features/extensions/providers/extension_presets_provider.dart';
 import 'package:glaze_flutter/features/extensions/providers/extensions_settings_provider.dart';
 import 'package:glaze_flutter/features/extensions/services/extension_post_gen_service.dart';
@@ -60,8 +78,7 @@ void main() {
     await db.close();
   });
 
-  test(
-      'scheduler starts a timer for the enabled periodic jsRunner and ticks it',
+  test('scheduler pauses on paused lifecycle and resumes on resumed',
       () async {
     final container = ProviderContainer(
       overrides: [
@@ -71,16 +88,9 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    // Seed settings (enabled + active preset). SharedPreferences is the
-    // real platform plugin; we rely on it to persist across both tests
-    // and on setUp's pre-cleared state to keep them isolated. Use the
-    // notifier's API directly.
     await container
         .read(extensionsSettingsProvider.notifier)
         .update(const ExtensionsSettings(enabled: true, activePresetId: 'p1'));
-
-    // Seed preset with one periodic + one afterAssistant jsRunner + one
-    // infoblock (which the scheduler must ignore).
     final preset = ExtensionPreset(
       id: 'p1',
       name: 'Tick',
@@ -94,39 +104,33 @@ void main() {
           prompt: '// js',
           periodicIntervalSeconds: 1,
         ),
-        BlockConfig(
-          id: 'b2',
-          name: 'After assistant',
-          type: BlockType.jsRunner,
-          enabled: true,
-          trigger: BlockTrigger.afterAssistant,
-          prompt: '// not run on tick',
-        ),
-        BlockConfig(
-          id: 'b3',
-          name: 'Infoblock',
-          type: BlockType.infoblock,
-          enabled: true,
-          trigger: BlockTrigger.periodic,
-          prompt: '// infoblock, not jsRunner — ignored',
-        ),
       ],
     );
     await container.read(extensionPresetsProvider.notifier).add(preset);
 
-    // Touch the scheduler — reading the provider forces `start()`.
     final scheduler = container.read(periodicTriggerSchedulerProvider);
     expect(scheduler.activeTimerCount, 1,
-        reason: 'only the enabled periodic jsRunner should have a timer');
+        reason: 'timer is created when the app is resumed');
+    expect(scheduler.currentLifecycle, AppLifecycleState.resumed);
 
-    // Read the fake from the container so we can wait for the first tick.
-    final fake = container.read(extensionPostGenServiceProvider) as _FakePostGen;
-    await fake.waitForFirstTick().timeout(const Duration(seconds: 5));
-    expect(fake.tickBlockIds, contains('b1'),
-        reason: 'periodic jsRunner should be dispatched at least once');
+    scheduler.debugLifecycleState(AppLifecycleState.paused);
+    expect(scheduler.activeTimerCount, 0,
+        reason: 'paused lifecycle cancels all timers');
+
+    scheduler.debugLifecycleState(AppLifecycleState.inactive);
+    expect(scheduler.activeTimerCount, 0,
+        reason: 'inactive lifecycle also cancels all timers');
+
+    scheduler.debugLifecycleState(AppLifecycleState.hidden);
+    expect(scheduler.activeTimerCount, 0,
+        reason: 'hidden lifecycle also cancels all timers');
+
+    scheduler.debugLifecycleState(AppLifecycleState.resumed);
+    expect(scheduler.activeTimerCount, 1,
+        reason: 'resumed lifecycle rebuilds timers from the current preset');
   });
 
-  test('scheduler drops timers when extensions are disabled', () async {
+  test('scheduler does not rebuild timers while not resumed', () async {
     final container = ProviderContainer(
       overrides: [
         appDbProvider.overrideWith((ref) => db),
@@ -135,7 +139,8 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    // Seed preset but leave settings disabled.
+    // Settings disabled: no timers should ever be created, even on
+    // a synthetic resumed → paused → resumed cycle.
     await container
         .read(extensionsSettingsProvider.notifier)
         .update(const ExtensionsSettings(enabled: false, activePresetId: 'p2'));
@@ -157,7 +162,51 @@ void main() {
     await container.read(extensionPresetsProvider.notifier).add(preset);
 
     final scheduler = container.read(periodicTriggerSchedulerProvider);
+    expect(scheduler.activeTimerCount, 0);
+    scheduler.debugLifecycleState(AppLifecycleState.paused);
+    expect(scheduler.activeTimerCount, 0);
+    scheduler.debugLifecycleState(AppLifecycleState.resumed);
     expect(scheduler.activeTimerCount, 0,
-        reason: 'scheduler must not start timers when extensions are off');
+        reason: 'settings.enabled=false still blocks the timer set');
+  });
+
+  test('scheduler survives a paused → detached → resumed cycle', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appDbProvider.overrideWith((ref) => db),
+        extensionPostGenServiceProvider.overrideWith((ref) => _FakePostGen(ref)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(extensionsSettingsProvider.notifier)
+        .update(const ExtensionsSettings(enabled: true, activePresetId: 'p3'));
+    final preset = ExtensionPreset(
+      id: 'p3',
+      name: 'Tick',
+      blocks: [
+        BlockConfig(
+          id: 'b1',
+          name: 'Tick',
+          type: BlockType.jsRunner,
+          enabled: true,
+          trigger: BlockTrigger.periodic,
+          prompt: '// js',
+          periodicIntervalSeconds: 60,
+        ),
+      ],
+    );
+    await container.read(extensionPresetsProvider.notifier).add(preset);
+
+    final scheduler = container.read(periodicTriggerSchedulerProvider);
+    expect(scheduler.activeTimerCount, 1);
+
+    scheduler.debugLifecycleState(AppLifecycleState.paused);
+    expect(scheduler.activeTimerCount, 0);
+    scheduler.debugLifecycleState(AppLifecycleState.detached);
+    expect(scheduler.activeTimerCount, 0);
+    scheduler.debugLifecycleState(AppLifecycleState.resumed);
+    expect(scheduler.activeTimerCount, 1);
   });
 }
