@@ -30,6 +30,10 @@ import 'info_block_service.dart';
 import 'js_engine_service.dart';
 import 'js_script_extractor.dart';
 import 'panel_host_service.dart';
+import 'blocks/block_processor.dart';
+import 'blocks/block_context.dart';
+import 'blocks/image_gen_block_handler.dart';
+import 'blocks/infoblock_handler.dart';
 
 final extensionPostGenServiceProvider = Provider<ExtensionPostGenService>(
   (ref) => ExtensionPostGenService(ref),
@@ -50,6 +54,8 @@ class ExtensionPostGenService {
 
   /// Serializes WebView panel JS calls so stream patches render in order.
   Future<void>? _panelJsChain;
+
+  final BlockProcessor _blockProcessor = const BlockProcessor();
 
   InfoBlocksRepository get _repo =>
       InfoBlocksRepository(_ref.read(appDbProvider));
@@ -128,10 +134,27 @@ class ExtensionPostGenService {
     final content = _formatBlockErrorContent(errorMessage);
     await _repo.updateContent(placeholderId, content);
     await _repo.updateStatus(placeholderId, BlockRunStatus.error);
-    final errored = placeholder.copyWith(content: content, status: BlockRunStatus.error);
+    final errored = placeholder.copyWith(
+      content: content,
+      status: BlockRunStatus.error,
+    );
     _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
     _refreshPanelForMessage(charId, sessionId, messageId);
     return errored;
+  }
+
+  Future<InfoBlock> _markContextBlockError({
+    required BlockContext context,
+    required String errorMessage,
+  }) {
+    return _markBlockError(
+      charId: context.charId,
+      sessionId: context.sessionId,
+      messageId: context.messageId,
+      placeholderId: context.placeholderId,
+      placeholder: context.placeholder,
+      errorMessage: errorMessage,
+    );
   }
 
   /// Removes duplicate DB rows for the same preset block on one message.
@@ -141,9 +164,8 @@ class ExtensionPostGenService {
     required String blockId,
   }) async {
     final existing = await _repo.getByMessageId(sessionId, messageId);
-    final matching =
-        existing.where((b) => b.blockId == blockId).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final matching = existing.where((b) => b.blockId == blockId).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (matching.isEmpty) return null;
     final keep = matching.first;
     for (final dup in matching.skip(1)) {
@@ -205,8 +227,10 @@ class ExtensionPostGenService {
       debugPrint('[ExtPostGen] SKIP: presetId is null/empty');
       return null;
     }
-    final preset =
-        _ref.read(extensionPresetsProvider).where((pr) => pr.id == presetId).firstOrNull;
+    final preset = _ref
+        .read(extensionPresetsProvider)
+        .where((pr) => pr.id == presetId)
+        .firstOrNull;
     if (preset == null) {
       debugPrint('[ExtPostGen] SKIP: preset not found');
       return null;
@@ -343,17 +367,21 @@ class ExtensionPostGenService {
       return;
     }
     _lastStreamPanelAt = now;
-    final updated =
-        placeholder.copyWith(content: content, status: BlockRunStatus.running);
+    final updated = placeholder.copyWith(
+      content: content,
+      status: BlockRunStatus.running,
+    );
     _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(updated);
-    _enqueuePanelJs(() => _patchOrRefreshPanel(
-          charId: charId,
-          sessionId: sessionId,
-          messageId: messageId,
-          blockId: placeholder.blockId,
-          content: content,
-          status: BlockRunStatus.running.name,
-        ));
+    _enqueuePanelJs(
+      () => _patchOrRefreshPanel(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        blockId: placeholder.blockId,
+        content: content,
+        status: BlockRunStatus.running.name,
+      ),
+    );
   }
 
   void Function(String)? _makeStreamHandler({
@@ -365,12 +393,12 @@ class ExtensionPostGenService {
   }) {
     if (!blockConfig.streamToPanel) return null;
     return (partial) => _publishStreamingBlockContent(
-          charId: charId,
-          sessionId: sessionId,
-          messageId: messageId,
-          placeholder: placeholder,
-          content: partial,
-        );
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      placeholder: placeholder,
+      content: partial,
+    );
   }
 
   /// Re-runs only the Image Gen step for an existing image ext block (keeps agent HTML).
@@ -392,9 +420,12 @@ class ExtensionPostGenService {
     final existing = rows.where((b) => b.blockId == blockId).firstOrNull;
     if (existing == null || existing.content.isEmpty) return;
 
-    final imageService =
-        await _ref.read(imageGenSettingsProvider.notifier).getServiceAsync();
-    if (imageService.extractInstructionsFromImageContent(existing.content).isEmpty) {
+    final imageService = await _ref
+        .read(imageGenSettingsProvider.notifier)
+        .getServiceAsync();
+    if (imageService
+        .extractInstructionsFromImageContent(existing.content)
+        .isEmpty) {
       return;
     }
 
@@ -436,47 +467,12 @@ class ExtensionPostGenService {
     required CancelToken cancelToken,
     BlockTrigger trigger = BlockTrigger.afterAssistant,
   }) async {
-    final blocks = preset.blocks
-        .where((b) => b.enabled && b.trigger == trigger)
-        .toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
-
-    debugPrint('[ExtPostGen] _runChain: enabledBlocks=${blocks.length} (of ${preset.blocks.length})');
-    if (blocks.isEmpty) {
-      debugPrint('[ExtPostGen] SKIP: no enabled blocks in preset');
-      return;
-    }
-
-    String? previousOutput;
-    Future<InfoBlock?>? previousFuture;
-
-    for (final blockConfig in blocks) {
-      if (cancelToken.isCancelled) break;
-
-      final Future<InfoBlock?> blockFuture;
-
-      if (blockConfig.dependsOnPrevious && previousFuture != null) {
-        // Sequential: wait for previous block's result, pass its output.
-        blockFuture = previousFuture.then((prev) async {
-          if (cancelToken.isCancelled) return null;
-          final output = prev?.content;
-          return _runSingleBlock(
-            charId: charId,
-            sessionId: sessionId,
-            messageId: messageId,
-            messages: messages,
-            blockConfig: blockConfig,
-            preset: preset,
-            character: character,
-            persona: persona,
-            previousOutput: output,
-            cancelToken: cancelToken,
-          );
-        });
-      } else {
-        // Parallel: start immediately with last known previousOutput.
-        final capturedPrev = previousOutput;
-        blockFuture = _runSingleBlock(
+    await _blockProcessor.run(
+      preset: preset,
+      trigger: trigger,
+      cancelToken: cancelToken,
+      runBlock: ({required blockConfig, required previousOutput}) {
+        return _runSingleBlock(
           charId: charId,
           sessionId: sessionId,
           messageId: messageId,
@@ -485,37 +481,14 @@ class ExtensionPostGenService {
           preset: preset,
           character: character,
           persona: persona,
-          previousOutput: capturedPrev,
+          previousOutput: previousOutput,
           cancelToken: cancelToken,
         );
-      }
-
-      // If this is a sequential gate we need to await in the loop so the
-      // next block can decide whether to wait or not.
-      if (blockConfig.dependsOnPrevious) {
-        final result = await blockFuture;
-        if (result != null) {
-          previousOutput = result.content;
-          _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(result);
-        }
-        previousFuture = null;
-      } else {
-        previousFuture = blockFuture;
-        // Don't await — let it run in parallel. Chain completion via
-        // side-effect in _runSingleBlock (notifier.addOrReplace).
-        unawaited(blockFuture.then((result) {
-          if (result != null) {
-            _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(result);
-          }
-        }));
-      }
-    }
-
-    // Await last dangling parallel future so the function doesn't return
-    // before all blocks have settled.
-    if (previousFuture != null) {
-      await previousFuture;
-    }
+      },
+      onBlockComplete: (result) {
+        _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(result);
+      },
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -537,7 +510,9 @@ class ExtensionPostGenService {
   }) async {
     if (cancelToken.isCancelled) return null;
 
-    debugPrint('[ExtPostGen] _runSingleBlock START: name="${blockConfig.name}" type=${blockConfig.type.name} order=${blockConfig.order} reuse=${reuseBlockId ?? "new"}');
+    debugPrint(
+      '[ExtPostGen] _runSingleBlock START: name="${blockConfig.name}" type=${blockConfig.type.name} order=${blockConfig.order} reuse=${reuseBlockId ?? "new"}',
+    );
 
     final String placeholderId;
     final InfoBlock placeholder;
@@ -546,23 +521,30 @@ class ExtensionPostGenService {
       placeholderId = reuseBlockId;
       final existing = await _repo.getByMessageId(sessionId, messageId);
       final row = existing.where((b) => b.id == reuseBlockId).firstOrNull;
-      placeholder = (row ?? InfoBlock(
-        id: reuseBlockId,
-        sessionId: sessionId,
-        messageId: messageId,
-        blockId: blockConfig.id,
-        blockName: blockConfig.name,
-        blockType: blockConfig.type.name,
-        content: '',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        order: blockConfig.order,
-        status: BlockRunStatus.running,
-      )).copyWith(content: '', status: BlockRunStatus.running);
+      placeholder =
+          (row ??
+                  InfoBlock(
+                    id: reuseBlockId,
+                    sessionId: sessionId,
+                    messageId: messageId,
+                    blockId: blockConfig.id,
+                    blockName: blockConfig.name,
+                    blockType: blockConfig.type.name,
+                    content: '',
+                    createdAt: DateTime.now().millisecondsSinceEpoch,
+                    order: blockConfig.order,
+                    status: BlockRunStatus.running,
+                  ))
+              .copyWith(content: '', status: BlockRunStatus.running);
       await _repo.updateContent(placeholderId, '');
       await _repo.updateStatus(placeholderId, BlockRunStatus.running);
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(placeholder);
+      _ref
+          .read(infoBlocksProvider(sessionId).notifier)
+          .addOrReplace(placeholder);
       _refreshPanelForMessage(charId, sessionId, messageId);
-      debugPrint('[ExtPostGen] reused block id=$placeholderId messageId=$messageId status=running');
+      debugPrint(
+        '[ExtPostGen] reused block id=$placeholderId messageId=$messageId status=running',
+      );
     } else {
       placeholderId = generateId();
       placeholder = InfoBlock(
@@ -578,8 +560,12 @@ class ExtensionPostGenService {
         status: BlockRunStatus.running,
       );
       await _repo.insert(placeholder);
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(placeholder);
-      debugPrint('[ExtPostGen] placeholder inserted: id=$placeholderId messageId=$messageId status=running');
+      _ref
+          .read(infoBlocksProvider(sessionId).notifier)
+          .addOrReplace(placeholder);
+      debugPrint(
+        '[ExtPostGen] placeholder inserted: id=$placeholderId messageId=$messageId status=running',
+      );
     }
 
     _refreshPanelForMessage(charId, sessionId, messageId);
@@ -590,32 +576,37 @@ class ExtensionPostGenService {
       switch (blockConfig.type) {
         case BlockType.infoblock:
           result = await _runInfoblock(
-            charId: charId,
-            sessionId: sessionId,
-            messageId: messageId,
-            messages: messages,
-            blockConfig: blockConfig,
-            preset: preset,
-            character: character,
-            persona: persona,
-            previousOutput: previousOutput,
-            cancelToken: cancelToken,
-            placeholderId: placeholderId,
-            placeholder: placeholder,
+            BlockContext(
+              charId: charId,
+              sessionId: sessionId,
+              messageId: messageId,
+              messages: messages,
+              blockConfig: blockConfig,
+              preset: preset,
+              character: character,
+              persona: persona,
+              previousOutput: previousOutput,
+              cancelToken: cancelToken,
+              placeholderId: placeholderId,
+              placeholder: placeholder,
+            ),
           );
         case BlockType.imageGen:
           result = await _runImageGen(
-            charId: charId,
-            sessionId: sessionId,
-            messageId: messageId,
-            messages: messages,
-            blockConfig: blockConfig,
-            character: character,
-            persona: persona,
-            previousOutput: previousOutput,
-            cancelToken: cancelToken,
-            placeholderId: placeholderId,
-            placeholder: placeholder,
+            BlockContext(
+              charId: charId,
+              sessionId: sessionId,
+              messageId: messageId,
+              messages: messages,
+              blockConfig: blockConfig,
+              preset: preset,
+              character: character,
+              persona: persona,
+              previousOutput: previousOutput,
+              cancelToken: cancelToken,
+              placeholderId: placeholderId,
+              placeholder: placeholder,
+            ),
           );
         case BlockType.jsRunner:
           result = await _runJsRunner(
@@ -668,180 +659,46 @@ class ExtensionPostGenService {
   // Infoblock
   // ─────────────────────────────────────────────────────────────────────────
 
-  Future<InfoBlock?> _runInfoblock({
-    required String charId,
-    required String sessionId,
-    required String messageId,
-    required List<ChatMessage> messages,
-    required BlockConfig blockConfig,
-    required ExtensionPreset preset,
-    required Character character,
-    required Persona? persona,
-    required String? previousOutput,
-    required CancelToken cancelToken,
-    required String placeholderId,
-    required InfoBlock placeholder,
-  }) async {
-    debugPrint('[ExtPostGen] _runInfoblock START: name="${blockConfig.name}" promptLen=${blockConfig.prompt.length} apiConfigId="${blockConfig.apiConfigId}" model="${blockConfig.model}"');
-    final infoBlockService = _ref.read(infoBlockServiceProvider);
-    final generated = await infoBlockService.generateSingleBlockContent(
-      sessionId: sessionId,
-      messageId: messageId,
-      messages: messages,
-      blockConfig: blockConfig,
-      character: character,
-      persona: persona?.name,
-      previousOutput: previousOutput,
-      cancelToken: cancelToken,
-      onStreamUpdate: _makeStreamHandler(
-        blockConfig: blockConfig,
-        charId: charId,
-        sessionId: sessionId,
-        messageId: messageId,
-        placeholder: placeholder,
-      ),
-    );
-    debugPrint('[ExtPostGen] _runInfoblock DONE: name="${blockConfig.name}" contentLen=${generated.content?.length ?? 0} error=${generated.error}');
-
-    if (cancelToken.isCancelled) {
-      await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
-      final stopped = InfoBlock(
-        id: placeholderId,
-        sessionId: sessionId,
-        messageId: messageId,
-        blockId: blockConfig.id,
-        blockName: blockConfig.name,
-        blockType: blockConfig.type.name,
-        content: '',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        order: blockConfig.order,
-        status: BlockRunStatus.stopped,
-      );
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(stopped);
-      _refreshPanelForMessage(charId, sessionId, messageId);
-      return stopped;
-    }
-
-    if (generated.error != null) {
-      return _markBlockError(
-        charId: charId,
-        sessionId: sessionId,
-        messageId: messageId,
-        placeholderId: placeholderId,
-        placeholder: placeholder,
-        errorMessage: generated.error!,
-      );
-    }
-
-    final content = generated.content;
-    if (content == null || content.isEmpty) {
-      return _markBlockError(
-        charId: charId,
-        sessionId: sessionId,
-        messageId: messageId,
-        placeholderId: placeholderId,
-        placeholder: placeholder,
-        errorMessage: 'Generation produced empty content',
-      );
-    }
-
-    // Update placeholder in DB with final content + done status.
-    await _repo.updateContent(placeholderId, content);
-    await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-
-    final done = InfoBlock(
-      id: placeholderId,
-      sessionId: sessionId,
-      messageId: messageId,
-      blockId: blockConfig.id,
-      blockName: blockConfig.name,
-      blockType: blockConfig.type.name,
-      content: content,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      order: blockConfig.order,
-      status: BlockRunStatus.done,
-    );
-    _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(done);
-    _refreshPanelForMessage(charId, sessionId, messageId);
-    return done;
+  Future<InfoBlock?> _runInfoblock(BlockContext context) {
+    return InfoblockHandler(
+      ref: _ref,
+      repo: _repo,
+      markBlockError: _markContextBlockError,
+      refreshPanelForMessage: _refreshPanelForMessage,
+      makeStreamHandler: _makeStreamHandler,
+    ).handle(context);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Image gen
   // ─────────────────────────────────────────────────────────────────────────
 
-  Future<InfoBlock?> _runImageGen({
-    required String charId,
-    required String sessionId,
-    required String messageId,
-    required List<ChatMessage> messages,
-    required BlockConfig blockConfig,
-    required Character character,
-    required Persona? persona,
-    required String? previousOutput,
-    required CancelToken cancelToken,
-    required String placeholderId,
-    required InfoBlock placeholder,
-  }) async {
-    debugPrint('[ExtPostGen] _runImageGen START: name="${blockConfig.name}"');
+  Future<InfoBlock?> _runImageGen(BlockContext context) {
+    return ImageGenBlockHandler(
+      ref: _ref,
+      repo: _repo,
+      markBlockError: _markContextBlockError,
+      makeStreamHandler: _makeStreamHandler,
+      publishStreamingBlockContent: _publishStreamingBlockContent,
+      renderImagePixels: _renderContextImagePixels,
+    ).handle(context);
+  }
 
-    // Step 1 — LLM image agent (U+A+previous block → HTML with [IMG:GEN]).
-    final infoBlockService = _ref.read(infoBlockServiceProvider);
-    final generated = await infoBlockService.generateSingleBlockContent(
-      sessionId: sessionId,
-      messageId: messageId,
-      messages: messages,
-      blockConfig: blockConfig,
-      character: character,
-      persona: persona?.name,
-      previousOutput: previousOutput,
-      cancelToken: cancelToken,
-      onStreamUpdate: _makeStreamHandler(
-        blockConfig: blockConfig,
-        charId: charId,
-        sessionId: sessionId,
-        messageId: messageId,
-        placeholder: placeholder,
-      ),
-    );
-
-    if (cancelToken.isCancelled) {
-      await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
-      return placeholder.copyWith(status: BlockRunStatus.stopped);
-    }
-
-    if (generated.error != null || generated.content == null) {
-      return _markBlockError(
-        charId: charId,
-        sessionId: sessionId,
-        messageId: messageId,
-        placeholderId: placeholderId,
-        placeholder: placeholder,
-        errorMessage: generated.error ?? 'Image agent returned empty response',
-      );
-    }
-
-    final agentHtml = generated.content!;
-    _publishStreamingBlockContent(
-      charId: charId,
-      sessionId: sessionId,
-      messageId: messageId,
-      placeholder: placeholder,
-      content: agentHtml,
-      force: true,
-    );
-
+  Future<InfoBlock?> _renderContextImagePixels({
+    required BlockContext context,
+    required String sourceContent,
+  }) {
     return _renderImagePixels(
-      charId: charId,
-      sessionId: sessionId,
-      messageId: messageId,
-      blockConfig: blockConfig,
-      character: character,
-      persona: persona,
-      sourceContent: agentHtml,
-      placeholderId: placeholderId,
-      placeholder: placeholder,
-      cancelToken: cancelToken,
+      charId: context.charId,
+      sessionId: context.sessionId,
+      messageId: context.messageId,
+      blockConfig: context.blockConfig,
+      character: context.character,
+      persona: context.persona,
+      sourceContent: sourceContent,
+      placeholderId: context.placeholderId,
+      placeholder: context.placeholder,
+      cancelToken: context.cancelToken,
     );
   }
 
@@ -861,17 +718,21 @@ class ExtensionPostGenService {
     if (imgGenSettings == null || !imgGenSettings.enabled) {
       await _repo.updateContent(placeholderId, sourceContent);
       await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-      final done =
-          placeholder.copyWith(content: sourceContent, status: BlockRunStatus.done);
+      final done = placeholder.copyWith(
+        content: sourceContent,
+        status: BlockRunStatus.done,
+      );
       _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(done);
       _refreshPanelForMessage(charId, sessionId, messageId);
       return done;
     }
 
-    final imageService =
-        await _ref.read(imageGenSettingsProvider.notifier).getServiceAsync();
-    final instructions =
-        imageService.extractInstructionsFromImageContent(sourceContent);
+    final imageService = await _ref
+        .read(imageGenSettingsProvider.notifier)
+        .getServiceAsync();
+    final instructions = imageService.extractInstructionsFromImageContent(
+      sourceContent,
+    );
     if (instructions.isEmpty) {
       return _markBlockError(
         charId: charId,
@@ -901,7 +762,8 @@ class ExtensionPostGenService {
       sessionId: sessionId,
       messageId: messageId,
       placeholder: placeholder,
-      content: '$sourceContent\n<p class="ext-block-image-pending">⏳ Генерация изображения…</p>',
+      content:
+          '$sourceContent\n<p class="ext-block-image-pending">⏳ Генерация изображения…</p>',
       force: true,
     );
 
@@ -909,15 +771,16 @@ class ExtensionPostGenService {
       List<String>? recentImageContexts;
       if (imgGenSettings.imageContextEnabled) {
         final sessionBlocks = await _repo.getBySessionId(sessionId);
-        final imageContents = sessionBlocks
-            .where(
-              (b) =>
-                  b.blockType == BlockType.imageGen.name &&
-                  b.status == BlockRunStatus.done &&
-                  b.id != placeholderId,
-            )
-            .toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        final imageContents =
+            sessionBlocks
+                .where(
+                  (b) =>
+                      b.blockType == BlockType.imageGen.name &&
+                      b.status == BlockRunStatus.done &&
+                      b.id != placeholderId,
+                )
+                .toList()
+              ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         recentImageContexts = ImageGenService.collectRecentImageResultPaths(
           imageContents.map((b) => b.content),
           maxPaths: 3,
@@ -926,7 +789,10 @@ class ExtensionPostGenService {
       }
 
       final style = instructions.first['style'] as String? ?? '';
-      var cleanPrompt = rawPrompt.replaceFirst(RegExp(r'^SCENE_PROMPT:\s*'), '');
+      var cleanPrompt = rawPrompt.replaceFirst(
+        RegExp(r'^SCENE_PROMPT:\s*'),
+        '',
+      );
       final prompt = style.isNotEmpty ? '$style, $cleanPrompt' : cleanPrompt;
       final instructionAspectRatio =
           instructions.first['aspect_ratio'] as String?;
@@ -958,8 +824,9 @@ class ExtensionPostGenService {
       final filePath = p.join(dir.path, filename);
       await File(filePath).writeAsBytes(imageBytes);
 
-      final hasResultToken =
-          ImgGenPatterns.imgResultRegex.hasMatch(sourceContent);
+      final hasResultToken = ImgGenPatterns.imgResultRegex.hasMatch(
+        sourceContent,
+      );
       final content = hasResultToken
           ? imageService.replaceExtBlockImageResult(sourceContent, filePath)
           : imageService.replaceTagWithResult(sourceContent, 0, filePath);
@@ -1076,7 +943,8 @@ class ExtensionPostGenService {
           messageId: messageId,
           placeholderId: placeholderId,
           placeholder: placeholder,
-          errorMessage: generated.error ?? 'Interactive agent returned empty response',
+          errorMessage:
+              generated.error ?? 'Interactive agent returned empty response',
         );
       }
 
@@ -1096,10 +964,7 @@ class ExtensionPostGenService {
       charId: charId,
       messageId: messageId,
       html: html,
-      options: {
-        'title': blockConfig.name,
-        'minHeight': 120,
-      },
+      options: {'title': blockConfig.name, 'minHeight': 120},
     );
     if (opened == null) {
       return _markBlockError(
@@ -1178,7 +1043,9 @@ class ExtensionPostGenService {
     }
 
     if (prompt.isEmpty) {
-      debugPrint('[ExtPostGen] jsRunner "${blockConfig.name}" — prompt is empty');
+      debugPrint(
+        '[ExtPostGen] jsRunner "${blockConfig.name}" — prompt is empty',
+      );
       await _repo.updateStatus(placeholderId, BlockRunStatus.done);
       _refreshPanelForMessage(charId, sessionId, messageId);
       return placeholder.copyWith(status: BlockRunStatus.done);
@@ -1464,9 +1331,7 @@ class ExtensionPostGenService {
         'runJsBlock only supports BlockType.jsRunner (got ${block.type.name})',
       );
     }
-    final script = block.prompt.isNotEmpty
-        ? block.prompt
-        : block.script;
+    final script = block.prompt.isNotEmpty ? block.prompt : block.script;
     if (script.isEmpty) {
       return null;
     }

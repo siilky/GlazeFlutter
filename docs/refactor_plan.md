@@ -1,10 +1,10 @@
 # Refactor Plan — Bridge, God-Widgets, God-Services
 
-**Status:** Phase 0 (RFC, pre-implementation)
+**Status:** Phase 2 in progress. Phase 1 complete.
 **Scope:** Decompose 4 Dart god-objects and 3 JS god-scripts that grew during the
 `js-extension-bridge-sdk` branch (22 feature commits) into focused modules.
 **Goal:** Clean foundation for future feature work; no functional changes.
-**Implementation timeline:** ~8-12 days, 9 phases, 1 commit per phase.
+**Implementation timeline:** ~9-13 days, RFC + 9 implementation phases, split across small PRs.
 
 ---
 
@@ -48,18 +48,43 @@ features, no test deletions. Every phase is a structural rearrangement
 covered by the existing 132 passing tests plus new unit tests for the
 extracted modules.
 
-**Two constraints:**
+**Constraints:**
 
 1. Each phase must end with `flutter analyze` clean and
    `flutter test <target files>` 100% green.
-2. No phase may exceed 500 net lines of churn (deletions + additions) so
-   the PR stays reviewable.
+2. Each phase must preserve the relevant invariants from
+   `docs/INVARIANTS.md`, especially INV-EG1-8 and INV-JS1-6 for extension
+   generation and JS bridge work.
+3. Keep reviewable diffs by separating pure file moves from behavior edits.
+   The JS phases may exceed 500 lines of churn because module extraction is
+   mostly move churn; those commits must be move-only where possible.
+4. Ship as multiple small PRs instead of one large PR:
+   `js_bridge_service`, `extension_post_gen_service`, `chat_webview_widget`,
+   `preset_editor_screen`, and JS assets.
 
 ---
 
 ## 3. Phases
 
-### Phase 1 — `js_bridge_service.dart` split (1 day)
+### Phase 0.5 — ES module WebView spike (0.5 day)
+
+**Goal:** prove that `type="module"` assets load correctly in the app WebView
+before moving `bridge.js`, `renderer.js`, or `formatter.js`.
+
+**Work:**
+
+* Add a minimal temporary module asset imported from `index.html` behind a
+  dev-only/static-test-visible hook.
+* Verify it loads in the Windows WebView2 target with a manual smoke test.
+* Add/update a static asset test so the module entrypoint is covered by tests.
+* Remove the spike hook before continuing, unless it is useful as a permanent
+  asset-loading guard.
+
+**Gate:** do not start Phase 5-7 until this spike passes. If the spike fails,
+keep single-file scripts for this refactor and defer ES modules to a separate
+platform-compatibility task.
+
+### Phase 1 — `js_bridge_service.dart` split (1 day) ✅ Done
 
 **Before:** `lib/features/extensions/services/js_bridge_service.dart` (707 lines)
 — one class with `_handleGetVariables`, `_handleSetVariables`,
@@ -73,30 +98,40 @@ extracted modules.
 lib/features/extensions/services/js_bridge/
   js_bridge_service.dart            (≤150 lines: dispatch + context lookup)
   handlers/
-    get_variables_handler.dart
-    set_variables_handler.dart
-    delete_variable_handler.dart
-    execute_command_handler.dart
-    trigger_generation_handler.dart
-    play_audio_handler.dart
-    show_toast_handler.dart
-    generate_text_handler.dart
-    inject_prompt_handler.dart
-    uninject_prompt_handler.dart
+    variables_handler.dart           (get/set/delete + atomic scope methods)
+    generation_handler.dart          (generateText + triggerGeneration)
+    prompt_injection_handler.dart    (injectPrompt + uninjectPrompt)
+    audio_handler.dart               (playAudio)
+    command_handler.dart             (executeCommand)
+    toast_handler.dart               (showToast)
   capability_resolver.dart          (read/write/delete per scope → capability id)
   permission_gate.dart              (`_requireCapability` extracted)
 ```
 
-**Pattern:** each handler exposes `FutureOr<dynamic> handle(JsBridgeContext context)`.
-Dispatcher in `js_bridge_service.dart` looks up the handler from a map and
-delegates. The `JsBridgeContext` carries `(params, context, repos,
-handlers)` so handlers stay testable in isolation.
+**Pattern:** handlers are grouped by domain to avoid one-class-per-tiny-method
+class explosion. Each handler exposes typed methods and the dispatcher in
+`js_bridge_service.dart` maps bridge method names to the matching method. The
+`JsBridgeContext` carries `(params, context, repos, handlers)` so handlers stay
+testable in isolation.
 
 **Test impact:** existing `test/js_bridge_service_test.dart` (13 cases)
-keeps the dispatcher contract; add per-handler unit tests
-(`test/handlers/get_variables_handler_test.dart`, etc.).
+keeps the dispatcher contract; add per-domain handler unit tests
+(`test/js_bridge/variables_handler_test.dart`, etc.).
 
-### Phase 2 — `extension_post_gen_service.dart` → Chain of Responsibility (2 days)
+**Implemented:** `lib/features/extensions/services/js_bridge_service.dart` is now
+a compatibility export. The implementation lives under
+`lib/features/extensions/services/js_bridge/` with domain handlers for
+variables, generation, prompt injection, audio, commands, and toast. Added
+`test/js_bridge/generation_handler_test.dart`.
+
+**Verification:** targeted analyze passed for the extracted bridge files and new
+test. Targeted tests passed: `test/js_bridge/generation_handler_test.dart`,
+`test/js_bridge_service_test.dart`, `test/play_audio_bridge_test.dart`,
+`test/js_bridge_toast_test.dart`, `test/global_message_variables_test.dart`,
+`test/trigger_generation_test.dart`, and `test/wired_command_registry_test.dart`
+(63 tests).
+
+### Phase 2 — `extension_post_gen_service.dart` → block processors (2 days) 🚧 In progress
 
 **Before:** one 1526-line service that:
 
@@ -112,7 +147,7 @@ keeps the dispatcher contract; add per-handler unit tests
 
 ```
 lib/features/extensions/services/blocks/
-  block_chain.dart                  (≤200 lines: walks blocks, dispatches to handler)
+  block_processor.dart              (≤200 lines: walks blocks, dispatches to handler)
   block_handler.dart                (abstract: `Future<void> handle(BlockContext)`)
   handlers/
     infoblock_handler.dart          (LLM → extract → persist)
@@ -123,16 +158,34 @@ lib/features/extensions/services/blocks/
   block_status_tracker.dart         (InfoBlock status lifecycle, extracted)
 ```
 
-**Pattern:** `BlockChain.run(blocks, trigger)` iterates blocks in order,
-resolves the right handler, and calls `handler.handle(ctx)`. Status
-transitions are centralized in `BlockStatusTracker` so every handler
-follows the same `pending → running → done | error | cancelled` flow.
+**Pattern:** keep the abstraction minimal: `BlockProcessor.run(blocks, trigger)`
+iterates blocks in order, resolves a handler from `Map<BlockType, BlockHandler>`,
+and calls `handler.handle(ctx)`. Status transitions are centralized in
+`BlockStatusTracker` so every handler follows the same
+`pending → running → done | error | cancelled` flow. Do not introduce a
+full chain-of-responsibility framework unless the current behavior needs it.
 
 **Test impact:** existing `test/after_user_dispatch_test.dart` and
 chain-filter tests stay; add per-handler unit tests
 (`test/blocks/infoblock_handler_test.dart`, etc.).
 
-### Phase 3 — `chat_webview_widget.dart` → Mixins (2 days)
+**Implemented so far:** extracted `BlockProcessor` with filter/order/
+`dependsOnPrevious` orchestration into
+`lib/features/extensions/services/blocks/block_processor.dart`. Added
+`BlockContext` and `BlockHandler` scaffolding. `ExtensionPostGenService._runChain`
+now delegates orchestration to `BlockProcessor`. Extracted the concrete
+`infoblock` handler into `blocks/infoblock_handler.dart` and the image block's
+LLM-agent step into `blocks/image_gen_block_handler.dart`; the shared pixel render
+step remains in `ExtensionPostGenService` because `rerunImageOnly()` uses it too.
+
+**Verification so far:** targeted analyze passed for
+`extension_post_gen_service.dart`, `services/blocks`, and
+`test/blocks/block_processor_test.dart`. Targeted tests passed:
+`test/blocks/block_processor_test.dart`, `test/after_user_dispatch_test.dart`,
+`test/periodic_trigger_scheduler_test.dart`, and
+`test/periodic_lifecycle_test.dart` (12 tests), after both handler extractions.
+
+### Phase 3 — `chat_webview_widget.dart` → controllers/services (2 days)
 
 **Before:** one 1630-line `ConsumerStatefulWidget` doing WebView setup,
 bridge wiring, panel lifecycle, audio lifecycle, swipe handling, periodic
@@ -142,27 +195,26 @@ tick consumption, afterUser, theme application, scrollback.
 
 ```
 lib/features/chat/widgets/chat_webview/
-  chat_webview_widget.dart          (≤300 lines: build, dispose, composition)
-  mixins/
-    webview_lifecycle_mixin.dart    (initState, dispose, didChangeAppLifecycleState)
-    bridge_host_mixin.dart          (register handlers, _generateBridgeText)
-    panel_lifecycle_mixin.dart      (openPanel, closePanel, postToPanel, eventStream)
-    audio_lifecycle_mixin.dart      (AudioBridgeService init/dispose/play)
-    swipe_mixin.dart                (swipe detection, regeneration flow)
-    periodic_dispatch_mixin.dart    (subscribe to PeriodicTriggerScheduler)
-    theme_mixin.dart                (apply theme tokens to WebView)
+  chat_webview_widget.dart          (≤300 lines: build, lifecycle delegation)
+  chat_webview_controller.dart      (coordinates WebView state + disposal order)
+  bridge_host_controller.dart       (register handlers, generate bridge text)
+  panel_lifecycle_controller.dart   (openPanel, closePanel, postToPanel, stream)
+  swipe_controller.dart             (swipe detection, regeneration flow)
+  periodic_dispatch_controller.dart (subscribe to PeriodicTriggerScheduler)
+  theme_applier.dart                (apply theme tokens to WebView)
   chat_webview_preload.dart         (already separate, no changes)
 ```
 
-**Pattern:** `ChatWebViewWidget` mixes in only what it needs. Mixins
-expose typed state (`BridgeHostMixin` owns the `JsBridgeService`
-instance, `PanelLifecycleMixin` owns the `PanelHostService` subscription,
-etc.). Cross-mixin communication goes through a small `ChatWebViewContext`
-object passed via constructor.
+**Pattern:** keep `ChatWebViewWidget` as a thin `ConsumerStatefulWidget` that
+owns lifecycle hooks and delegates to focused controllers/services. Avoid
+mixins as the primary decomposition mechanism because they hide dependencies
+and make `initState`/`dispose` ordering fragile. Cross-controller state goes
+through an explicit `ChatWebViewContext` or constructor dependencies.
 
-**Test impact:** mixins are tested in isolation with a `TestChatWebView`
-harness widget (`test/mixins/bridge_host_mixin_test.dart`, etc.). End-to-end
-behavior is still covered by the manual `flutter run` test.
+**Test impact:** controllers are tested in isolation where possible
+(`test/chat_webview/bridge_host_controller_test.dart`, etc.). Add one widget
+harness test that asserts clean init/dispose ordering. End-to-end behavior is
+still covered by the manual `flutter run` smoke test.
 
 ### Phase 4 — `preset_editor_screen.dart` → Sub-screens (1 day)
 
@@ -179,7 +231,7 @@ lib/features/extensions/screens/preset_editor/
     blocks_section.dart             (list of blocks + add)
     permissions_section.dart        (one SwitchListTile per capability)
     profiles_section.dart           (big/medium/small connection profile mapping)
-  block_editor_sheet.dart           (full-screen sheet, was _BlockEditDialog)
+  block_edit_dialog.dart            (same UX as current _BlockEditDialog)
   widgets/
     api_config_selector.dart        (reusable, used in block editor + elsewhere)
     model_field.dart                (with fetch button)
@@ -188,9 +240,10 @@ lib/features/extensions/screens/preset_editor/
     profile_picker_sheet.dart
 ```
 
-**Pattern:** each section is a `ConsumerWidget` with its own state.
-`BlockEditorSheet` is a full-screen modal route (not a dialog) so the
-form gets the full viewport — solves the cramped-dialog UX issue too.
+**Pattern:** each section is a `ConsumerWidget` with its own state. This phase
+is structural only: keep the current dialog UX while extracting it into a file.
+A full-screen block editor sheet can be done later as a separate UX PR because
+it changes behavior.
 
 **Test impact:** widget tests for each section widget (`golden tests`
 optional, smoke tests required).
@@ -223,15 +276,16 @@ assets/chat_webview/bridge/
 `assets/chat_webview/index.html`. Modules export their public surface,
 `index.js` wires the public surface to the controller.
 
-**Risk:** ES module loading from `file://` WebView is well-supported on
-modern WebView (Android 5+ / iOS 11+ / desktop WebView2/WKWebView).
-**Mitigation:** keep a fallback `bridge.legacy.js` (the current file) for
-one release; switch the default in `index.html` only after smoke test
-on every desktop platform.
+**Risk:** ES module loading from Flutter/WebView asset URLs must be verified
+on the target WebView implementation before this phase starts.
+**Mitigation:** Phase 0.5 gates this phase. If it passes, keep a fallback
+`bridge.legacy.js` (the current file) for one release or until platform smoke
+tests confirm the module entrypoint is stable.
 
 **Test impact:** add `test/webview_assets_module_test.dart` that asserts
-each new module is referenced from `index.js` and is syntactically valid
-(parsed via `dart:js_util` or a static check).
+each new module is referenced from `index.js` and that no required asset is
+orphaned. Syntax validation should use a static check available in the repo
+environment; do not depend on `dart:js_util` in VM Flutter tests.
 
 ### Phase 6 — `renderer.js` → modules (1 day)
 
@@ -262,10 +316,12 @@ assets/chat_webview/formatter/
   text_format.js                    (italics, bold, code inline)
 ```
 
-### Phase 8 — Test coverage, docs sync, final PR (1.5 days)
+### Phase 8 — Test coverage, docs sync, release gates (1.5 days)
 
-* Per-handler, per-mixin, per-section unit tests (target: 50+ new
+* Per-handler, per-controller, per-section unit tests (target: 50+ new
   assertions).
+* Run the `docs/INVARIANTS.md` refactor checklist for affected areas,
+  especially INV-EG1-8 and INV-JS1-6.
 * Update `docs/ARCHITECTURE.md` § 9 to reflect the new module
   boundaries.
 * Update `docs/CODE_STYLE.md` with concrete examples of how the
@@ -274,14 +330,16 @@ assets/chat_webview/formatter/
   table with the new file layout.
 * `flutter analyze` — 0 new errors.
 * `flutter test` — all 132 existing + 50+ new = 180+ passing.
-* One final PR, titled "refactor(ext): decompose god-objects from
-  js-extension-bridge-sdk branch".
+* Final PR in the series updates docs and removes any temporary fallback or
+  spike-only hooks that are no longer needed.
 
 ---
 
 ## 4. Out of scope
 
 * **No new features.** This PR is structural only.
+* **No UX changes in structural PRs.** For example, replacing the block edit
+  dialog with a full-screen sheet is a separate follow-up UX PR.
 * **No public API changes.** All ext-blocks behavior is preserved.
 * **No god-object that is < 500 lines is touched.** Examples: the
   `panel_host_service.dart` (already a focused service), the
@@ -297,25 +355,22 @@ assets/chat_webview/formatter/
 
 | Risk | Mitigation |
 |---|---|
-| `flutter analyze` regressions during mixin extraction | Each Phase 1-4 ends with `flutter analyze <target files>` clean. CI gate: 0 new errors. |
+| `flutter analyze` regressions during controller extraction | Each Phase 1-4 ends with `flutter analyze <target files>` clean. CI gate: 0 new errors. |
 | Existing tests break during refactor | Run `flutter test <target>` after every commit. If a test breaks, fix the refactor, not the test. |
-| ES modules don't load on a specific platform | `bridge.legacy.js` fallback kept for one release. |
-| Mixin lifecycle interactions (e.g. dispose order) | Add a `ChatWebViewHarness` test widget that asserts clean dispose. |
-| Reviewer fatigue on 9-commit PR | Squash at PR time into 1 commit per phase. Phases are independent enough to merge separately if needed. |
-| 8-12 day timeline slips | Each phase ships independent. If Monblant RFC is approved mid-refactor, Monblant work can start on already-refactored modules. |
+| ES modules don't load on a specific platform | Phase 0.5 spike gates Phase 5-7. If it fails, keep single-file scripts and defer ES modules. |
+| Controller lifecycle interactions (e.g. dispose order) | Add a `ChatWebViewHarness` test widget that asserts clean init/dispose ordering. |
+| Reviewer fatigue on a large PR | Ship as multiple PRs by subsystem. Keep pure moves separate from behavior edits. |
+| 9-13 day timeline slips | Each phase ships independent. If Monblant RFC is approved mid-refactor, Monblant work can start on already-refactored modules. |
 
 ---
 
 ## 6. Open questions
 
-* **Mixin vs separate widgets in Phase 3:** are mixins the right call,
-  or should we extract full sub-widgets (e.g. `BridgeHostWidget`)? Mixins
-  keep the public widget tree flat; sub-widgets add a layer.
-* **`bridge.legacy.js` fallback duration:** one release (Phase 5+1) or
-  drop immediately after smoke test?
-* **Section widgets in Phase 4:** keep them as private
-  (`sections/_blocks_section.dart`) or expose as public for re-use by
-  a future "preset card" home-screen widget?
+* **`bridge.legacy.js` fallback duration:** if Phase 0.5 passes, keep the
+  fallback for one release or drop immediately after platform smoke tests?
+* **Section widgets in Phase 4:** keep them private initially
+  (`sections/_blocks_section.dart`) or expose as public now? Default: private
+  until a second real consumer exists.
 
 ---
 
@@ -323,5 +378,6 @@ assets/chat_webview/formatter/
 
 - [ ] Lead developer review of file boundaries
 - [ ] Open questions answered (Section 6)
-- [ ] Timeline confirmation (8-12 days, 9 phases)
+- [ ] Timeline confirmation (9-13 days, RFC + 9 implementation phases)
+- [ ] Phase 0.5 ES module WebView spike result recorded
 - [ ] "bridge.legacy.js" fallback decision
