@@ -89,6 +89,14 @@ class InfoBlocksRepository extends DatabaseAccessor<AppDatabase>
     await (delete(infoBlocks)..where((tbl) => tbl.id.equals(id))).go();
   }
 
+  Future<void> deleteByMessageId(String sessionId, String messageId) async {
+    await (delete(infoBlocks)
+          ..where((tbl) =>
+              tbl.sessionId.equals(sessionId) &
+              tbl.messageId.equals(messageId)))
+        .go();
+  }
+
   InfoBlock _rowToModel(InfoBlockRow row) {
     return InfoBlock(
       id: row.id,

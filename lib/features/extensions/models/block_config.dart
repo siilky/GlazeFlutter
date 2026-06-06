@@ -28,21 +28,27 @@ class BlockConfig with _$BlockConfig {
     @Default(false) bool dependsOnPrevious,
     @Default(true) bool inject,
     @Default(1) int injectLastN,
+    /// Optional text inserted after `\\n\\n` and before the injected block body
+    /// in main chat history (e.g. a note that the block is reference-only).
+    @Default('') String injectPrefix,
     @Default('') String apiConfigId,
     @Default('') String model,
+    /// When true, LLM output is pushed to the ext-blocks panel incrementally
+    /// during generation (infoblock + image agent steps).
+    @Default(false) bool streamToPanel,
     // Image-specific
     @Default('') String imagePromptInstruction,
     @Default(true) bool imageGenEnabled,
     // Context control (Phase 9)
-    /// Number of recent messages to include as context for this block.
-    /// 0 = only character card + system prompt, -1 = entire history.
+    /// Number of recent messages to include as context for this block,
+    /// counted backward from the message the block is attached to (inclusive).
+    /// 0 = only character card + system prompt, -1 = entire history up to anchor.
     @Default(10) int contextMessageCount,
     /// Additional system text prepended before chat history.
     /// Supports macros: {{char}}, {{user}}, {{description}}, {{personality}}.
     @Default('') String contextSystemPrompt,
     // JS Runner (Phase 10)
-    /// JavaScript source code for jsRunner blocks.
-    /// The script receives a `context` object and must return a string.
+    /// Legacy static script (used only when [prompt] is empty). Prefer LLM prompt.
     @Default('') String script,
     // Template (upstream parity)
     /// XML-like skeleton that defines the block's shape. Sent to the LLM as

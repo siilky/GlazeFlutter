@@ -668,9 +668,10 @@ class InteractionDispatch {
     return {
       'memory-click': (e, el) => bridge._sendToFlutter('onMemoryClick', [el.dataset.messageId]),
       'inject-click': (e, el) => bridge._sendToFlutter('onInjectClick', [el.dataset.messageId]),
-      'ext-blocks-click': (e, el) => bridge._sendToFlutter('onExtBlocksClick', [el.dataset.messageId]),
+      'ext-blocks-run-all': (e, el) => bridge._sendToFlutter('onExtBlocksRunAll', [el.dataset.messageId]),
       'ext-block-stop': (e, el) => bridge._sendToFlutter('onExtBlockStop', [el.dataset.blockId, el.dataset.messageId]),
       'ext-block-regen': (e, el) => bridge._sendToFlutter('onExtBlockRegen', [el.dataset.blockId, el.dataset.messageId]),
+      'ext-block-regen-image': (e, el) => bridge._sendToFlutter('onExtBlockRegenImage', [el.dataset.blockId, el.dataset.messageId]),
       'ext-block-edit': (e, el) => bridge._sendToFlutter('onExtBlockEdit', [el.dataset.blockId, el.dataset.messageId]),
       'ext-block-delete': (e, el) => bridge._sendToFlutter('onExtBlockDelete', [el.dataset.blockId, el.dataset.messageId]),
       'toggle-hidden': (e, el) => bridge._sendToFlutter('onToggleHidden', [el.dataset.messageId]),
@@ -1399,19 +1400,18 @@ class Bridge {
   showExtBlocksPanel(json) {
     let data;
     try { data = JSON.parse(json); } catch (_) { return; }
-    const { messageId, blocks } = data;
+    const { messageId, blocks, canRunAll } = data;
     if (!messageId) return;
 
     const section = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!section) return;
 
-    let panel = section.querySelector('.ext-blocks-panel');
-
     if (!blocks || blocks.length === 0) {
-      panel?.remove();
+      section.querySelector('.ext-blocks-panel')?.remove();
       return;
     }
 
+    let panel = section.querySelector('.ext-blocks-panel');
     if (!panel) {
       panel = document.createElement('div');
       panel.className = 'ext-blocks-panel';
@@ -1421,15 +1421,27 @@ class Bridge {
 
     panel.innerHTML = '';
 
+    if (canRunAll) {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'ext-blocks-toolbar';
+      const runAllBtn = document.createElement('button');
+      runAllBtn.type = 'button';
+      runAllBtn.className = 'ext-block-btn ext-blocks-run-all';
+      runAllBtn.dataset.action = 'ext-blocks-run-all';
+      runAllBtn.dataset.messageId = messageId;
+      runAllBtn.textContent = '▶ Запустить блоки';
+      toolbar.appendChild(runAllBtn);
+      panel.appendChild(toolbar);
+    }
+
     for (const block of blocks) {
       const item = document.createElement('div');
       item.className = `ext-block-item ${block.status || 'done'}`;
+      item.dataset.blockId = block.blockId;
 
-      // Collapsible header row (acts as the toggle).
       const header = document.createElement('div');
       header.className = 'ext-block-header';
 
-      // Caret that rotates when expanded/collapsed.
       const caret = document.createElement('span');
       caret.className = 'ext-block-caret';
       caret.textContent = '▸';
@@ -1442,7 +1454,7 @@ class Bridge {
 
       const statusEl = document.createElement('span');
       statusEl.className = 'ext-block-status';
-      statusEl.textContent = block.status || 'done';
+      statusEl.textContent = this._extBlockStatusLabel(block.status);
       header.appendChild(statusEl);
 
       // Buttons — no per-btnGroup listener so the click bubbles up to the
@@ -1483,7 +1495,31 @@ class Bridge {
         stopBtn.dataset.messageId = messageId;
         stopBtn.textContent = '■ Стоп';
         btnGroup.appendChild(stopBtn);
+      } else if (block.status === 'pending') {
+        const startBtn = document.createElement('button');
+        startBtn.type = 'button';
+        startBtn.className = 'ext-block-btn';
+        startBtn.dataset.action = 'ext-block-regen';
+        startBtn.dataset.blockId = block.blockId;
+        startBtn.dataset.messageId = messageId;
+        startBtn.textContent = '▶ Запустить';
+        btnGroup.appendChild(startBtn);
       } else {
+        const canRegenImage = block.type === 'imageGen' && block.content && (
+          /\[IMG:RESULT:/.test(block.content) ||
+          /\[IMG:GEN:/.test(block.content) ||
+          /data-iig-instruction/i.test(block.content)
+        );
+        if (canRegenImage) {
+          const imgRegenBtn = document.createElement('button');
+          imgRegenBtn.type = 'button';
+          imgRegenBtn.className = 'ext-block-btn';
+          imgRegenBtn.dataset.action = 'ext-block-regen-image';
+          imgRegenBtn.dataset.blockId = block.blockId;
+          imgRegenBtn.dataset.messageId = messageId;
+          imgRegenBtn.textContent = '↺ Картинка';
+          btnGroup.appendChild(imgRegenBtn);
+        }
         const regenBtn = document.createElement('button');
         regenBtn.type = 'button';
         regenBtn.className = 'ext-block-btn';
@@ -1504,36 +1540,89 @@ class Bridge {
       // Content body (collapsible).
       const body = document.createElement('div');
       body.className = 'ext-block-body';
-      const hasContent = block.content && block.content.trim().length > 0;
-      if (!hasContent) {
-        const empty = document.createElement('div');
-        empty.className = 'ext-block-content empty';
-        empty.textContent = '(пусто)';
-        body.appendChild(empty);
-      } else {
-        const imgMatch = block.content.match(/\[IMG:RESULT:([^\]]+)\]/);
-        if (imgMatch) {
-          const img = document.createElement('img');
-          let path = imgMatch[1];
-          const pipeIdx = path.indexOf('|');
-          if (pipeIdx !== -1) path = path.substring(0, pipeIdx);
-          img.src = path.startsWith('file://') ? path : `file:///${path.replace(/\\/g, '/')}`;
-          img.className = 'ext-block-image';
-          body.appendChild(img);
-        } else {
-          // Render the block content as HTML so user-authored markup
-          // (e.g. <details><summary>, custom tags like <loomledger>) is
-          // preserved. Only the model output is inserted here — never
-          // untrusted data from outside the model.
-          const html = document.createElement('div');
-          html.className = 'ext-block-content';
-          html.innerHTML = block.content;
-          body.appendChild(html);
-        }
-      }
+      this._fillExtBlockBody(body, block);
       item.appendChild(body);
 
       panel.appendChild(item);
+    }
+  }
+
+  /**
+   * Lightweight streaming update — only replaces one block's body + status.
+   * Returns false if the panel or block row is not on screen yet.
+   */
+  patchExtBlockContent(json) {
+    let data;
+    try { data = JSON.parse(json); } catch (_) { return false; }
+    const { messageId, blockId, content, status } = data;
+    if (!messageId || !blockId) return false;
+
+    const section = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!section) return false;
+    const panel = section.querySelector('.ext-blocks-panel');
+    if (!panel) return false;
+
+    const item = panel.querySelector(`.ext-block-item[data-block-id="${blockId}"]`);
+    if (!item) return false;
+
+    item.className = `ext-block-item ${status || 'running'}`;
+    const statusEl = item.querySelector('.ext-block-status');
+    if (statusEl) statusEl.textContent = this._extBlockStatusLabel(status);
+
+    const body = item.querySelector('.ext-block-body');
+    if (!body) return false;
+    body.innerHTML = '';
+    this._fillExtBlockBody(body, { content, status });
+    item.classList.remove('collapsed');
+    return true;
+  }
+
+  _fillExtBlockBody(body, block) {
+    const hasContent = block.content && block.content.trim().length > 0;
+    if (!hasContent && block.status !== 'pending') {
+      const empty = document.createElement('div');
+      empty.className = 'ext-block-content empty';
+      empty.textContent = '(пусто)';
+      body.appendChild(empty);
+      return;
+    }
+    if (!hasContent) return;
+
+    const imgResultRegex = /\[IMG:RESULT:([^\]]+)\]/;
+    const hasImgResult = imgResultRegex.test(block.content);
+    const hasHtmlMarkup = /<[a-z][\s\S]*>/i.test(block.content);
+
+    if (hasImgResult && hasHtmlMarkup) {
+      let html = block.content.replace(
+        /\[IMG:RESULT:([^\]]+)\]/g,
+        (match, payload) => {
+          let path = payload;
+          const pipeIdx = path.indexOf('|');
+          if (pipeIdx !== -1) path = path.substring(0, pipeIdx);
+          const src = path.startsWith('file://')
+            ? path
+            : `file:///${path.replace(/\\/g, '/')}`;
+          return `<img src="${src}" class="ext-block-image" style="display:block;width:100%;border-radius:15px;">`;
+        },
+      );
+      const htmlEl = document.createElement('div');
+      htmlEl.className = 'ext-block-content';
+      htmlEl.innerHTML = html;
+      body.appendChild(htmlEl);
+    } else if (hasImgResult) {
+      const imgMatch = block.content.match(imgResultRegex);
+      const img = document.createElement('img');
+      let path = imgMatch[1];
+      const pipeIdx = path.indexOf('|');
+      if (pipeIdx !== -1) path = path.substring(0, pipeIdx);
+      img.src = path.startsWith('file://') ? path : `file:///${path.replace(/\\/g, '/')}`;
+      img.className = 'ext-block-image';
+      body.appendChild(img);
+    } else {
+      const html = document.createElement('div');
+      html.className = 'ext-block-content';
+      html.innerHTML = block.content;
+      body.appendChild(html);
     }
   }
 
@@ -1543,6 +1632,23 @@ class Bridge {
    */
   updateExtBlocksPanel(json) {
     this.showExtBlocksPanel(json);
+  }
+
+  hideExtBlocksPanel(messageId) {
+    if (!messageId) return;
+    const section = document.querySelector(`[data-message-id="${messageId}"]`);
+    section?.querySelector('.ext-blocks-panel')?.remove();
+  }
+
+  _extBlockStatusLabel(status) {
+    switch (status) {
+      case 'pending': return 'ожидает';
+      case 'running': return 'генерация…';
+      case 'error': return 'ошибка';
+      case 'stopped': return 'остановлен';
+      case 'done': return 'готово';
+      default: return status || '—';
+    }
   }
 
   /**

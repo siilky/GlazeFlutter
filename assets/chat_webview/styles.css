@@ -253,32 +253,6 @@
 /* ============================================================
  * Ext Blocks badge + inline panel
  * ============================================================ */
-.msg-ext-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 18px;
-  border-radius: 999px;
-  font-size: 13px;
-  border: 1px solid transparent;
-  flex-shrink: 0;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  padding: 0;
-  line-height: 1;
-}
-.msg-ext-badge.running {
-  color: #ffd700;
-  animation: pending-pulse 2s ease-in-out infinite;
-}
-.msg-ext-badge.done {
-  color: #4caf50;
-}
-.msg-ext-badge.error {
-  color: #ff7b7b;
-}
 
 .ext-blocks-panel {
   margin-top: 8px;
@@ -288,6 +262,16 @@
   flex-direction: column;
   gap: 8px;
 }
+.ext-blocks-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2px;
+}
+.ext-blocks-run-all {
+  font-weight: 600;
+  color: rgba(255, 215, 0, 0.95);
+  border-color: rgba(255, 215, 0, 0.35);
+}
 
 .ext-block-item {
   background: rgba(255, 255, 255, 0.04);
@@ -296,8 +280,18 @@
   padding: 8px 10px;
 }
 .ext-block-item.running { border-color: rgba(255, 215, 0, 0.3); }
+.ext-block-item.pending { border-color: rgba(255, 255, 255, 0.15); border-style: dashed; }
 .ext-block-item.error   { border-color: rgba(255, 123, 123, 0.3); }
 .ext-block-item.done    { border-color: rgba(76, 175, 80, 0.2); }
+.ext-block-item.running .ext-block-status {
+  color: rgba(255, 215, 0, 0.9);
+  animation: pending-pulse 2s ease-in-out infinite;
+}
+.ext-block-item.pending .ext-block-status {
+  color: rgba(255, 255, 255, 0.45);
+  font-style: italic;
+  text-transform: none;
+}
 
 .ext-block-header {
   display: flex;
@@ -373,6 +367,13 @@
   color: rgba(255, 255, 255, 0.3);
   font-style: italic;
 }
+.ext-block-error {
+  color: rgba(255, 123, 123, 0.95);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+}
 .ext-block-content pre {
   white-space: pre-wrap;
   font-family: inherit;
@@ -406,6 +407,32 @@
   color: rgba(255, 255, 255, 0.85);
   padding: 2px 0;
 }
+.ext-block-image-pending {
+  opacity: 0.75;
+  font-style: italic;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ext-block-js-pending {
+  opacity: 0.75;
+  font-style: italic;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ext-block-js-source summary {
+  cursor: pointer;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+
+.ext-block-js-source pre {
+  white-space: pre-wrap;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
 .ext-block-image {
   max-width: 100%;
   border-radius: 6px;

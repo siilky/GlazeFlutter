@@ -1,16 +1,23 @@
-import '../../../core/db/repositories/info_blocks_repository.dart';
 import '../../../core/models/chat_message.dart';
+import '../models/block_config.dart';
 import '../models/extension_preset.dart';
+import '../models/info_block.dart';
+import 'block_content_extractor.dart';
 
-/// Инжектирует инфоблоки в историю сообщений перед отправкой промпта LLM.
+/// Minimal read surface used by [InfoBlockInjector] (implemented by [InfoBlocksRepository]).
+abstract class InfoBlockReader {
+  Future<List<InfoBlock>> getByMessageId(String sessionId, String messageId);
+}
+
+/// Инжектирует инфоблоки в историю перед сборкой основного промпта.
 ///
-/// Логика: для каждого включённого блока с inject=true берём последние
-/// [BlockConfig.injectLastN] assistant-сообщений и вставляем перед каждым
-/// из них сгенерированный ранее инфоблок этого блока.
+/// Для каждого блока с `inject=true` берём последние [BlockConfig.injectLastN]
+/// assistant-сообщений и дописываем к **каждому** из них только **его**
+/// сохранённый вывод этого блока (`content\\n\\n<block>`).
 class InfoBlockInjector {
-  final InfoBlocksRepository _repository;
+  final InfoBlockReader _repository;
 
-  InfoBlockInjector(this._repository);
+  InfoBlockInjector(InfoBlockReader repository) : _repository = repository;
 
   Future<List<ChatMessage>> injectBlocks({
     required List<ChatMessage> messages,
@@ -21,10 +28,14 @@ class InfoBlockInjector {
         preset.blocks.where((b) => b.enabled && b.inject).toList();
     if (injectableBlocks.isEmpty) return messages;
 
-    // Collect assistant messages from the end.
+    // Collect visible assistant messages from the end (newest first).
     final assistantIndices = <int>[];
     for (int i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role == 'assistant') assistantIndices.add(i);
+      final msg = messages[i];
+      if (msg.isHidden || msg.isTyping) continue;
+      if (msg.role == 'assistant' || msg.role == 'character') {
+        assistantIndices.add(i);
+      }
     }
 
     if (assistantIndices.isEmpty) return messages;
@@ -46,16 +57,46 @@ class InfoBlockInjector {
             blocks.where((b) => b.blockName == blockConfig.name).toList();
         if (blockResults.isEmpty) continue;
 
-        final injected =
-            blockResults.map((b) => b.content).join('\n').trim();
+        final injected = blockResults
+            .map((b) => _formatInjectedContent(blockConfig, b.content))
+            .where((c) => c.trim().isNotEmpty)
+            .join('\n')
+            .trim();
         if (injected.isEmpty) continue;
 
         result[idx] = msg.copyWith(
-          content: '${msg.content}\n\n$injected',
+          content: '${msg.content}\n\n${_injectSuffix(blockConfig, injected)}',
         );
       }
     }
 
     return result;
+  }
+
+  /// Text after the blank line and before [blockBody] in injected history.
+  String _injectSuffix(BlockConfig blockConfig, String blockBody) {
+    final prefix = blockConfig.injectPrefix;
+    if (prefix.isEmpty) return blockBody;
+    if (prefix.endsWith('\n')) return '$prefix$blockBody';
+    return '$prefix\n$blockBody';
+  }
+
+  String _formatInjectedContent(BlockConfig blockConfig, String content) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) return '';
+
+    final template = blockConfig.template
+        .trim()
+        .replaceAll('{{name}}', blockConfig.name);
+    if (template.isEmpty) return trimmed;
+
+    final tag = blockTagName(blockConfig, template);
+    final wrappedPattern = RegExp(
+      '<$tag(\\s+[^>]*)?>[\\s\\S]*<\\/$tag>',
+      caseSensitive: false,
+    );
+    if (wrappedPattern.hasMatch(trimmed)) return trimmed;
+
+    return '<$tag>\n$trimmed\n</$tag>';
   }
 }

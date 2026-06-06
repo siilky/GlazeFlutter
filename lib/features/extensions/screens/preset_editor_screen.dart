@@ -226,18 +226,17 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
   late TextEditingController _nameController;
   late TextEditingController _templateController;
   late TextEditingController _promptController;
-  late TextEditingController _imagePromptController;
   late TextEditingController _apiConfigController;
   late TextEditingController _modelController;
   late TextEditingController _contextSystemPromptController;
-  late TextEditingController _scriptController;
+  late TextEditingController _injectPrefixController;
   late BlockType _type;
   late BlockTrigger _trigger;
   late bool _inject;
   late int _injectLastN;
   late bool _dependsOnPrevious;
-  late bool _imageGenEnabled;
   late int _contextMessageCount;
+  late bool _streamToPanel;
   bool _fetchingModels = false;
 
   @override
@@ -246,40 +245,67 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
     final b = widget.block;
     _nameController = TextEditingController(text: b.name);
     _templateController = TextEditingController(text: b.template);
-    _promptController = TextEditingController(text: b.prompt);
-    _imagePromptController = TextEditingController(text: b.imagePromptInstruction);
+    final promptText = b.type == BlockType.imageGen &&
+            b.prompt.isEmpty &&
+            b.imagePromptInstruction.isNotEmpty
+        ? b.imagePromptInstruction
+        : b.prompt;
+    _promptController = TextEditingController(text: promptText);
     _apiConfigController = TextEditingController(text: b.apiConfigId);
     _modelController = TextEditingController(text: b.model);
     _contextSystemPromptController = TextEditingController(text: b.contextSystemPrompt);
-    _scriptController = TextEditingController(text: b.script);
+    _injectPrefixController = TextEditingController(text: b.injectPrefix);
     _type = b.type;
     _trigger = b.trigger;
     _inject = b.inject;
     _injectLastN = b.injectLastN;
     _dependsOnPrevious = b.dependsOnPrevious;
-    _imageGenEnabled = b.imageGenEnabled;
     _contextMessageCount = b.contextMessageCount;
+    _streamToPanel = b.streamToPanel;
   }
 
   void _save() {
-    widget.onSave(widget.block.copyWith(
+    widget.onSave(_buildSavedBlock());
+    Navigator.pop(context);
+  }
+
+  BlockConfig _buildSavedBlock() {
+    final isImage = _type == BlockType.imageGen;
+    final isJs = _type == BlockType.jsRunner;
+    final isInfoblock = _type == BlockType.infoblock;
+    final usesLlm = isInfoblock || isImage || isJs;
+    return widget.block.copyWith(
       name: _nameController.text.trim(),
       type: _type,
       trigger: _trigger,
-      template: _templateController.text,
-      prompt: _promptController.text,
-      inject: _inject,
-      injectLastN: _injectLastN,
+      template: isInfoblock ? _templateController.text : '',
+      prompt: usesLlm ? _promptController.text : '',
+      inject: isInfoblock ? _inject : false,
+      injectLastN: isInfoblock ? _injectLastN : 0,
+      injectPrefix: isInfoblock ? _injectPrefixController.text : '',
       dependsOnPrevious: _dependsOnPrevious,
-      apiConfigId: _apiConfigController.text.trim(),
-      model: _modelController.text.trim(),
-      imagePromptInstruction: _imagePromptController.text,
-      imageGenEnabled: _imageGenEnabled,
-      contextMessageCount: _contextMessageCount,
-      contextSystemPrompt: _contextSystemPromptController.text,
-      script: _scriptController.text,
-    ));
-    Navigator.pop(context);
+      apiConfigId: usesLlm ? _apiConfigController.text.trim() : '',
+      model: usesLlm ? _modelController.text.trim() : '',
+      imagePromptInstruction: '',
+      imageGenEnabled: true,
+      contextMessageCount: usesLlm ? _contextMessageCount : 0,
+      contextSystemPrompt: usesLlm ? _contextSystemPromptController.text : '',
+      streamToPanel: usesLlm ? _streamToPanel : false,
+      script: isJs ? widget.block.script : '',
+    );
+  }
+
+  void _onTypeChanged(BlockType type) {
+    setState(() {
+      _type = type;
+      if (type == BlockType.imageGen) {
+        _dependsOnPrevious = true;
+        _inject = false;
+      }
+      if (type == BlockType.jsRunner && _contextMessageCount == 0) {
+        _contextMessageCount = 10;
+      }
+    });
   }
 
   @override
@@ -287,11 +313,10 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
     _nameController.dispose();
     _templateController.dispose();
     _promptController.dispose();
-    _imagePromptController.dispose();
     _apiConfigController.dispose();
     _modelController.dispose();
     _contextSystemPromptController.dispose();
-    _scriptController.dispose();
+    _injectPrefixController.dispose();
     super.dispose();
   }
 
@@ -330,8 +355,7 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
                   ),
                 ],
                 selected: {_type},
-                onSelectionChanged: (s) =>
-                    setState(() => _type = s.first),
+                onSelectionChanged: (s) => _onTypeChanged(s.first),
                 style: ButtonStyle(visualDensity: VisualDensity.compact),
               ),
               const SizedBox(height: 16),
@@ -356,11 +380,31 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
                     setState(() => _trigger = s.first),
                 style: ButtonStyle(visualDensity: VisualDensity.compact),
               ),
-              if (_type != BlockType.jsRunner) ...[
+              if (_type == BlockType.infoblock ||
+                  _type == BlockType.imageGen ||
+                  _type == BlockType.jsRunner) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: const Text('Ждать завершения предыдущего блока'),
+                  subtitle: Text(
+                    _type == BlockType.imageGen
+                        ? 'Ledger/infoblock передаётся agent\'у как previousOutput'
+                        : _type == BlockType.jsRunner
+                            ? 'Вывод предыдущего блока доступен в context.previousOutput'
+                            : 'Получает вывод предыдущего блока как контекст',
+                  ),
+                  value: _dependsOnPrevious,
+                  onChanged: (v) => setState(() => _dependsOnPrevious = v),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+              if (_type == BlockType.infoblock) ...[
                 const SizedBox(height: 16),
                 SwitchListTile(
                   title: const Text('Инжектировать в промпт'),
-                  subtitle: const Text('Вставлять вывод блока в историю перед отправкой'),
+                  subtitle: const Text(
+                    'Дописывать вывод блока к последним N assistant-сообщениям в истории чата',
+                  ),
                   value: _inject,
                   onChanged: (v) => setState(() => _inject = v),
                   contentPadding: EdgeInsets.zero,
@@ -370,31 +414,76 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
                   TextField(
                     controller: TextEditingController(text: _injectLastN.toString()),
                     decoration: const InputDecoration(
-                      labelText: 'К скольким посл. сообщениям ассистента',
-                      helperText: '0 = не инжектировать, 1 = только последнее, …',
+                      labelText: 'Сколько последних assistant-сообщений',
+                      helperText:
+                          '0 = не инжектировать. К каждому из N сообщений дописывается только его блок.',
                     ),
                     keyboardType: TextInputType.number,
                     onChanged: (v) =>
                         _injectLastN = int.tryParse(v) ?? _injectLastN,
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _injectPrefixController,
+                    decoration: const InputDecoration(
+                      labelText: 'Текст перед блоком',
+                      helperText:
+                          'Между ответом и блоком (после пустой строки). Пусто = сразу блок.',
+                      alignLabelWithHint: true,
+                    ),
+                    minLines: 1,
+                    maxLines: 4,
+                  ),
                 ],
               ],
-              const SizedBox(height: 8),
-              SwitchListTile(
-                title: const Text('Ждать завершения предыдущего блока'),
-                subtitle: const Text('Получает вывод предыдущего блока как контекст'),
-                value: _dependsOnPrevious,
-                onChanged: (v) => setState(() => _dependsOnPrevious = v),
-                contentPadding: EdgeInsets.zero,
-              ),
-              if (_type != BlockType.jsRunner) ...[
+              if (_type == BlockType.infoblock ||
+                  _type == BlockType.imageGen ||
+                  _type == BlockType.jsRunner) ...[
+                const SizedBox(height: 16),
+                _SectionLabel(switch (_type) {
+                  BlockType.imageGen => 'Image agent (LLM)',
+                  BlockType.jsRunner => 'JS agent (LLM)',
+                  _ => 'Промпт и формат',
+                }),
+                TextField(
+                  controller: _promptController,
+                  decoration: InputDecoration(
+                    labelText: switch (_type) {
+                      BlockType.imageGen => 'Инструкции agent\'а (<image_prompt>…)',
+                      BlockType.jsRunner =>
+                        'Инструкции: что должен сделать JS-скрипт',
+                      _ => 'Инструкции для модели',
+                    },
+                    hintText: switch (_type) {
+                      BlockType.imageGen =>
+                        'Правила HTML-карточки, [IMG:GEN], JSON…',
+                      BlockType.jsRunner =>
+                        'Модель пишет ```js … ``` с return "…". context: messages, character, previousOutput',
+                      _ => 'Что именно сгенерировать в этом блоке…',
+                    },
+                    helperText: switch (_type) {
+                      BlockType.imageGen =>
+                        'System prompt для LLM: HTML с data-iig-instruction',
+                      BlockType.jsRunner =>
+                        'Модель генерирует код; sandbox выполняет return строки/HTML',
+                      _ => 'Уходит в system-сообщение к LLM (главные правила блока)',
+                    },
+                    alignLabelWithHint: true,
+                  ),
+                  maxLines: _type == BlockType.infoblock ? 4 : 12,
+                  minLines: _type == BlockType.infoblock ? 2 : 6,
+                ),
+              ],
+              if (_type == BlockType.infoblock) ...[
                 const SizedBox(height: 8),
                 TextField(
                   controller: _templateController,
                   decoration: const InputDecoration(
-                    labelText: 'Шаблон блока',
-                    hintText: '<{{name}}>\n\n</{{name}}>',
-                    helperText: 'XML-каркас. Модель выведет контент между тегами. {{name}} → имя блока.',
+                    labelText: 'Шаблон XML (необязательно)',
+                    hintText: '<{{name}}>\n<details>…</details>\n</{{name}}>',
+                    helperText:
+                        'Если задан — модель должна заполнить содержимое между тегами. '
+                        'Пустое поле = сохраняем весь ответ модели без парсинга XML.',
                     alignLabelWithHint: true,
                   ),
                   maxLines: 5,
@@ -404,18 +493,47 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
                     fontSize: 13,
                   ),
                 ),
+              ],
+              if (_type == BlockType.infoblock ||
+                  _type == BlockType.imageGen ||
+                  _type == BlockType.jsRunner) ...[
+                const SizedBox(height: 16),
+                _SectionLabel('История чата для блока'),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Сколько последних сообщений чата передать',
+                    helperText:
+                        'Считается от сообщения, на котором висит блок (не от конца чата).\n'
+                        '1 — только это сообщение (ответ ассистента на панели).\n'
+                        '2 — user+assistant, заканчивая этим сообщением.\n'
+                        '4 — ~2 хода (2×U+A) перед ним.\n'
+                        '0 — без лога чата. -1 — вся история до этого сообщения.',
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(signed: true),
+                  controller: TextEditingController(text: _contextMessageCount.toString()),
+                  onChanged: (v) =>
+                      _contextMessageCount = int.tryParse(v) ?? _contextMessageCount,
+                ),
                 const SizedBox(height: 8),
                 TextField(
-                  controller: _promptController,
+                  controller: _contextSystemPromptController,
                   decoration: const InputDecoration(
-                    labelText: 'Промпт для генерации',
-                    hintText: 'Что запрашивать у LLM...',
+                    labelText: 'Текст перед историей чата',
+                    hintText: 'Стиль, напоминания, описание сцены…',
+                    helperText:
+                        'Добавляется в user-сообщение перед логом чата. '
+                        'Макросы: {{char}}, {{user}}, {{description}}, {{personality}}',
+                    alignLabelWithHint: true,
                   ),
-                  maxLines: 4,
+                  maxLines: 5,
                   minLines: 2,
                 ),
-                const SizedBox(height: 12),
-                _SectionLabel('API'),
+                const SizedBox(height: 16),
+                _SectionLabel(switch (_type) {
+                  BlockType.imageGen => 'API agent\'а',
+                  BlockType.jsRunner => 'API agent\'а',
+                  _ => 'API',
+                }),
                 _ApiConfigSelector(
                   selectedId: _apiConfigController.text,
                   onSelected: (id) {
@@ -433,72 +551,50 @@ class _BlockEditDialogState extends ConsumerState<_BlockEditDialog> {
                   onFetchStart: () => setState(() => _fetchingModels = true),
                   onFetchEnd: () => setState(() => _fetchingModels = false),
                 ),
-              ],
-              if (_type == BlockType.imageGen) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 4),
                 SwitchListTile(
-                  title: const Text('Генерация картинок включена'),
-                  value: _imageGenEnabled,
-                  onChanged: (v) => setState(() => _imageGenEnabled = v),
+                  title: const Text('Стриминг в панель'),
+                  subtitle: Text(
+                    switch (_type) {
+                      BlockType.imageGen =>
+                        'HTML agent\'а по мере генерации LLM (до Image Gen)',
+                      BlockType.jsRunner =>
+                        'Код от модели по мере генерации LLM (до sandbox)',
+                      _ => 'Текст блока появляется по мере генерации LLM',
+                    },
+                  ),
+                  value: _streamToPanel,
+                  onChanged: (v) => setState(() => _streamToPanel = v),
                   contentPadding: EdgeInsets.zero,
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _imagePromptController,
-                  decoration: const InputDecoration(
-                    labelText: 'Инструкция для картинки',
-                    hintText: 'Описание картинки для генерации...',
-                  ),
-                  maxLines: 3,
-                  minLines: 2,
-                ),
               ],
-              if (_type == BlockType.jsRunner) ...[
-                const SizedBox(height: 16),
-                _SectionLabel('JavaScript'),
-                TextField(
-                  controller: _scriptController,
-                  decoration: const InputDecoration(
-                    labelText: 'Скрипт',
-                    hintText: '// context.messages, context.character, context.previousOutput\nreturn "result";',
-                    helperText: 'Скрипт получает объект context и должен вернуть строку',
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 20,
-                  minLines: 8,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
+              if (_type == BlockType.imageGen)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    'Провайдер и ключ Image Gen — в Settings → Image Gen. '
+                    'Блок сначала вызывает LLM agent, затем рендерит картинку по [IMG:GEN].',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.cs.onSurfaceVariant.withValues(alpha: 0.85),
+                      height: 1.4,
+                    ),
                   ),
                 ),
-              ],
-              if (_type != BlockType.jsRunner) ...[
-                const SizedBox(height: 16),
-                _SectionLabel('Контекст'),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Сообщений контекста',
-                    helperText: '0 — только карточка персонажа, -1 — весь чат',
-                    hintText: _contextMessageCount.toString(),
+              if (_type == BlockType.jsRunner)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    'LLM пишет JavaScript по промпту → код извлекается из ```js``` → '
+                    'sandbox выполняет скрипт (context.messages, context.character, '
+                    'context.previousOutput). Результат — return строки или HTML.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.cs.onSurfaceVariant.withValues(alpha: 0.85),
+                      height: 1.4,
+                    ),
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(signed: true),
-                  controller: TextEditingController(text: _contextMessageCount.toString()),
-                  onChanged: (v) =>
-                      _contextMessageCount = int.tryParse(v) ?? _contextMessageCount,
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _contextSystemPromptController,
-                  decoration: const InputDecoration(
-                    labelText: 'Системный контекст',
-                    hintText: 'Описание персонажей, стиль, дополнительные инструкции...',
-                    helperText: 'Поддерживает {{char}}, {{user}}, {{description}}, {{personality}}',
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 5,
-                  minLines: 2,
-                ),
-              ],
             ],
           ),
         ),

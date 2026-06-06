@@ -11,17 +11,22 @@ import '../../../core/models/chat_message.dart';
 import '../../../core/models/character.dart';
 import '../../../core/models/persona.dart';
 import '../../../core/state/db_provider.dart';
+import '../../../core/constants/image_gen_patterns.dart';
 import '../../../core/utils/id_generator.dart';
 import '../../chat/bridge/chat_bridge_registry.dart';
 import '../../image_gen/image_gen_provider.dart';
 import '../models/block_config.dart';
+import '../../image_gen/services/image_gen_service.dart';
 import '../models/block_run_status.dart';
 import '../models/extension_preset.dart';
 import '../models/info_block.dart';
 import '../providers/extension_presets_provider.dart';
 import '../providers/extensions_settings_provider.dart';
 import '../providers/info_blocks_provider.dart';
+import 'block_context_builder.dart';
+import 'ext_blocks_panel_builder.dart';
 import 'info_block_service.dart';
+import 'js_script_extractor.dart';
 
 final extensionPostGenServiceProvider = Provider<ExtensionPostGenService>(
   (ref) => ExtensionPostGenService(ref),
@@ -40,34 +45,170 @@ class ExtensionPostGenService {
   /// all in-flight block LLM/image calls without touching the main gen token.
   CancelToken? _blocksCancelToken;
 
+  /// Serializes WebView panel JS calls so stream patches render in order.
+  Future<void>? _panelJsChain;
+
   InfoBlocksRepository get _repo =>
       InfoBlocksRepository(_ref.read(appDbProvider));
 
-  /// Pushes the current aggregated block status for [messageId] to the
-  /// WebView. No-op if the WebView isn't mounted (bridge==null). Computes
-  /// the aggregated status (running > error > done) from the latest
-  /// in-memory state and only sends it if it differs from the bridge's
-  /// last sent value.
-  void _pushBadgeToBridge(String charId, String sessionId, String messageId) {
+  void _enqueuePanelJs(Future<void> Function() work) {
+    _panelJsChain = (_panelJsChain ?? Future.value()).then((_) async {
+      try {
+        await work();
+      } catch (e, st) {
+        debugPrint('[ExtPostGen] panel JS update failed: $e\n$st');
+      }
+    });
+  }
+
+  void _refreshPanelForMessage(
+    String charId,
+    String sessionId,
+    String messageId,
+  ) {
+    _enqueuePanelJs(() async {
+      final bridge = _ref.read(chatBridgeRegistryProvider(charId));
+      if (bridge == null) return;
+      final blocks = ExtBlocksPanelBuilder.build(
+        _ref,
+        sessionId: sessionId,
+        messageId: messageId,
+      );
+      if (blocks.isEmpty) {
+        await bridge.hideExtBlocksPanel(messageId);
+        return;
+      }
+      await bridge.showExtBlocksPanel(
+        messageId,
+        blocks,
+        canRunAll: ExtBlocksPanelBuilder.canRunAll(blocks),
+      );
+    });
+  }
+
+  Future<void> _patchOrRefreshPanel({
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required String blockId,
+    required String content,
+    required String status,
+  }) async {
     final bridge = _ref.read(chatBridgeRegistryProvider(charId));
     if (bridge == null) return;
-    final blocks = _ref.read(infoBlocksProvider(sessionId));
-    final mb = blocks.where((b) => b.messageId == messageId).toList();
-    if (mb.isEmpty) return;
-    String status;
-    if (mb.any((b) => b.status == BlockRunStatus.running)) {
-      status = 'running';
-    } else if (mb.any((b) => b.status == BlockRunStatus.error)) {
-      status = 'error';
-    } else {
-      status = 'done';
+    final patched = await bridge.patchExtBlockContent(
+      messageId: messageId,
+      blockId: blockId,
+      content: content,
+      status: status,
+    );
+    if (patched) return;
+    _refreshPanelForMessage(charId, sessionId, messageId);
+  }
+
+  String _formatBlockErrorContent(String message) {
+    final escaped = message
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    return '<p class="ext-block-error"><strong>Ошибка:</strong> $escaped</p>';
+  }
+
+  Future<InfoBlock> _markBlockError({
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required String placeholderId,
+    required InfoBlock placeholder,
+    required String errorMessage,
+  }) async {
+    final content = _formatBlockErrorContent(errorMessage);
+    await _repo.updateContent(placeholderId, content);
+    await _repo.updateStatus(placeholderId, BlockRunStatus.error);
+    final errored = placeholder.copyWith(content: content, status: BlockRunStatus.error);
+    _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
+    _refreshPanelForMessage(charId, sessionId, messageId);
+    return errored;
+  }
+
+  /// Removes duplicate DB rows for the same preset block on one message.
+  Future<String?> _dedupeBlocksForConfig({
+    required String sessionId,
+    required String messageId,
+    required String blockId,
+  }) async {
+    final existing = await _repo.getByMessageId(sessionId, messageId);
+    final matching =
+        existing.where((b) => b.blockId == blockId).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (matching.isEmpty) return null;
+    final keep = matching.first;
+    for (final dup in matching.skip(1)) {
+      await _repo.deleteInfoBlock(dup.id);
+      await _ref.read(infoBlocksProvider(sessionId).notifier).delete(dup.id);
     }
-    unawaited(bridge.updateBlockStatus(messageId, status));
+    return keep.id;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Public API
   // ─────────────────────────────────────────────────────────────────────────
+
+  /// Runs all enabled preset blocks for [messageId]. Used after chat
+  /// generation and from the manual "Запустить блоки" control.
+  Future<void> runBlocksForMessage({
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required List<ChatMessage> messages,
+    required Character character,
+    required Persona? persona,
+    bool clearExisting = true,
+  }) async {
+    final preset = _resolveActivePreset();
+    if (preset == null) return;
+
+    if (clearExisting) {
+      await _ref
+          .read(infoBlocksProvider(sessionId).notifier)
+          .deleteByMessageId(messageId);
+    }
+
+    _refreshPanelForMessage(charId, sessionId, messageId);
+
+    _blocksCancelToken = CancelToken();
+    await _runChain(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      messages: messages,
+      preset: preset,
+      character: character,
+      persona: persona,
+      cancelToken: _blocksCancelToken!,
+    );
+    _refreshPanelForMessage(charId, sessionId, messageId);
+  }
+
+  ExtensionPreset? _resolveActivePreset() {
+    final settings = _ref.read(extensionsSettingsProvider);
+    if (!settings.enabled) {
+      debugPrint('[ExtPostGen] SKIP: settings.enabled=false');
+      return null;
+    }
+    final presetId = settings.activePresetId;
+    if (presetId == null || presetId.isEmpty) {
+      debugPrint('[ExtPostGen] SKIP: presetId is null/empty');
+      return null;
+    }
+    final preset =
+        _ref.read(extensionPresetsProvider).where((pr) => pr.id == presetId).firstOrNull;
+    if (preset == null) {
+      debugPrint('[ExtPostGen] SKIP: preset not found');
+      return null;
+    }
+    return preset;
+  }
 
   /// Called by GenerationPipeline after assistant message is finalised.
   Future<void> processAfterGeneration({
@@ -76,57 +217,22 @@ class ExtensionPostGenService {
     required Character character,
     required Persona? persona,
   }) async {
-    final settings = _ref.read(extensionsSettingsProvider);
-    debugPrint('[ExtPostGen] processAfterGeneration: enabled=${settings.enabled} presetId=${settings.activePresetId}');
-    if (!settings.enabled) {
-      debugPrint('[ExtPostGen] SKIP: settings.enabled=false');
-      return;
-    }
-    final presetId = settings.activePresetId;
-    if (presetId == null || presetId.isEmpty) {
-      debugPrint('[ExtPostGen] SKIP: presetId is null/empty');
-      return;
-    }
+    debugPrint('[ExtPostGen] processAfterGeneration: session=${session.id}');
+    if (session.id.isEmpty || session.messages.isEmpty) return;
 
-    final presets = _ref.read(extensionPresetsProvider);
-    final preset = presets.where((pr) => pr.id == presetId).firstOrNull;
-    if (preset == null) {
-      debugPrint('[ExtPostGen] SKIP: preset not found in extensionPresetsProvider (have=${presets.length})');
-      return;
-    }
-    debugPrint('[ExtPostGen] preset="${preset.name}" totalBlocks=${preset.blocks.length}');
-
-    final sessionId = session.id;
-    if (sessionId.isEmpty) {
-      debugPrint('[ExtPostGen] SKIP: sessionId is empty');
-      return;
-    }
-
-    final messages = session.messages;
-    if (messages.isEmpty) {
-      debugPrint('[ExtPostGen] SKIP: messages.isEmpty');
-      return;
-    }
-
-    final lastMessage = messages.last;
+    final lastMessage = session.messages.last;
     if (lastMessage.role == 'user') {
-      debugPrint('[ExtPostGen] SKIP: last message is user, no assistant response to extend');
+      debugPrint('[ExtPostGen] SKIP: last message is user');
       return;
     }
-    debugPrint('[ExtPostGen] target message: id=${lastMessage.id} role=${lastMessage.role} contentLen=${lastMessage.content.length}');
 
-    // Fresh cancel token for this run.
-    _blocksCancelToken = CancelToken();
-
-    await _runChain(
+    await runBlocksForMessage(
       charId: charId,
-      sessionId: sessionId,
+      sessionId: session.id,
       messageId: lastMessage.id,
-      messages: messages,
-      preset: preset,
+      messages: session.messages,
       character: character,
       persona: persona,
-      cancelToken: _blocksCancelToken!,
     );
   }
 
@@ -140,13 +246,7 @@ class ExtensionPostGenService {
     required Character character,
     required Persona? persona,
   }) async {
-    final settings = _ref.read(extensionsSettingsProvider);
-    if (!settings.enabled) return;
-    final presetId = settings.activePresetId;
-    if (presetId == null || presetId.isEmpty) return;
-
-    final presets = _ref.read(extensionPresetsProvider);
-    final preset = presets.where((pr) => pr.id == presetId).firstOrNull;
+    final preset = _resolveActivePreset();
     if (preset == null) return;
 
     final blockConfig = preset.blocks.where((b) => b.id == blockId).firstOrNull;
@@ -155,24 +255,11 @@ class ExtensionPostGenService {
     final cancelToken = CancelToken();
     _blocksCancelToken = cancelToken;
 
-    // Reset the existing block in-place: clear content, set status=running
-    // and push the badge to the WebView *before* kicking off the LLM call
-    // so the user gets immediate visual feedback.
-    final existing = await _repo.getByMessageId(sessionId, messageId);
-    final previous = existing.where((b) => b.blockId == blockId).toList();
-    if (previous.isEmpty) {
-      // No prior result for this message+block — fall through to a fresh
-      // run (which creates a new placeholder).
-      debugPrint('[ExtPostGen] rerunBlock: no prior block found, starting fresh run');
-    } else {
-      final old = previous.first;
-      await _repo.updateContent(old.id, '');
-      await _repo.updateStatus(old.id, BlockRunStatus.running);
-      final reset = old.copyWith(content: '', status: BlockRunStatus.running);
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(reset);
-      _pushBadgeToBridge(charId, sessionId, messageId);
-      debugPrint('[ExtPostGen] rerunBlock: reset existing block id=${old.id} to running');
-    }
+    final reuseBlockId = await _dedupeBlocksForConfig(
+      sessionId: sessionId,
+      messageId: messageId,
+      blockId: blockId,
+    );
 
     final block = await _runSingleBlock(
       charId: charId,
@@ -185,17 +272,115 @@ class ExtensionPostGenService {
       persona: persona,
       previousOutput: null,
       cancelToken: cancelToken,
+      reuseBlockId: reuseBlockId,
     );
 
     if (block != null) {
       _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(block);
     }
+    _refreshPanelForMessage(charId, sessionId, messageId);
   }
 
   /// Cancels any in-flight block generation for the current session.
   void cancelBlocks() {
     _blocksCancelToken?.cancel();
     _blocksCancelToken = null;
+  }
+
+  DateTime? _lastStreamPanelAt;
+
+  void _publishStreamingBlockContent({
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required InfoBlock placeholder,
+    required String content,
+    bool force = false,
+  }) {
+    final now = DateTime.now();
+    if (!force &&
+        _lastStreamPanelAt != null &&
+        now.difference(_lastStreamPanelAt!) <
+            const Duration(milliseconds: 80)) {
+      return;
+    }
+    _lastStreamPanelAt = now;
+    final updated =
+        placeholder.copyWith(content: content, status: BlockRunStatus.running);
+    _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(updated);
+    _enqueuePanelJs(() => _patchOrRefreshPanel(
+          charId: charId,
+          sessionId: sessionId,
+          messageId: messageId,
+          blockId: placeholder.blockId,
+          content: content,
+          status: BlockRunStatus.running.name,
+        ));
+  }
+
+  void Function(String)? _makeStreamHandler({
+    required BlockConfig blockConfig,
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required InfoBlock placeholder,
+  }) {
+    if (!blockConfig.streamToPanel) return null;
+    return (partial) => _publishStreamingBlockContent(
+          charId: charId,
+          sessionId: sessionId,
+          messageId: messageId,
+          placeholder: placeholder,
+          content: partial,
+        );
+  }
+
+  /// Re-runs only the Image Gen step for an existing image ext block (keeps agent HTML).
+  Future<void> rerunImageOnly({
+    required String blockId,
+    required String messageId,
+    required String sessionId,
+    required String charId,
+    required Character character,
+    required Persona? persona,
+  }) async {
+    final preset = _resolveActivePreset();
+    if (preset == null) return;
+
+    final blockConfig = preset.blocks.where((b) => b.id == blockId).firstOrNull;
+    if (blockConfig == null || blockConfig.type != BlockType.imageGen) return;
+
+    final rows = await _repo.getByMessageId(sessionId, messageId);
+    final existing = rows.where((b) => b.blockId == blockId).firstOrNull;
+    if (existing == null || existing.content.isEmpty) return;
+
+    final imageService =
+        await _ref.read(imageGenSettingsProvider.notifier).getServiceAsync();
+    if (imageService.extractInstructionsFromImageContent(existing.content).isEmpty) {
+      return;
+    }
+
+    final cancelToken = CancelToken();
+    _blocksCancelToken = cancelToken;
+
+    await _repo.updateStatus(existing.id, BlockRunStatus.running);
+    _ref
+        .read(infoBlocksProvider(sessionId).notifier)
+        .addOrReplace(existing.copyWith(status: BlockRunStatus.running));
+    _refreshPanelForMessage(charId, sessionId, messageId);
+
+    await _renderImagePixels(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      blockConfig: blockConfig,
+      character: character,
+      persona: persona,
+      sourceContent: existing.content,
+      placeholderId: existing.id,
+      placeholder: existing,
+      cancelToken: cancelToken,
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -309,40 +494,56 @@ class ExtensionPostGenService {
     required Persona? persona,
     required String? previousOutput,
     required CancelToken cancelToken,
+    String? reuseBlockId,
   }) async {
     if (cancelToken.isCancelled) return null;
 
-    debugPrint('[ExtPostGen] _runSingleBlock START: name="${blockConfig.name}" type=${blockConfig.type.name} order=${blockConfig.order}');
+    debugPrint('[ExtPostGen] _runSingleBlock START: name="${blockConfig.name}" type=${blockConfig.type.name} order=${blockConfig.order} reuse=${reuseBlockId ?? "new"}');
 
-    // Insert a running placeholder so the badge updates immediately.
-    final placeholderId = generateId();
-    final placeholder = InfoBlock(
-      id: placeholderId,
-      sessionId: sessionId,
-      messageId: messageId,
-      blockId: blockConfig.id,
-      blockName: blockConfig.name,
-      blockType: blockConfig.type.name,
-      content: '',
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      order: blockConfig.order,
-      status: BlockRunStatus.running,
-    );
-    await _repo.insert(placeholder);
-    _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(placeholder);
-    debugPrint('[ExtPostGen] placeholder inserted: id=$placeholderId messageId=$messageId status=running');
+    final String placeholderId;
+    final InfoBlock placeholder;
 
-    // Push badge immediately to the WebView so the user sees feedback even
-    // before the ref.listen cycle fires. Skips silently if the WebView is
-    // not mounted yet (bridge == null) — the badge will appear once the
-    // widget is ready and _syncAllBlockStatuses runs.
-    final bridge = _ref.read(chatBridgeRegistryProvider(charId));
-    if (bridge != null) {
-      unawaited(bridge.updateBlockStatus(messageId, 'running'));
-      debugPrint('[ExtPostGen] pushed running badge to bridge for msg=$messageId');
+    if (reuseBlockId != null) {
+      placeholderId = reuseBlockId;
+      final existing = await _repo.getByMessageId(sessionId, messageId);
+      final row = existing.where((b) => b.id == reuseBlockId).firstOrNull;
+      placeholder = (row ?? InfoBlock(
+        id: reuseBlockId,
+        sessionId: sessionId,
+        messageId: messageId,
+        blockId: blockConfig.id,
+        blockName: blockConfig.name,
+        blockType: blockConfig.type.name,
+        content: '',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        order: blockConfig.order,
+        status: BlockRunStatus.running,
+      )).copyWith(content: '', status: BlockRunStatus.running);
+      await _repo.updateContent(placeholderId, '');
+      await _repo.updateStatus(placeholderId, BlockRunStatus.running);
+      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(placeholder);
+      _refreshPanelForMessage(charId, sessionId, messageId);
+      debugPrint('[ExtPostGen] reused block id=$placeholderId messageId=$messageId status=running');
     } else {
-      debugPrint('[ExtPostGen] bridge=null for charId=$charId; badge will sync after WebView ready');
+      placeholderId = generateId();
+      placeholder = InfoBlock(
+        id: placeholderId,
+        sessionId: sessionId,
+        messageId: messageId,
+        blockId: blockConfig.id,
+        blockName: blockConfig.name,
+        blockType: blockConfig.type.name,
+        content: '',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        order: blockConfig.order,
+        status: BlockRunStatus.running,
+      );
+      await _repo.insert(placeholder);
+      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(placeholder);
+      debugPrint('[ExtPostGen] placeholder inserted: id=$placeholderId messageId=$messageId status=running');
     }
+
+    _refreshPanelForMessage(charId, sessionId, messageId);
 
     try {
       InfoBlock? result;
@@ -361,9 +562,11 @@ class ExtensionPostGenService {
             previousOutput: previousOutput,
             cancelToken: cancelToken,
             placeholderId: placeholderId,
+            placeholder: placeholder,
           );
         case BlockType.imageGen:
           result = await _runImageGen(
+            charId: charId,
             sessionId: sessionId,
             messageId: messageId,
             messages: messages,
@@ -373,6 +576,7 @@ class ExtensionPostGenService {
             previousOutput: previousOutput,
             cancelToken: cancelToken,
             placeholderId: placeholderId,
+            placeholder: placeholder,
           );
         case BlockType.jsRunner:
           result = await _runJsRunner(
@@ -382,6 +586,7 @@ class ExtensionPostGenService {
             messages: messages,
             blockConfig: blockConfig,
             character: character,
+            persona: persona,
             previousOutput: previousOutput,
             cancelToken: cancelToken,
             placeholderId: placeholderId,
@@ -393,12 +598,16 @@ class ExtensionPostGenService {
     } catch (e) {
       if (!cancelToken.isCancelled) {
         debugPrint('[ExtPostGen] Error in block "${blockConfig.name}": $e');
+        return _markBlockError(
+          charId: charId,
+          sessionId: sessionId,
+          messageId: messageId,
+          placeholderId: placeholderId,
+          placeholder: placeholder,
+          errorMessage: e.toString(),
+        );
       }
-      await _repo.updateStatus(placeholderId, BlockRunStatus.error);
-      final errored = placeholder.copyWith(status: BlockRunStatus.error);
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
-      _pushBadgeToBridge(charId, sessionId, messageId);
-      return errored;
+      return null;
     }
   }
 
@@ -418,10 +627,11 @@ class ExtensionPostGenService {
     required String? previousOutput,
     required CancelToken cancelToken,
     required String placeholderId,
+    required InfoBlock placeholder,
   }) async {
     debugPrint('[ExtPostGen] _runInfoblock START: name="${blockConfig.name}" promptLen=${blockConfig.prompt.length} apiConfigId="${blockConfig.apiConfigId}" model="${blockConfig.model}"');
     final infoBlockService = _ref.read(infoBlockServiceProvider);
-    final content = await infoBlockService.generateSingleBlockContent(
+    final generated = await infoBlockService.generateSingleBlockContent(
       sessionId: sessionId,
       messageId: messageId,
       messages: messages,
@@ -430,8 +640,15 @@ class ExtensionPostGenService {
       persona: persona?.name,
       previousOutput: previousOutput,
       cancelToken: cancelToken,
+      onStreamUpdate: _makeStreamHandler(
+        blockConfig: blockConfig,
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholder: placeholder,
+      ),
     );
-    debugPrint('[ExtPostGen] _runInfoblock DONE: name="${blockConfig.name}" contentIsNull=${content == null} contentLen=${content?.length ?? 0}');
+    debugPrint('[ExtPostGen] _runInfoblock DONE: name="${blockConfig.name}" contentLen=${generated.content?.length ?? 0} error=${generated.error}');
 
     if (cancelToken.isCancelled) {
       await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
@@ -448,27 +665,31 @@ class ExtensionPostGenService {
         status: BlockRunStatus.stopped,
       );
       _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(stopped);
-      _pushBadgeToBridge(charId, sessionId, messageId);
+      _refreshPanelForMessage(charId, sessionId, messageId);
       return stopped;
     }
 
-    if (content == null || content.isEmpty) {
-      await _repo.updateStatus(placeholderId, BlockRunStatus.error);
-      final errored = InfoBlock(
-        id: placeholderId,
+    if (generated.error != null) {
+      return _markBlockError(
+        charId: charId,
         sessionId: sessionId,
         messageId: messageId,
-        blockId: blockConfig.id,
-        blockName: blockConfig.name,
-        blockType: blockConfig.type.name,
-        content: '',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        order: blockConfig.order,
-        status: BlockRunStatus.error,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: generated.error!,
       );
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
-      _pushBadgeToBridge(charId, sessionId, messageId);
-      return errored;
+    }
+
+    final content = generated.content;
+    if (content == null || content.isEmpty) {
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: 'Generation produced empty content',
+      );
     }
 
     // Update placeholder in DB with final content + done status.
@@ -488,7 +709,7 @@ class ExtensionPostGenService {
       status: BlockRunStatus.done,
     );
     _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(done);
-    _pushBadgeToBridge(charId, sessionId, messageId);
+    _refreshPanelForMessage(charId, sessionId, messageId);
     return done;
   }
 
@@ -497,6 +718,7 @@ class ExtensionPostGenService {
   // ─────────────────────────────────────────────────────────────────────────
 
   Future<InfoBlock?> _runImageGen({
+    required String charId,
     required String sessionId,
     required String messageId,
     required List<ChatMessage> messages,
@@ -506,63 +728,176 @@ class ExtensionPostGenService {
     required String? previousOutput,
     required CancelToken cancelToken,
     required String placeholderId,
+    required InfoBlock placeholder,
   }) async {
-    final imgGenSettingsAsync = _ref.read(imageGenSettingsProvider);
-    final imgGenSettings = imgGenSettingsAsync.value;
-    if (imgGenSettings == null || !imgGenSettings.enabled) {
-      await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-      return null;
-    }
+    debugPrint('[ExtPostGen] _runImageGen START: name="${blockConfig.name}"');
 
-    // Build image prompt: use previousOutput (infoblock) if available,
-    // otherwise fall back to last assistant message content.
-    final lastAssistant = messages.lastWhere(
-      (m) => m.role == 'assistant',
-      orElse: () => messages.last,
+    // Step 1 — LLM image agent (U+A+previous block → HTML with [IMG:GEN]).
+    final infoBlockService = _ref.read(infoBlockServiceProvider);
+    final generated = await infoBlockService.generateSingleBlockContent(
+      sessionId: sessionId,
+      messageId: messageId,
+      messages: messages,
+      blockConfig: blockConfig,
+      character: character,
+      persona: persona?.name,
+      previousOutput: previousOutput,
+      cancelToken: cancelToken,
+      onStreamUpdate: _makeStreamHandler(
+        blockConfig: blockConfig,
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholder: placeholder,
+      ),
     );
-    final promptSource = previousOutput?.isNotEmpty == true
-        ? previousOutput!
-        : lastAssistant.content;
 
-    // Extract [img gen:...] tag from the source text.
-    final imageService = await _ref.read(imageGenSettingsProvider.notifier).getServiceAsync();
-    if (!imageService.hasImageGenTags(promptSource)) {
-      // No tag — nothing to generate.
-      await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-      return null;
+    if (cancelToken.isCancelled) {
+      await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
+      return placeholder.copyWith(status: BlockRunStatus.stopped);
     }
 
-    final instructions = imageService.extractImageGenInstructions(promptSource);
+    if (generated.error != null || generated.content == null) {
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: generated.error ?? 'Image agent returned empty response',
+      );
+    }
+
+    final agentHtml = generated.content!;
+    _publishStreamingBlockContent(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      placeholder: placeholder,
+      content: agentHtml,
+      force: true,
+    );
+
+    return _renderImagePixels(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      blockConfig: blockConfig,
+      character: character,
+      persona: persona,
+      sourceContent: agentHtml,
+      placeholderId: placeholderId,
+      placeholder: placeholder,
+      cancelToken: cancelToken,
+    );
+  }
+
+  Future<InfoBlock?> _renderImagePixels({
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required BlockConfig blockConfig,
+    required Character character,
+    required Persona? persona,
+    required String sourceContent,
+    required String placeholderId,
+    required InfoBlock placeholder,
+    required CancelToken cancelToken,
+  }) async {
+    final imgGenSettings = _ref.read(imageGenSettingsProvider).value;
+    if (imgGenSettings == null || !imgGenSettings.enabled) {
+      await _repo.updateContent(placeholderId, sourceContent);
+      await _repo.updateStatus(placeholderId, BlockRunStatus.done);
+      final done =
+          placeholder.copyWith(content: sourceContent, status: BlockRunStatus.done);
+      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(done);
+      _refreshPanelForMessage(charId, sessionId, messageId);
+      return done;
+    }
+
+    final imageService =
+        await _ref.read(imageGenSettingsProvider.notifier).getServiceAsync();
+    final instructions =
+        imageService.extractInstructionsFromImageContent(sourceContent);
     if (instructions.isEmpty) {
-      await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-      return null;
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage:
+            'No image instruction found (expected [IMG:GEN] or [IMG:RESULT:…|json])',
+      );
     }
 
-    final instruction = instructions.first;
-    final rawPrompt = instruction['prompt'] as String? ?? '';
+    final rawPrompt = instructions.first['prompt'] as String? ?? '';
     if (rawPrompt.isEmpty) {
-      await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-      return null;
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: 'Image instruction JSON has empty prompt',
+      );
     }
+
+    _publishStreamingBlockContent(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      placeholder: placeholder,
+      content: '$sourceContent\n<p class="ext-block-image-pending">⏳ Генерация изображения…</p>',
+      force: true,
+    );
 
     try {
+      List<String>? recentImageContexts;
+      if (imgGenSettings.imageContextEnabled) {
+        final sessionBlocks = await _repo.getBySessionId(sessionId);
+        final imageContents = sessionBlocks
+            .where(
+              (b) =>
+                  b.blockType == BlockType.imageGen.name &&
+                  b.status == BlockRunStatus.done &&
+                  b.id != placeholderId,
+            )
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        recentImageContexts = ImageGenService.collectRecentImageResultPaths(
+          imageContents.map((b) => b.content),
+          maxPaths: 3,
+        );
+        if (recentImageContexts.isEmpty) recentImageContexts = null;
+      }
+
+      final style = instructions.first['style'] as String? ?? '';
+      var cleanPrompt = rawPrompt.replaceFirst(RegExp(r'^SCENE_PROMPT:\s*'), '');
+      final prompt = style.isNotEmpty ? '$style, $cleanPrompt' : cleanPrompt;
+      final instructionAspectRatio =
+          instructions.first['aspect_ratio'] as String?;
+      final instructionImageSize = instructions.first['image_size'] as String?;
+
       final imageBytes = await imageService.generateImage(
         settings: imgGenSettings,
-        prompt: rawPrompt,
+        prompt: prompt,
         llmEndpoint: '',
         llmApiKey: '',
         llmModel: '',
         character: character,
         persona: persona,
+        recentImageContexts: recentImageContexts,
+        instructionAspectRatio: instructionAspectRatio,
+        instructionImageSize: instructionImageSize,
         cancelToken: cancelToken,
       );
 
       if (cancelToken.isCancelled) {
         await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
-        return null;
+        return placeholder.copyWith(status: BlockRunStatus.stopped);
       }
 
-      // Save to disk using the same path convention as inline image gen.
       final storage = await _ref.read(imageStorageProvider.future);
       final dir = Directory(p.join(storage.baseDir, 'generated'));
       if (!await dir.exists()) await dir.create(recursive: true);
@@ -570,7 +905,11 @@ class ExtensionPostGenService {
       final filePath = p.join(dir.path, filename);
       await File(filePath).writeAsBytes(imageBytes);
 
-      final content = '[IMG:RESULT:$filePath]';
+      final hasResultToken =
+          ImgGenPatterns.imgResultRegex.hasMatch(sourceContent);
+      final content = hasResultToken
+          ? imageService.replaceExtBlockImageResult(sourceContent, filePath)
+          : imageService.replaceTagWithResult(sourceContent, 0, filePath);
       await _repo.updateContent(placeholderId, content);
       await _repo.updateStatus(placeholderId, BlockRunStatus.done);
 
@@ -587,13 +926,30 @@ class ExtensionPostGenService {
         status: BlockRunStatus.done,
       );
       _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(done);
+      _refreshPanelForMessage(charId, sessionId, messageId);
       return done;
-    }     on DioException catch (e) {
+    } on DioException catch (e) {
       if (CancelToken.isCancel(e)) {
         await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
-        return null;
+        return placeholder.copyWith(status: BlockRunStatus.stopped);
       }
-      rethrow;
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: e.toString(),
+      );
+    } catch (e) {
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -608,6 +964,7 @@ class ExtensionPostGenService {
     required List<ChatMessage> messages,
     required BlockConfig blockConfig,
     required Character character,
+    required Persona? persona,
     required String? previousOutput,
     required CancelToken cancelToken,
     required String placeholderId,
@@ -618,30 +975,162 @@ class ExtensionPostGenService {
       return placeholder.copyWith(status: BlockRunStatus.stopped);
     }
 
-    if (blockConfig.script.isEmpty) {
-      debugPrint('[ExtPostGen] jsRunner block "${blockConfig.name}" — script is empty');
+    final prompt = blockConfig.prompt.trim();
+    final staticScript = blockConfig.script.trim();
+
+    // Legacy: hand-written script without LLM prompt.
+    if (prompt.isEmpty && staticScript.isNotEmpty) {
+      return _executeJsScript(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        messages: messages,
+        blockConfig: blockConfig,
+        character: character,
+        previousOutput: previousOutput,
+        cancelToken: cancelToken,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        script: staticScript,
+      );
+    }
+
+    if (prompt.isEmpty) {
+      debugPrint('[ExtPostGen] jsRunner "${blockConfig.name}" — prompt is empty');
       await _repo.updateStatus(placeholderId, BlockRunStatus.done);
-      _pushBadgeToBridge(charId, sessionId, messageId);
+      _refreshPanelForMessage(charId, sessionId, messageId);
       return placeholder.copyWith(status: BlockRunStatus.done);
     }
 
+    debugPrint('[ExtPostGen] _runJsRunner START: name="${blockConfig.name}"');
+
+    final infoBlockService = _ref.read(infoBlockServiceProvider);
+    final generated = await infoBlockService.generateSingleBlockContent(
+      sessionId: sessionId,
+      messageId: messageId,
+      messages: messages,
+      blockConfig: blockConfig,
+      character: character,
+      persona: persona?.name,
+      previousOutput: previousOutput,
+      cancelToken: cancelToken,
+      onStreamUpdate: _makeStreamHandler(
+        blockConfig: blockConfig,
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholder: placeholder,
+      ),
+    );
+
+    if (cancelToken.isCancelled) {
+      await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
+      return placeholder.copyWith(status: BlockRunStatus.stopped);
+    }
+
+    if (generated.error != null || generated.content == null) {
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: generated.error ?? 'JS agent returned empty response',
+      );
+    }
+
+    final agentOutput = generated.content!;
+    _publishStreamingBlockContent(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      placeholder: placeholder,
+      content: agentOutput,
+      force: true,
+    );
+
+    final script = JsScriptExtractor.extractFromLlmResponse(agentOutput);
+    if (script == null || script.isEmpty) {
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage:
+            'No JavaScript found in LLM response (expected ```js … ``` fence or raw code)',
+      );
+    }
+
+    _publishStreamingBlockContent(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      placeholder: placeholder,
+      content:
+          '$agentOutput\n<p class="ext-block-js-pending">⏳ Выполнение JS…</p>',
+      force: true,
+    );
+
+    return _executeJsScript(
+      charId: charId,
+      sessionId: sessionId,
+      messageId: messageId,
+      messages: messages,
+      blockConfig: blockConfig,
+      character: character,
+      previousOutput: previousOutput,
+      cancelToken: cancelToken,
+      placeholderId: placeholderId,
+      placeholder: placeholder,
+      script: script,
+      panelContentBuilder: (result) =>
+          JsScriptExtractor.formatPanelContent(script: script, result: result),
+    );
+  }
+
+  Future<InfoBlock?> _executeJsScript({
+    required String charId,
+    required String sessionId,
+    required String messageId,
+    required List<ChatMessage> messages,
+    required BlockConfig blockConfig,
+    required Character character,
+    required String? previousOutput,
+    required CancelToken cancelToken,
+    required String placeholderId,
+    required InfoBlock placeholder,
+    required String script,
+    String Function(String result)? panelContentBuilder,
+  }) async {
     final bridge = _ref.read(chatBridgeRegistryProvider(charId));
     if (bridge == null) {
-      debugPrint('[ExtPostGen] jsRunner block "${blockConfig.name}" — bridge not available (WebView not mounted)');
-      await _repo.updateStatus(placeholderId, BlockRunStatus.error);
-      final errored = placeholder.copyWith(status: BlockRunStatus.error);
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
-      _pushBadgeToBridge(charId, sessionId, messageId);
-      return errored;
+      debugPrint(
+        '[ExtPostGen] jsRunner "${blockConfig.name}" — bridge not available',
+      );
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage:
+            'WebView bridge not available (JS runner requires open chat)',
+      );
     }
 
     try {
-      final content = await bridge.runJsBlock(
-        script: blockConfig.script,
+      final contextMessages = buildContextMessages(
         messages: messages,
+        anchorMessageId: messageId,
+        count: blockConfig.contextMessageCount,
+      );
+      final result = await bridge.runJsBlock(
+        script: script,
+        messages: contextMessages,
         character: character,
         previousOutput: previousOutput,
-        contextMessageCount: blockConfig.contextMessageCount,
+        contextMessageCount: -1,
         cancelToken: cancelToken,
       );
 
@@ -649,9 +1138,11 @@ class ExtensionPostGenService {
         await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
         final stopped = placeholder.copyWith(status: BlockRunStatus.stopped);
         _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(stopped);
-        _pushBadgeToBridge(charId, sessionId, messageId);
+        _refreshPanelForMessage(charId, sessionId, messageId);
         return stopped;
       }
+
+      final content = panelContentBuilder?.call(result) ?? result;
 
       await _repo.updateContent(placeholderId, content);
       await _repo.updateStatus(placeholderId, BlockRunStatus.done);
@@ -669,22 +1160,25 @@ class ExtensionPostGenService {
         status: BlockRunStatus.done,
       );
       _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(done);
-      _pushBadgeToBridge(charId, sessionId, messageId);
+      _refreshPanelForMessage(charId, sessionId, messageId);
       return done;
     } catch (e) {
       if (cancelToken.isCancelled) {
         await _repo.updateStatus(placeholderId, BlockRunStatus.stopped);
         final stopped = placeholder.copyWith(status: BlockRunStatus.stopped);
         _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(stopped);
-        _pushBadgeToBridge(charId, sessionId, messageId);
+        _refreshPanelForMessage(charId, sessionId, messageId);
         return stopped;
       }
       debugPrint('[ExtPostGen] jsRunner "${blockConfig.name}" failed: $e');
-      await _repo.updateStatus(placeholderId, BlockRunStatus.error);
-      final errored = placeholder.copyWith(status: BlockRunStatus.error);
-      _ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
-      _pushBadgeToBridge(charId, sessionId, messageId);
-      return errored;
+      return _markBlockError(
+        charId: charId,
+        sessionId: sessionId,
+        messageId: messageId,
+        placeholderId: placeholderId,
+        placeholder: placeholder,
+        errorMessage: e.toString(),
+      );
     }
   }
 }

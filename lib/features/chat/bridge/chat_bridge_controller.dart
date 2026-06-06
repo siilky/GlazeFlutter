@@ -160,6 +160,10 @@ class ChatBridgeController {
     await _controller.evaluateJavascript(source: source);
   }
 
+  Future<Object?> evalJsWithResult(String source) {
+    return _controller.evaluateJavascript(source: source);
+  }
+
   String escape(String s) {
     return s.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n');
   }
@@ -196,9 +200,10 @@ class ChatBridgeController {
   void Function(String instruction, String messageId)? onImgRegen;
   void Function()? onImgCancel;
   void Function()? onStop;
-  void Function(String messageId)? onExtBlocksClick;
+  void Function(String messageId)? onExtBlocksRunAll;
   void Function(String blockId, String messageId)? onExtBlockStop;
   void Function(String blockId, String messageId)? onExtBlockRegen;
+  void Function(String blockId, String messageId)? onExtBlockRegenImage;
   void Function(String blockId, String messageId)? onExtBlockEdit;
   void Function(String blockId, String messageId)? onExtBlockDelete;
 
@@ -270,7 +275,7 @@ class ChatBridgeController {
       case 'onMemoryClick': onMemoryClick?.call(s);
       case 'onToggleHidden': onToggleHidden?.call(s);
       case 'onInjectClick': onInjectClick?.call(s);
-      case 'onExtBlocksClick': onExtBlocksClick?.call(s);
+      case 'onExtBlocksRunAll': onExtBlocksRunAll?.call(s);
     }
   }
 
@@ -352,6 +357,7 @@ class ChatBridgeController {
       case 'onImgRegen': onImgRegen?.call(instr, msgId);
       case 'onExtBlockStop': onExtBlockStop?.call(instr, msgId);
       case 'onExtBlockRegen': onExtBlockRegen?.call(instr, msgId);
+      case 'onExtBlockRegenImage': onExtBlockRegenImage?.call(instr, msgId);
       case 'onExtBlockEdit': onExtBlockEdit?.call(instr, msgId);
       case 'onExtBlockDelete': onExtBlockDelete?.call(instr, msgId);
     }
@@ -473,27 +479,47 @@ class ChatBridgeController {
 
   // Ext Blocks
 
-  /// Updates the aggregated block status for [messageId] and pushes an
-  /// updateMessage call to the WebView so the badge re-renders.
-  Future<void> updateBlockStatus(String messageId, String? status) async {
-    if (status == null) {
-      _blockStatusByMessageId.remove(messageId);
-    } else {
-      _blockStatusByMessageId[messageId] = status;
-    }
-    // Push minimal updateMessage with just blockStatus so the badge updates.
-    final payload = jsonEncode({'id': messageId, 'blockStatus': status});
-    debugPrint('[BlockBadge] updateBlockStatus: msgId=$messageId status=$status');
-    await callJs('updateMessageMeta', payload);
-  }
-
   /// Sends block panel data to JS so the inline panel renders/updates.
   Future<void> showExtBlocksPanel(
     String messageId,
-    List<Map<String, dynamic>> blocks,
-  ) async {
-    final payload = jsonEncode({'messageId': messageId, 'blocks': blocks});
+    List<Map<String, dynamic>> blocks, {
+    bool canRunAll = false,
+  }) async {
+    final payload = jsonEncode({
+      'messageId': messageId,
+      'blocks': blocks,
+      'canRunAll': canRunAll,
+    });
     await callJs('showExtBlocksPanel', payload);
+  }
+
+  Future<void> hideExtBlocksPanel(String messageId) async {
+    await callJs('hideExtBlocksPanel', messageId);
+  }
+
+  /// Updates only one block's body in an existing panel (streaming).
+  /// Returns false when the panel or block row is missing — caller should
+  /// fall back to [showExtBlocksPanel].
+  Future<bool> patchExtBlockContent({
+    required String messageId,
+    required String blockId,
+    required String content,
+    required String status,
+  }) async {
+    final payload = jsonEncode({
+      'messageId': messageId,
+      'blockId': blockId,
+      'content': content,
+      'status': status,
+    });
+    final result = await evalJsWithResult(
+      'window.bridge?.patchExtBlockContent(${escapeJsonStr(payload)})',
+    );
+    return result == true || result == 'true';
+  }
+
+  Future<void> updateBlockStatus(String messageId, String? status) async {
+    // Badge UX removed — block status is shown inline in the ext-blocks panel.
   }
 
   /// Runs [script] inside a sandboxed iframe in the Chat WebView and returns

@@ -19,9 +19,11 @@ import '../editing_message_provider.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../../shared/theme/app_colors.dart';
 import '../../../../shared/theme/theme_font_provider.dart';
-import '../../extensions/models/block_run_status.dart';
 import '../../extensions/models/info_block.dart';
 import '../../extensions/providers/info_blocks_provider.dart';
+import '../../extensions/providers/extension_presets_provider.dart';
+import '../../extensions/providers/extensions_settings_provider.dart';
+import '../../extensions/services/ext_blocks_panel_builder.dart';
 import '../../extensions/services/extension_post_gen_service.dart';
 import '../bridge/chat_bridge_registry.dart';
 import 'webview_callbacks.dart';
@@ -143,6 +145,42 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
   @override
   bool get wantKeepAlive => true;
 
+  String? get _lastAssistantMessageId {
+    for (int i = widget.messages.length - 1; i >= 0; i--) {
+      final m = widget.messages[i];
+      if (m.role == 'assistant' || m.role == 'character') return m.id;
+    }
+    return null;
+  }
+
+  Future<void> _refreshExtBlocksPanel(String sessionId, String messageId) async {
+    if (_bridge == null || !_ready) return;
+    final isLastAssistant = messageId == _lastAssistantMessageId;
+    final panelKey = (sessionId: sessionId, messageId: messageId);
+    final visibilityKey = (
+      sessionId: sessionId,
+      messageId: messageId,
+      isLastAssistant: isLastAssistant,
+    );
+    if (!ref.read(extBlocksPanelVisibleProvider(visibilityKey))) {
+      await _bridge!.hideExtBlocksPanel(messageId);
+      return;
+    }
+    final blocks = ref.read(extBlocksPanelBlocksProvider(panelKey));
+    final canRunAll = ref.read(extBlocksPanelCanRunAllProvider(panelKey));
+    await _bridge!.showExtBlocksPanel(messageId, blocks, canRunAll: canRunAll);
+  }
+
+  Future<void> _syncExtBlockPanels() async {
+    final sid = widget.sessionId;
+    if (sid == null || sid.isEmpty || _bridge == null || !_ready) return;
+    await ref.read(infoBlocksProvider(sid).notifier).refresh();
+    for (final msg in widget.messages) {
+      if (msg.role != 'assistant' && msg.role != 'character') continue;
+      await _refreshExtBlocksPanel(sid, msg.id);
+    }
+  }
+
   @override
   void dispose() {
     // Unregister bridge so the service doesn't hold a stale reference.
@@ -229,51 +267,8 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     unawaited(_bridge!.evalJs('if (window.bridge) window.bridge.isGenerating = $initialAnyGen;'));
     _ready = true;
 
-    // Push initial block statuses so badges appear on first load.
-    // Run async so we can await the notifier's DB load if it hasn't
-    // completed yet (InfoBlocksNotifier starts with [] and loads async).
-    unawaited(_syncAllBlockStatuses());
-  }
-
-  /// Reads all info blocks for the current session from DB (forcing a refresh
-  /// if the notifier hasn't loaded yet) and pushes the aggregated status for
-  /// each message to the bridge so the ext-block badge appears.
-  Future<void> _syncAllBlockStatuses() async {
-    final sid = widget.sessionId;
-    if (sid == null || sid.isEmpty || _bridge == null) {
-      debugPrint('[BlockBadge] _syncAllBlockStatuses: skip (sid=$sid, bridge=${_bridge != null})');
-      return;
-    }
-
-    // Force a fresh read from DB so we don't miss blocks that loaded before
-    // the WebView was ready.
-    final notifier = ref.read(infoBlocksProvider(sid).notifier);
-    await notifier.refresh();
-
-    final blocks = ref.read(infoBlocksProvider(sid));
-    debugPrint('[BlockBadge] _syncAllBlockStatuses: sessionId=$sid, blocks=${blocks.length}');
-    if (blocks.isEmpty) return;
-
-    // Group by messageId and compute aggregated status.
-    final byMsg = <String, List<InfoBlock>>{};
-    for (final b in blocks) {
-      byMsg.putIfAbsent(b.messageId, () => []).add(b);
-    }
-
-    for (final entry in byMsg.entries) {
-      final msgId = entry.key;
-      final mb = entry.value;
-      String status;
-      if (mb.any((b) => b.status == BlockRunStatus.running)) {
-        status = 'running';
-      } else if (mb.any((b) => b.status == BlockRunStatus.error)) {
-        status = 'error';
-      } else {
-        status = 'done';
-      }
-      debugPrint('[BlockBadge] _syncAllBlockStatuses: msgId=$msgId status=$status count=${mb.length}');
-      unawaited(_bridge!.updateBlockStatus(msgId, status));
-    }
+    // Push initial ext-block panels on first load.
+    unawaited(_syncExtBlockPanels());
   }
 
   Future<void> applyIdentity({
@@ -352,8 +347,8 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       widget.messages,
       visibleStartIndex: widget.visibleStartIndex,
     );
-    // Restore block badges after session switch.
-    unawaited(_syncAllBlockStatuses());
+    // Restore ext-block panels after session switch.
+    unawaited(_syncExtBlockPanels());
     Future.delayed(const Duration(milliseconds: 150), () {
       bridge.scrollToBottom();
       if (mounted) setState(() => _sessionSwitching = false);
@@ -487,6 +482,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       }
       _streamingSent = false;
       _regenStreamingSent = false;
+      unawaited(_syncExtBlockPanels());
     }
 
     // Sync messages BEFORE injecting the typing placeholder, so the new user
@@ -494,6 +490,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     if (!identical(oldWidget.messages, widget.messages) &&
         !_listsEqual(oldWidget.messages, widget.messages)) {
       _syncMessages(oldWidget.messages);
+      unawaited(_syncExtBlockPanels());
     }
 
     // Fresh generation started (no regenTargetId) → inject typing placeholder immediately
@@ -707,49 +704,31 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       },
     );
 
-    // Listen to infoBlocks changes and update the ext-block badge for each
-    // affected message. Computes aggregated status from the block lists
-    // directly so it doesn't depend on notifier state timing.
-    //
-    // NOTE: we do NOT gate on `_ready` here. The initial DB load fires
-    // shortly after the notifier is created ([] → [stored blocks]). If
-    // the WebView happens to be ready by then we push immediately; if not
-    // we schedule via _syncAllBlockStatuses which is called once _ready=true.
+    // Refresh inline ext-block panels when DB rows or extension settings change.
     final sessionId = widget.sessionId;
     if (sessionId != null && sessionId.isNotEmpty) {
       ref.listen<List<InfoBlock>>(
         infoBlocksProvider(sessionId),
         (prev, next) {
-          if (_bridge == null) return;
-          // Compute aggregated status from a flat list of blocks.
-          String? aggStatus(List<InfoBlock> blocks, String msgId) {
-            final mb = blocks.where((b) => b.messageId == msgId).toList();
-            if (mb.isEmpty) return null;
-            if (mb.any((b) => b.status == BlockRunStatus.running)) return 'running';
-            if (mb.any((b) => b.status == BlockRunStatus.error)) return 'error';
-            return 'done';
-          }
-          final prevList = prev ?? [];
-          // Collect all unique messageIds appearing in either list.
-          final allIds = {
-            for (final b in prevList) b.messageId,
+          if (_bridge == null || !_ready) return;
+          final allIds = <String>{
+            for (final b in prev ?? const <InfoBlock>[]) b.messageId,
             for (final b in next) b.messageId,
+            for (final m in widget.messages)
+              if (m.role == 'assistant' || m.role == 'character') m.id,
           };
           for (final msgId in allIds) {
-            final oldStatus = aggStatus(prevList, msgId);
-            final newStatus = aggStatus(next, msgId);
-            if (newStatus != oldStatus) {
-              // If the bridge isn't ready yet, defer until it is.
-              if (_ready) {
-                unawaited(_bridge!.updateBlockStatus(msgId, newStatus));
-              } else {
-                // Will be picked up by _syncAllBlockStatuses() once ready.
-              }
-            }
+            unawaited(_refreshExtBlocksPanel(sessionId, msgId));
           }
         },
       );
     }
+    ref.listen(extensionsSettingsProvider, (_, _) {
+      if (_bridge != null && _ready) unawaited(_syncExtBlockPanels());
+    });
+    ref.listen(extensionPresetsProvider, (_, _) {
+      if (_bridge != null && _ready) unawaited(_syncExtBlockPanels());
+    });
 
     final bgImageBytes = ref.watch(bgImageBytesProvider);
 
@@ -892,15 +871,21 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
             _bridge!.onLoadMore = () {
               ref.read(chatProvider(widget.charId).notifier).loadOlderMessages();
             };
-            _bridge!.onExtBlocksClick = (messageId) async {
+            _bridge!.onExtBlocksRunAll = (messageId) async {
               final sessionId = widget.sessionId;
               if (sessionId == null || sessionId.isEmpty) return;
-              final blocks = ref
-                  .read(infoBlocksProvider(sessionId).notifier)
-                  .getByMessageId(messageId)
-                  .map((InfoBlock b) => b.toMap())
-                  .toList();
-              await _bridge?.showExtBlocksPanel(messageId, blocks);
+              final chatState = ref.read(chatProvider(widget.charId)).value;
+              if (chatState == null) return;
+              final character = ref.read(characterByIdProvider(widget.charId));
+              if (character == null) return;
+              await ref.read(extensionPostGenServiceProvider).runBlocksForMessage(
+                charId: widget.charId,
+                sessionId: sessionId,
+                messageId: messageId,
+                messages: chatState.messages,
+                character: character,
+                persona: null,
+              );
             };
             _bridge!.onExtBlockStop = (blockId, messageId) {
               ref.read(extensionPostGenServiceProvider).cancelBlocks();
@@ -921,6 +906,22 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                 character: character,
                 persona: null,
               );
+              await _refreshExtBlocksPanel(sessionId, messageId);
+            };
+            _bridge!.onExtBlockRegenImage = (blockId, messageId) async {
+              final sessionId = widget.sessionId;
+              if (sessionId == null || sessionId.isEmpty) return;
+              final character = ref.read(characterByIdProvider(widget.charId));
+              if (character == null) return;
+              await ref.read(extensionPostGenServiceProvider).rerunImageOnly(
+                blockId: blockId,
+                messageId: messageId,
+                sessionId: sessionId,
+                charId: widget.charId,
+                character: character,
+                persona: null,
+              );
+              await _refreshExtBlocksPanel(sessionId, messageId);
             };
             _bridge!.onExtBlockEdit = (blockId, messageId) async {
               final sessionId = widget.sessionId;
@@ -942,14 +943,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
               await ref
                   .read(infoBlocksProvider(sessionId).notifier)
                   .updateContent(block.id, newContent);
-              await _bridge?.showExtBlocksPanel(
-                messageId,
-                ref
-                    .read(infoBlocksProvider(sessionId).notifier)
-                    .getByMessageId(messageId)
-                    .map((b) => b.toMap())
-                    .toList(),
-              );
+              await _refreshExtBlocksPanel(sessionId, messageId);
             };
             _bridge!.onExtBlockDelete = (blockId, messageId) async {
               final sessionId = widget.sessionId;
@@ -970,14 +964,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
               await ref
                   .read(infoBlocksProvider(sessionId).notifier)
                   .delete(block.id);
-              await _bridge?.showExtBlocksPanel(
-                messageId,
-                ref
-                    .read(infoBlocksProvider(sessionId).notifier)
-                    .getByMessageId(messageId)
-                    .map((b) => b.toMap())
-                    .toList(),
-              );
+              await _refreshExtBlocksPanel(sessionId, messageId);
             };
 
             final isAlive = await controller.isLoading() == false;
