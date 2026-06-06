@@ -817,6 +817,7 @@ class Bridge {
     );
     this._setupScrollListener();
     this._setupInteractionListener();
+    this._setupGlazeRequestRelay();
     this._setupImageClickForward();
     this._swipeHandler.setup();
   }
@@ -891,6 +892,44 @@ class Bridge {
       this._pendingRequests.set(requestId, { resolve, reject, timer });
       this._sendToFlutter(name, [requestId, ...args]);
     });
+  }
+
+  _setupGlazeRequestRelay() {
+    window.addEventListener('message', async (e) => {
+      const data = e.data || {};
+      if (!data || data.type !== 'glaze:request') return;
+      if (!e.source) return;
+      try {
+        const result = await this._callGlazeBridge({
+          id: data.id,
+          method: data.method,
+          params: data.params || {},
+          context: data.context || {},
+        });
+        e.source.postMessage({ type: 'glaze:response', id: data.id, ok: true, result }, '*');
+      } catch (error) {
+        e.source.postMessage({
+          type: 'glaze:response',
+          id: data.id,
+          ok: false,
+          error: { message: String(error && error.message ? error.message : error) },
+        }, '*');
+      }
+    });
+  }
+
+  async _callGlazeBridge(request) {
+    if (!window.flutter_inappwebview || !window.flutter_inappwebview.callHandler) {
+      throw new Error('Flutter bridge is not available');
+    }
+    const response = await window.flutter_inappwebview.callHandler('glazeBridge', request);
+    if (response && response.ok === false) {
+      const error = response.error || {};
+      throw new Error(error.message || 'Glaze bridge error');
+    }
+    return response && Object.prototype.hasOwnProperty.call(response, 'result')
+      ? response.result
+      : response;
   }
 
   _resolveRequest(requestId, result) {
@@ -1800,11 +1839,17 @@ class Bridge {
       // inside the user script are properly escaped.
       const escapedScript = JSON.stringify(script);
       const escapedContext = contextJson;
+      const sdkSource = JSON.stringify(window.__glazeSdkSource || '');
 
       const sandboxHtml = `<!DOCTYPE html><html><body><script>
 (function() {
   var context;
   try { context = ${escapedContext}; } catch(e) { context = {}; }
+  window.__glazeContext = context;
+  var glazeSdkSource = ${sdkSource};
+  if (glazeSdkSource) {
+    (new Function(glazeSdkSource))();
+  }
   var userScript = ${escapedScript};
   (new Function('context', '"use strict"; return (async function() { ' + userScript + ' })();'))(context)
     .then(function(r) {
@@ -1818,6 +1863,7 @@ class Bridge {
 
       const handler = (e) => {
         if (!iframe || e.source !== iframe.contentWindow) return;
+        if (e.data && e.data.type) return;
         clearTimeout(timeoutId);
         window.removeEventListener('message', handler);
         cleanup();

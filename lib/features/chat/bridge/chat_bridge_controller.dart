@@ -3,12 +3,14 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../../core/models/character.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/persona.dart';
 import '../../../core/models/preset.dart';
+import '../../extensions/services/js_bridge_service.dart';
 import 'chat_message_mapper.dart';
 import 'bridge_handlers.dart';
 import 'bridge_message_commands.dart';
@@ -32,6 +34,7 @@ import 'bridge_memory_commands.dart';
 /// properties on the host and registered via [setupHandlers].
 class ChatBridgeController {
   final InAppWebViewController _controller;
+  final JsBridgeService _jsBridgeService;
   final Map<String, Completer<dynamic>> _pendingRequests = {};
 
   String? currentCharName;
@@ -58,7 +61,10 @@ class ChatBridgeController {
   late final LayoutBridgeCommands layout = LayoutBridgeCommands(this);
   late final MemoryBridgeCommands memory = MemoryBridgeCommands(this);
 
-  ChatBridgeController(this._controller) {
+  ChatBridgeController(
+    this._controller, {
+    JsBridgeService? jsBridgeService,
+  }) : _jsBridgeService = jsBridgeService ?? JsBridgeService() {
     setupHandlers();
   }
 
@@ -219,6 +225,18 @@ class ChatBridgeController {
         callback: (args) => _dispatch(name, spec, args),
       );
     }
+    _controller.addJavaScriptHandler(
+      handlerName: 'glazeBridge',
+      callback: (args) async {
+        final raw = args.isNotEmpty ? args.first : const <String, dynamic>{};
+        final request = raw is Map<String, dynamic>
+            ? raw
+            : raw is Map
+                ? Map<String, dynamic>.from(raw)
+                : const <String, dynamic>{};
+        return _jsBridgeService.dispatch(request);
+      },
+    );
   }
 
   dynamic _dispatch(String name, HandlerSpec spec, List<dynamic> args) {
@@ -568,6 +586,13 @@ class ChatBridgeController {
       'previousOutput': previousOutput,
     };
     final contextJson = jsonEncode(contextMap);
+
+    final sdkSource = await rootBundle.loadString(
+      'assets/chat_webview/glaze_sdk.js',
+    );
+    await _controller.evaluateJavascript(
+      source: 'window.__glazeSdkSource = ${escapeJsonStr(sdkSource)};',
+    );
 
     // callAsyncJavaScript returns the JS Promise result.
     // bridge.runSandboxedScript returns a Promise<string>.

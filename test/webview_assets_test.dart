@@ -15,14 +15,49 @@ String _asset(String name) =>
 void main() {
   late String rendererJs;
   late String bridgeJs;
+  late String glazeSdkJs;
   late String indexHtml;
   late String stylessCss;
 
   setUpAll(() {
     rendererJs = _asset('renderer.js');
     bridgeJs = _asset('bridge.js');
+    glazeSdkJs = _asset('glaze_sdk.js');
     indexHtml = _asset('index.html');
     stylessCss = _asset('styles.css');
+  });
+
+  group('window.glaze SDK', () {
+    test('index.html loads glaze_sdk before bridge.js', () {
+      final sdkIdx = indexHtml.indexOf('glaze_sdk.js');
+      final bridgeIdx = indexHtml.indexOf('bridge.js');
+      expect(sdkIdx, isNonNegative);
+      expect(bridgeIdx, isNonNegative);
+      expect(sdkIdx < bridgeIdx, isTrue);
+    });
+
+    test('SDK exposes expected window.glaze methods', () {
+      for (final method in [
+        'getVariables',
+        'setVariables',
+        'deleteVariable',
+        'executeCommand',
+        'triggerGeneration',
+        'injectPrompt',
+        'uninjectPrompt',
+        'generateText',
+        'showToast',
+        'playAudio',
+      ]) {
+        expect(glazeSdkJs, contains('$method('));
+      }
+    });
+
+    test('sandboxed runner relays glaze requests and ignores relay messages as final output', () {
+      expect(bridgeJs, contains("data.type !== 'glaze:request'"));
+      expect(bridgeJs, contains("type: 'glaze:response'"));
+      expect(bridgeJs, contains('if (e.data && e.data.type) return;'));
+    });
   });
 
   // ─── details/summary arrow ────────────────────────────────────────────────
