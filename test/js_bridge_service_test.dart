@@ -20,10 +20,22 @@ void main() {
     db = _testDb();
     characterRepo = CharacterRepo(db);
     chatRepo = ChatRepo(db);
-    bridge = JsBridgeService(chatRepo: chatRepo, characterRepo: characterRepo, currentSessionId: () => 's1', currentCharacterId: () => 'c1');
+    bridge = JsBridgeService(
+      chatRepo: chatRepo,
+      characterRepo: characterRepo,
+      currentSessionId: () => 's1',
+      currentCharacterId: () => 'c1',
+    );
 
     await characterRepo.put(Character(id: 'c1', name: 'Alice'));
-    await chatRepo.put(const ChatSession(id: 's1', characterId: 'c1', sessionIndex: 0, sessionVars: {'sessionName': 'Main'}));
+    await chatRepo.put(
+      const ChatSession(
+        id: 's1',
+        characterId: 'c1',
+        sessionIndex: 0,
+        sessionVars: {'sessionName': 'Main'},
+      ),
+    );
   });
 
   tearDown(() async {
@@ -96,6 +108,48 @@ void main() {
       final result = await bridge.dispatch({
         'method': 'setVariables',
         'params': {'scope': 'chat', 'path': 'bad', 'value': double.nan},
+      });
+
+      expect(result['ok'], isFalse);
+      expect(result['error']['code'], 'invalid_request');
+    });
+  });
+
+  group('JsBridgeService generateText', () {
+    test('delegates prompt and options to injected handler', () async {
+      final bridge = JsBridgeService(
+        chatRepo: chatRepo,
+        characterRepo: characterRepo,
+        currentSessionId: () => 's1',
+        currentCharacterId: () => 'c1',
+        generateText: (prompt, options, context) async {
+          expect(prompt, 'Write a short line');
+          expect(options['preset'], 'small');
+          expect(context['sessionId'], 's1');
+          return 'Generated line';
+        },
+      );
+
+      final result = await bridge.dispatch({
+        'method': 'generateText',
+        'params': {
+          'prompt': 'Write a short line',
+          'options': {'preset': 'small'},
+        },
+        'context': {'sessionId': 's1'},
+      });
+
+      expect(result['ok'], isTrue);
+      expect(result['result'], 'Generated line');
+    });
+
+    test('rejects unsupported preset names', () async {
+      final result = await bridge.dispatch({
+        'method': 'generateText',
+        'params': {
+          'prompt': 'Hello',
+          'options': {'preset': 'tiny'},
+        },
       });
 
       expect(result['ok'], isFalse);

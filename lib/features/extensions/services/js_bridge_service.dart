@@ -6,6 +6,13 @@ import 'package:flutter/foundation.dart';
 import '../../../core/db/repositories/character_repo.dart';
 import '../../../core/db/repositories/chat_repo.dart';
 
+typedef GenerateTextHandler =
+    Future<String> Function(
+      String prompt,
+      Map<String, dynamic> options,
+      Map<String, dynamic> context,
+    );
+
 class JsBridgeService {
   static const _chatVarsKey = '__glaze_variables';
   static const _characterVarsKey = 'glaze_variables';
@@ -15,11 +22,29 @@ class JsBridgeService {
   final CharacterRepo? _characterRepo;
   final String? Function()? _currentSessionId;
   final String? Function()? _currentCharacterId;
+  final GenerateTextHandler? _generateText;
 
-  JsBridgeService({ChatRepo? chatRepo, CharacterRepo? characterRepo, String? Function()? currentSessionId, String? Function()? currentCharacterId})
-    : this._(chatRepo, characterRepo, currentSessionId, currentCharacterId);
+  JsBridgeService({
+    ChatRepo? chatRepo,
+    CharacterRepo? characterRepo,
+    String? Function()? currentSessionId,
+    String? Function()? currentCharacterId,
+    GenerateTextHandler? generateText,
+  }) : this._(
+         chatRepo,
+         characterRepo,
+         currentSessionId,
+         currentCharacterId,
+         generateText,
+       );
 
-  const JsBridgeService._(this._chatRepo, this._characterRepo, this._currentSessionId, this._currentCharacterId);
+  const JsBridgeService._(
+    this._chatRepo,
+    this._characterRepo,
+    this._currentSessionId,
+    this._currentCharacterId,
+    this._generateText,
+  );
 
   Future<Map<String, dynamic>> dispatch(Map<String, dynamic> request) async {
     final method = request['method'] as String? ?? '';
@@ -44,7 +69,11 @@ class JsBridgeService {
     }
   }
 
-  FutureOr<dynamic> _handle(String method, Map<String, dynamic> params, Map<String, dynamic> context) {
+  FutureOr<dynamic> _handle(
+    String method,
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) {
     switch (method) {
       case 'showToast':
         debugPrint('[JsBridge] toast: ${params['message'] ?? ''}');
@@ -59,9 +88,10 @@ class JsBridgeService {
       case 'triggerGeneration':
       case 'injectPrompt':
       case 'uninjectPrompt':
-      case 'generateText':
       case 'playAudio':
         throw UnsupportedError('glaze.$method is not implemented yet');
+      case 'generateText':
+        return _handleGenerateText(params, context);
       default:
         throw UnsupportedError('Unknown glaze method "$method"');
     }
@@ -73,13 +103,19 @@ class JsBridgeService {
     return <String, dynamic>{};
   }
 
-  Future<dynamic> _getVariables(Map<String, dynamic> params, Map<String, dynamic> context) async {
+  Future<dynamic> _getVariables(
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) async {
     final root = await _readScope(_scope(params), context);
     final path = _path(params['path']);
     return _cloneJson(path.isEmpty ? root : _getAtPath(root, path));
   }
 
-  Future<Map<String, dynamic>> _setVariables(Map<String, dynamic> params, Map<String, dynamic> context) {
+  Future<Map<String, dynamic>> _setVariables(
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) {
     final path = _path(params['path']);
     final hasValue = params.containsKey('value');
     final value = hasValue ? params['value'] : params['values'];
@@ -100,7 +136,10 @@ class JsBridgeService {
     });
   }
 
-  Future<Map<String, dynamic>> _deleteVariable(Map<String, dynamic> params, Map<String, dynamic> context) {
+  Future<Map<String, dynamic>> _deleteVariable(
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) {
     final path = _path(params['path']);
     if (path.isEmpty) throw ArgumentError('deleteVariable path is required');
 
@@ -110,11 +149,43 @@ class JsBridgeService {
     });
   }
 
-  Future<Map<String, dynamic>> _readScope(String scope, Map<String, dynamic> context) async {
+  Future<String> _handleGenerateText(
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) {
+    final prompt = params['prompt'];
+    if (prompt is! String || prompt.trim().isEmpty) {
+      throw ArgumentError('generateText prompt is required');
+    }
+    final options = _asMap(params['options']);
+    final preset = options['preset'];
+    if (preset != null && preset is! String) {
+      throw ArgumentError('generateText preset must be a string');
+    }
+    if (preset is String &&
+        preset.isNotEmpty &&
+        preset != 'big' &&
+        preset != 'medium' &&
+        preset != 'small') {
+      throw ArgumentError('Unsupported generateText preset "$preset"');
+    }
+    final handler =
+        _generateText ??
+        (throw UnsupportedError(
+          'glaze.generateText is not available in this context',
+        ));
+    return handler(prompt, options, context);
+  }
+
+  Future<Map<String, dynamic>> _readScope(
+    String scope,
+    Map<String, dynamic> context,
+  ) async {
     switch (scope) {
       case 'chat':
         final sessionId = _sessionId(context);
-        final repo = _chatRepo ?? (throw StateError('Chat repo is not available'));
+        final repo =
+            _chatRepo ?? (throw StateError('Chat repo is not available'));
         final session = await repo.getById(sessionId);
         if (session == null) {
           throw StateError('Chat session "$sessionId" was not found');
@@ -122,7 +193,9 @@ class JsBridgeService {
         return _decodeChatVars(session.sessionVars);
       case 'character':
         final charId = _characterId(context);
-        final repo = _characterRepo ?? (throw StateError('Character repo is not available'));
+        final repo =
+            _characterRepo ??
+            (throw StateError('Character repo is not available'));
         final character = await repo.getById(charId);
         if (character == null) {
           throw StateError('Character "$charId" was not found');
@@ -133,11 +206,16 @@ class JsBridgeService {
     }
   }
 
-  Future<Map<String, dynamic>> _updateScope(String scope, Map<String, dynamic> context, Map<String, dynamic> Function(Map<String, dynamic> root) update) async {
+  Future<Map<String, dynamic>> _updateScope(
+    String scope,
+    Map<String, dynamic> context,
+    Map<String, dynamic> Function(Map<String, dynamic> root) update,
+  ) async {
     switch (scope) {
       case 'chat':
         final sessionId = _sessionId(context);
-        final repo = _chatRepo ?? (throw StateError('Chat repo is not available'));
+        final repo =
+            _chatRepo ?? (throw StateError('Chat repo is not available'));
         Map<String, dynamic> nextRoot = const {};
         await repo.updateSessionVarsJson(sessionId, (vars) {
           nextRoot = update(_decodeChatVars(vars));
@@ -151,7 +229,9 @@ class JsBridgeService {
         return Map<String, dynamic>.from(nextRoot);
       case 'character':
         final charId = _characterId(context);
-        final repo = _characterRepo ?? (throw StateError('Character repo is not available'));
+        final repo =
+            _characterRepo ??
+            (throw StateError('Character repo is not available'));
         Map<String, dynamic> nextRoot = const {};
         await repo.updateExtensionsJson(charId, (extensions) {
           nextRoot = update(_decodeCharacterVars(extensions));
@@ -174,7 +254,8 @@ class JsBridgeService {
   }
 
   String _sessionId(Map<String, dynamic> context) {
-    final value = (context['sessionId'] as String?) ?? _currentSessionId?.call();
+    final value =
+        (context['sessionId'] as String?) ?? _currentSessionId?.call();
     if (value == null || value.isEmpty) {
       throw StateError('Chat session context is not available');
     }
@@ -182,7 +263,8 @@ class JsBridgeService {
   }
 
   String _characterId(Map<String, dynamic> context) {
-    final value = (context['characterId'] as String?) ?? _currentCharacterId?.call();
+    final value =
+        (context['characterId'] as String?) ?? _currentCharacterId?.call();
     if (value == null || value.isEmpty) {
       throw StateError('Character context is not available');
     }
@@ -214,7 +296,9 @@ class JsBridgeService {
     var current = root;
     for (final part in path.take(path.length - 1)) {
       final existing = current[part];
-      final child = existing is Map ? Map<String, dynamic>.from(existing) : <String, dynamic>{};
+      final child = existing is Map
+          ? Map<String, dynamic>.from(existing)
+          : <String, dynamic>{};
       current[part] = child;
       current = child;
     }

@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:collection/collection.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/llm/sse_client.dart';
 import '../../../core/models/preset.dart';
 import '../../../core/state/active_selection_provider.dart';
 import '../../../core/state/character_provider.dart';
@@ -27,6 +29,7 @@ import '../../extensions/providers/extensions_settings_provider.dart';
 import '../../extensions/services/ext_blocks_panel_builder.dart';
 import '../../extensions/services/extension_post_gen_service.dart';
 import '../../extensions/services/js_bridge_service.dart';
+import '../../settings/api_list_provider.dart';
 import '../bridge/chat_bridge_registry.dart';
 import 'webview_callbacks.dart';
 
@@ -190,6 +193,55 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       if (msg.role != 'assistant' && msg.role != 'character') continue;
       await _refreshExtBlocksPanel(sid, msg.id);
     }
+  }
+
+  Future<String> _generateBridgeText(
+    String prompt,
+    Map<String, dynamic> options,
+    Map<String, dynamic> bridgeContext,
+  ) async {
+    await ref.read(apiListProvider.future);
+    final apiConfig = ref.read(activeApiConfigProvider);
+    if (apiConfig == null) {
+      throw StateError('No active API config available');
+    }
+    if (apiConfig.endpoint.isEmpty || apiConfig.model.isEmpty) {
+      throw StateError('Active API config is incomplete');
+    }
+
+    final cancelToken = CancelToken();
+    final completer = Completer<String>();
+    unawaited(SseClient().streamChatCompletion(
+      endpoint: apiConfig.endpoint,
+      apiKey: apiConfig.apiKey,
+      model: apiConfig.model,
+      messages: [
+        {'role': 'user', 'content': prompt},
+      ],
+      maxTokens: apiConfig.maxTokens,
+      temperature: apiConfig.temperature,
+      topP: apiConfig.topP,
+      stream: false,
+      cancelToken: cancelToken,
+      requestReasoning: apiConfig.requestReasoning,
+      reasoningEffort: apiConfig.reasoningEffort,
+      omitTemperature: apiConfig.omitTemperature,
+      omitTopP: apiConfig.omitTopP,
+      omitReasoning: apiConfig.omitReasoning,
+      omitReasoningEffort: apiConfig.omitReasoningEffort,
+      sessionId: widget.sessionId,
+      cacheControlTtl: apiConfig.cacheControlTtl,
+      onComplete: (text, _, {rawResponseJson}) {
+        if (!completer.isCompleted) completer.complete(text);
+      },
+      onError: (error) {
+        if (!completer.isCompleted) completer.completeError(error);
+      },
+    ));
+    return completer.future.timeout(const Duration(seconds: 55), onTimeout: () {
+      cancelToken.cancel('glaze.generateText timed out');
+      throw TimeoutException('glaze.generateText timed out');
+    });
   }
 
   @override
@@ -830,6 +882,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                 characterRepo: ref.read(characterRepoProvider),
                 currentSessionId: () => widget.sessionId,
                 currentCharacterId: () => widget.charId,
+                generateText: _generateBridgeText,
               ),
             );
             // Register bridge in the registry so services can access it.
