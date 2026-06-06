@@ -32,10 +32,12 @@ import '../../extensions/providers/extension_presets_provider.dart';
 import '../../extensions/providers/extensions_settings_provider.dart';
 import '../../extensions/providers/preset_permissions_provider.dart';
 import '../../extensions/services/audio_bridge_service.dart';
+import '../../extensions/services/command_registry.dart';
 import '../../extensions/services/ext_blocks_panel_builder.dart';
 import '../../extensions/services/extension_post_gen_service.dart';
 import '../../extensions/services/generation_dispatcher.dart';
 import '../../extensions/services/js_bridge_service.dart';
+import '../../extensions/services/js_bridge_toast_controller.dart';
 import '../../extensions/services/js_engine_service.dart';
 import '../../extensions/services/panel_host_service.dart';
 import '../../extensions/services/runtime_prompt_injection_service.dart';
@@ -356,6 +358,42 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     Map<String, dynamic> options,
   ) {
     return _audioBridge.play(source, options);
+  }
+
+  /// Shared slash-command registry. The MVP wires the default command
+  /// set; future revisions can override the registry in tests.
+  final CommandRegistry _commandRegistry = buildDefaultCommandRegistry();
+
+  /// Toast surface for the JS bridge. Resolves the active `BuildContext`
+  /// lazily so the toast surfaces from the currently mounted chat.
+  final JsBridgeToastController _toastController = JsBridgeToastController();
+
+  void _showBridgeToast(String? message, Map<String, dynamic> options) {
+    final severity = GlazeToastSeverity.parse(options['severity'] as String?);
+    // Re-resolve the BuildContext on every call so the toast surfaces
+    // from the currently mounted screen, not the snapshot at bridge init.
+    _toastController.overlayResolver = () => context;
+    _toastController.show(
+      message,
+      severity: severity,
+      actionLabel: options['action'] as String?,
+    );
+  }
+
+  Future<Map<String, dynamic>> _executeBridgeCommand(
+    String command,
+    Map<String, dynamic> args,
+    Map<String, dynamic> context,
+  ) async {
+    final result = await _commandRegistry.run(
+      command,
+      args,
+      context: CommandContext(
+        charId: widget.charId,
+        presetId: ref.read(extensionsSettingsProvider).activePresetId,
+      ),
+    );
+    return result.toMap();
   }
 
   @override
@@ -1072,6 +1110,8 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                   triggerGeneration: _triggerBridgeGeneration,
                   permissionCheck: _bridgePermissionCheck,
                   playAudio: _playBridgeAudio,
+                  executeCommand: _executeBridgeCommand,
+                  showToast: _showBridgeToast,
                 );
                 _bridge = ChatBridgeController(
                   controller,

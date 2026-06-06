@@ -58,6 +58,22 @@ typedef MessageVariablesAccessor = MessageVariablesNotifier Function();
 typedef PlayAudioHandler =
     FutureOr<void> Function(String? source, Map<String, dynamic> options);
 
+/// Slash-command dispatcher. The bridge serializes the result back to
+/// the JS SDK as a plain map (`{ ok, message, data }`).
+typedef ExecuteCommandHandler =
+    FutureOr<Map<String, dynamic>> Function(
+      String command,
+      Map<String, dynamic> args,
+      Map<String, dynamic> context,
+    );
+
+/// Toast surface. The MVP `JsBridgeToastController` logs when no
+/// overlay is available and calls `GlazeToast.show` when one is.
+typedef ShowToastHandler = void Function(
+  String? message,
+  Map<String, dynamic> options,
+);
+
 class JsBridgeService {
   static const _chatVarsKey = '__glaze_variables';
   static const _characterVarsKey = 'glaze_variables';
@@ -75,6 +91,8 @@ class JsBridgeService {
   final TriggerGenerationHandlerFn? _triggerGeneration;
   final PermissionCheck? _permissionCheck;
   final PlayAudioHandler? _playAudio;
+  final ExecuteCommandHandler? _executeCommand;
+  final ShowToastHandler? _showToast;
 
   JsBridgeService({
     ChatRepo? chatRepo,
@@ -89,6 +107,8 @@ class JsBridgeService {
     TriggerGenerationHandlerFn? triggerGeneration,
     PermissionCheck? permissionCheck,
     PlayAudioHandler? playAudio,
+    ExecuteCommandHandler? executeCommand,
+    ShowToastHandler? showToast,
   }) : this._(
          chatRepo,
          characterRepo,
@@ -102,6 +122,8 @@ class JsBridgeService {
          triggerGeneration,
          permissionCheck,
          playAudio,
+         executeCommand,
+         showToast,
        );
 
   const JsBridgeService._(
@@ -117,6 +139,8 @@ class JsBridgeService {
     this._triggerGeneration,
     this._permissionCheck,
     this._playAudio,
+    this._executeCommand,
+    this._showToast,
   );
 
   Future<Map<String, dynamic>> dispatch(Map<String, dynamic> request) async {
@@ -150,7 +174,7 @@ class JsBridgeService {
     switch (method) {
       case 'showToast':
         _requireCapability('show_toast');
-        debugPrint('[JsBridge] toast: ${params['message'] ?? ''}');
+        _handleShowToast(params, context);
         return true;
       case 'getVariables':
         return _handleGetVariables(params, context);
@@ -160,7 +184,7 @@ class JsBridgeService {
         return _handleDeleteVariable(params, context);
       case 'executeCommand':
         _requireCapability('execute_command');
-        throw UnsupportedError('glaze.executeCommand is not implemented yet');
+        return _handleExecuteCommand(params, context);
       case 'triggerGeneration':
         _requireCapability('trigger_generation');
         return _handleTriggerGeneration(params, context);
@@ -353,6 +377,37 @@ class JsBridgeService {
           'glaze.playAudio is not available in this context',
         ));
     return handler(source as String?, _asMap(params['options']));
+  }
+
+  FutureOr<Map<String, dynamic>> _handleExecuteCommand(
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) {
+    final command = params['command'];
+    if (command is! String || command.isEmpty) {
+      throw ArgumentError('executeCommand requires a non-empty string command');
+    }
+    final handler =
+        _executeCommand ??
+        (throw UnsupportedError(
+          'glaze.executeCommand is not available in this context',
+        ));
+    return handler(command, _asMap(params['args']), context);
+  }
+
+  void _handleShowToast(
+    Map<String, dynamic> params,
+    Map<String, dynamic> context,
+  ) {
+    final message = params['message'];
+    if (message != null && message is! String) {
+      throw ArgumentError('showToast message must be a string');
+    }
+    final options = _asMap(params['options']);
+    final handler =
+        _showToast ??
+        (msg, _) => debugPrint('[JsBridge] toast: ${msg ?? ''}');
+    handler(message as String?, {...options, '_context': context});
   }
 
   Future<String> _handleGenerateText(
