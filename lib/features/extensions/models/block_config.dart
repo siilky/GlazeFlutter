@@ -7,6 +7,7 @@ enum BlockType {
   infoblock,
   imageGen,
   jsRunner,
+  interactive,
 }
 
 enum BlockTrigger {

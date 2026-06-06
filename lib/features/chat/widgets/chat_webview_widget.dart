@@ -30,6 +30,7 @@ import '../../extensions/services/ext_blocks_panel_builder.dart';
 import '../../extensions/services/extension_post_gen_service.dart';
 import '../../extensions/services/js_bridge_service.dart';
 import '../../extensions/services/js_engine_service.dart';
+import '../../extensions/services/panel_host_service.dart';
 import '../../extensions/services/runtime_prompt_injection_service.dart';
 import '../../settings/api_list_provider.dart';
 import '../bridge/chat_bridge_registry.dart';
@@ -309,6 +310,9 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
   void dispose() {
     // Unregister bridge so the service doesn't hold a stale reference.
     ref.read(chatBridgeRegistryProvider(widget.charId).notifier).state = null;
+    // Drop interactive panel state for this character so the singleton
+    // registry doesn't keep references to disposed bridge callbacks.
+    PanelHostService.instance.disposeAll(charId: widget.charId);
     super.dispose();
   }
 
@@ -455,6 +459,11 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     final bridge = _bridge;
     if (bridge == null) return;
 
+    // Drop any interactive panels from the previous session before clearing
+    // the WebView DOM. JS-side `clearAll()` also closes panels, but the
+    // Dart-side registry has to be reset so the next `openPanel` call can
+    // bind fresh handlers on the (potentially new) bridge.
+    unawaited(PanelHostService.instance.disposeAll(charId: old.charId));
     unawaited(bridge.evalJs('window.bridge?.clearAll();'));
     if (mounted) setState(() => _sessionSwitching = true);
     if (widget.charId != old.charId) {

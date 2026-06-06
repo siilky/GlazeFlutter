@@ -86,6 +86,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
       BlockType.infoblock => 'Инфоблок',
       BlockType.imageGen => 'Картинка',
       BlockType.jsRunner => 'JS',
+      BlockType.interactive => 'Интерактивная панель',
     };
     final trigger = switch (block.trigger) {
       BlockTrigger.afterUser => 'После user',
