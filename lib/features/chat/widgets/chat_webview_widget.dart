@@ -22,6 +22,7 @@ import '../editing_message_provider.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../../shared/theme/app_colors.dart';
 import '../../../../shared/theme/theme_font_provider.dart';
+import '../../extensions/models/connection_profiles.dart';
 import '../../extensions/models/info_block.dart';
 import '../../extensions/models/preset_permissions.dart';
 import '../../extensions/models/trigger_mode.dart';
@@ -33,6 +34,7 @@ import '../../extensions/providers/extensions_settings_provider.dart';
 import '../../extensions/providers/preset_permissions_provider.dart';
 import '../../extensions/services/audio_bridge_service.dart';
 import '../../extensions/services/command_registry.dart';
+import '../../extensions/services/connection_profile_resolver.dart';
 import '../../extensions/services/ext_blocks_panel_builder.dart';
 import '../../extensions/services/extension_post_gen_service.dart';
 import '../../extensions/services/generation_dispatcher.dart';
@@ -214,13 +216,37 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     }
   }
 
+  /// Shared connection-profile resolver for `glaze.generateText`.
+  /// When the active extension preset has a `big/medium/small` API
+  /// config id configured, the bridge dispatches to that config;
+  /// otherwise it falls back to the active API config.
+  final ConnectionProfileResolver _profileResolver =
+      const ConnectionProfileResolver();
+
   Future<String> _generateBridgeText(
     String prompt,
     Map<String, dynamic> options,
     Map<String, dynamic> bridgeContext,
   ) async {
     await ref.read(apiListProvider.future);
-    final apiConfig = ref.read(activeApiConfigProvider);
+    final configs = ref.read(apiListProvider).valueOrNull ?? const [];
+    final activeApiConfig = ref.read(activeApiConfigProvider);
+    final profile = ConnectionProfileX.parse(options['preset']) ??
+        ConnectionProfile.medium;
+    final activePresetId =
+        ref.read(extensionsSettingsProvider).activePresetId;
+    final preset = activePresetId == null
+        ? null
+        : ref
+            .read(extensionPresetsProvider)
+            .where((p) => p.id == activePresetId)
+            .firstOrNull;
+    final apiConfig = _profileResolver.resolve(
+      preset,
+      profile,
+      activeApiConfig,
+      configs,
+    );
     if (apiConfig == null) {
       throw StateError('No active API config available');
     }
@@ -360,10 +386,6 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     return _audioBridge.play(source, options);
   }
 
-  /// Shared slash-command registry. The MVP wires the default command
-  /// set; future revisions can override the registry in tests.
-  final CommandRegistry _commandRegistry = buildDefaultCommandRegistry();
-
   /// Toast surface for the JS bridge. Resolves the active `BuildContext`
   /// lazily so the toast surfaces from the currently mounted chat.
   final JsBridgeToastController _toastController = JsBridgeToastController();
@@ -377,6 +399,46 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       message,
       severity: severity,
       actionLabel: options['action'] as String?,
+    );
+  }
+
+  /// Trigger handler shared with the wired command registry's `/trigger`.
+  late final TriggerGenerationHandler _triggerHandler = TriggerGenerationHandler(
+    dispatcher: ref.read(generationDispatcherProvider),
+    log: (line) => debugPrint(line),
+  );
+
+  /// Runtime prompt injection notifier shared with the wired command
+  /// registry's `/inject`.
+  late final RuntimePromptInjectionNotifier _promptInjection =
+      ref.read(runtimePromptInjectionProvider.notifier);
+
+  /// Shared slash-command registry. The wired registry routes
+  /// `/trigger`, `/getvar`, `/setvar`, `/inject`, and `/toast` to the
+  /// same services as the dedicated bridge methods (so permissions /
+  /// scope / JSON validation are preserved end-to-end).
+  late final CommandRegistry _commandRegistry = _buildWiredCommandRegistry();
+
+  CommandRegistry _buildWiredCommandRegistry() {
+    return buildWiredCommandRegistry(
+      WiredCommandDeps(
+        // The deps-only bridge is intentionally minimal: it has
+        // access to the same repos / session id / permission check
+        // as the live bridge, but no trigger / generate / audio
+        // handlers. `/getvar` and `/setvar` only need the repos.
+        bridge: JsBridgeService(
+          chatRepo: ref.read(chatRepoProvider),
+          characterRepo: ref.read(characterRepoProvider),
+          currentSessionId: () => widget.sessionId,
+          currentCharacterId: () => widget.charId,
+          permissionCheck: _bridgePermissionCheck,
+          messageVariables: () =>
+              ref.read(messageVariablesProvider.notifier),
+        ),
+        toastController: _toastController,
+        promptInjection: _promptInjection,
+        triggerHandler: _triggerHandler,
+      ),
     );
   }
 
@@ -403,6 +465,8 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     // Drop interactive panel state for this character so the singleton
     // registry doesn't keep references to disposed bridge callbacks.
     PanelHostService.instance.disposeAll(charId: widget.charId);
+    // Release the audio player owned by this widget.
+    unawaited(_audioBridge.dispose());
     super.dispose();
   }
 
@@ -1088,9 +1152,19 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                 loadWithOverviewMode: true,
                 allowFileAccess: true,
                 allowContentAccess: true,
-                allowFileAccessFromFileURLs: true,
-                allowUniversalAccessFromFileURLs: true,
-                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                // The chat page is loaded from `file://` assets. We do NOT
+                // need file:// -> http(s) universal access — outbound links
+                // are handled via `launchUrl(..., externalApplication)` in
+                // the bridge, not from the WebView itself. Keeping these
+                // `false` blocks an XSS'd panel / extension JS from doing
+                // `fetch('file:///...')` or `fetch('http://...')` from a
+                // local origin.
+                allowFileAccessFromFileURLs: false,
+                allowUniversalAccessFromFileURLs: false,
+                // Mixed content is opt-in. The chat WebView itself does
+                // not load HTTP resources, but the iframe panels do
+                // receive base64 data: URIs only — never http(s).
+                mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
               ),
               onWebViewCreated: (controller) async {
                 final globalRepo = await ref.read(

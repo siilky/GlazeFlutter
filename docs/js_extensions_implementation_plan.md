@@ -97,9 +97,22 @@
     - No direct `window.flutter_inappwebview` exposure. DONE.
     - Capability permissions per preset. DONE: `PresetPermissions` with 19 toggles, `activePresetPermissionsProvider` resolves the active preset's permissions, every bridge method enforces via `_requireCapability(capabilityId)` before dispatch. Default-deny for every capability except `showToast`.
 
-16. Review WebView settings. PARTIAL.
+16. Review WebView settings. DONE.
     - Strict sandbox on the headless engine. DONE.
-    - Main chat WebView still uses `allowFileAccessFromFileURLs=true` and `allowUniversalAccessFromFileURLs=true` — TODO: tighten when panel iframe islands and the renderer no longer need file access for assets.
+    - Main chat WebView tightened: `allowFileAccessFromFileURLs=false`,
+      `allowUniversalAccessFromFileURLs=false`,
+      `mixedContentMode=MIXED_CONTENT_NEVER_ALLOW`. The chat page is
+      loaded from `file://` assets and outbound links are launched
+      through `url_launcher` in the bridge (not the WebView itself),
+      so the relaxed `true` / `MIXED_CONTENT_ALWAYS_ALLOW` values
+      were no longer needed. The preloader widget mirrors the same
+      strict settings.
+    - `AudioBridgeService` now uses `audioplayers` for real audio
+      sources (file://, http(s)://, data: URIs, absolute paths) in
+      addition to the built-in `SystemSound` / `HapticFeedback` cues.
+    - `PeriodicTriggerScheduler` registers as a `WidgetsBindingObserver`
+      and pauses on `paused` / `inactive` / `hidden` / `detached`,
+      resuming on `resumed`. No catch-up tick on resume.
 
 17. Add UI for background scripts and permissions. DONE.
     - Preset editor now shows a "Разрешения (capabilities)" section with one `SwitchListTile` per `GlazeCapability` (id + label).
@@ -109,11 +122,18 @@
     - 19 toggles, default-deny. The `executeCommand` capability gates `/toast`, `/inject`, etc. The `playAudio` capability gates `glaze.playAudio`. The `trigger_generation` capability gates `glaze.triggerGeneration`. Per-scope read/write/delete: `chat`, `character`, `global`, `message`.
     - Editor UI exposes every capability. Permission checks are enforced at the bridge boundary — JS cannot bypass.
 
-19. Add tests. PARTIAL → MOSTLY DONE.
+19. Add tests. DONE.
     - Variable get/set/delete with dot paths. DONE.
     - Bridge contract for `window.glaze` methods. DONE.
     - Prompt injection ordering and cleanup. DONE.
-    - `afterUser` and `afterAssistant` trigger behavior. PARTIAL: the chain filter is covered; the fire-and-forget dispatch path is not yet pinned by a characterization test.
+    - `afterUser` and `afterAssistant` trigger behavior. DONE: the chain
+      filter is covered; the fire-and-forget dispatch path is pinned
+      by `test/after_user_dispatch_test.dart` (chain filter by
+      `BlockTrigger`, public surface of `runAfterUserBlocks`, fire-and-forget
+      contract for the chat notifier's `unawaited(_dispatchAfterUserBlocks(...))`).
+    - Periodic scheduler lifecycle pause/resume. DONE: `test/periodic_lifecycle_test.dart`.
+    - Connection profile mapping (big/medium/small → api config). DONE.
+    - Audio bridge routing for cue/data/file/http sources. DONE.
     - JS SDK promise success/error behavior. DONE.
     - Migration/repo atomic variable methods. DONE.
     - `triggerGeneration` mutex + idempotency. DONE.
@@ -121,7 +141,7 @@
     - Global / message variable scopes. DONE.
     - Periodic scheduler. DONE.
     - `playAudio`. DONE.
-    - `executeCommand` registry. DONE.
+    - `executeCommand` registry (echo + wired variants). DONE.
     - Toast severity. DONE.
 
 20. Verify incrementally. ONGOING.
@@ -207,6 +227,12 @@
 - Added `executeCommand` bridge method with `execute_command` capability.
 - Added `lib/features/extensions/services/js_bridge_toast_controller.dart` — `JsBridgeToastController` with `GlazeToastSeverity { info, success, warning, error }` and dynamic `BuildContext` resolution.
 - Wired `showToast` to use the toast controller (severity-aware duration + `isError`).
+- Tightened main chat WebView sandboxing: `allowFileAccessFromFileURLs=false`, `allowUniversalAccessFromFileURLs=false`, `mixedContentMode=MIXED_CONTENT_NEVER_ALLOW` on both the chat page and the preloader. Outbound links still flow through `launchUrl` so the WebView no longer needs universal file access.
+- Added `AudioBridgeService` real-source routing: `file://`, `http(s)://`, `data:` URIs, and absolute paths go through `audioplayers`; built-in cues (`click` / `alert` / `haptic`) still go through `SystemSound` / `HapticFeedback`. Added `audioplayers: ^6.1.0` to `pubspec.yaml`.
+- Added `PeriodicTriggerScheduler` lifecycle hooks via `WidgetsBindingObserver` — pause on `paused` / `inactive` / `hidden` / `detached`, resume on `resumed`. No catch-up tick on resume.
+- Added `lib/features/extensions/models/connection_profiles.dart` (`ConnectionProfiles` freezed) and wired `big` / `medium` / `small` preset resolution in `chat_webview_widget.dart::_generateBridgeText` via `ConnectionProfileResolver`.
+- Added UI for `big` / `medium` / `small` API config mapping in `preset_editor_screen.dart` (radio picker that lists all `ApiConfig` entries with "Использовать основной" as the default).
+- Added `WiredCommandDeps` + `buildWiredCommandRegistry` for `executeCommand` real wiring (`/trigger`, `/getvar`, `/setvar`, `/inject`, `/toast` route to the same services as the dedicated bridge methods). `buildDefaultCommandRegistry` is retained for tests. The chat WebView now uses the wired registry by default.
 
 ### Verified
 
@@ -239,16 +265,27 @@
 
 ### Next
 
-- Tighten the main chat WebView sandboxing (`allowFileAccessFromFileURLs`, `allowUniversalAccessFromFileURLs`).
-- `afterUser` characterization test (chain filter is covered; the dispatch path needs a fire-and-forget test).
-- `audioplayers`-backed audio playback (currently uses built-in `SystemSound` / `HapticFeedback`).
-- App-lifecycle hooks for the periodic scheduler (pause on background).
-- Connection profile mapping for `big` / `medium` / `small` `generateText` presets.
-- `executeCommand` real wiring (route to existing `triggerGeneration` / `setVariables` handlers — currently the registry returns echo responses).
-- Run after each step:
-  - `flutter analyze` on touched files
-  - targeted `flutter test` for the increment
-  - `flutter test` on the full test set on completion
+All MVP follow-up items are now implemented and tested:
+
+- Main chat WebView sandboxing: `allowFileAccessFromFileURLs=false`,
+  `allowUniversalAccessFromFileURLs=false`,
+  `mixedContentMode=MIXED_CONTENT_NEVER_ALLOW` (chat page + preloader).
+- `afterUser` fire-and-forget characterization test:
+  `test/after_user_dispatch_test.dart`.
+- `audioplayers`-backed audio playback (file/http/data URIs + absolute
+  paths in addition to built-in cues): `audio_bridge_service.dart`.
+- App-lifecycle hooks for the periodic scheduler: `WidgetsBindingObserver`
+  pauses on `paused` / `inactive` / `hidden` / `detached`, resumes on
+  `resumed`. No catch-up tick on resume.
+- Connection profile mapping for `big` / `medium` / `small`:
+  `ConnectionProfiles` (freezed) on `ExtensionPreset` + UI in
+  `preset_editor_screen.dart` + `ConnectionProfileResolver` that the
+  bridge uses instead of always falling through to the active config.
+- `executeCommand` real wiring: `buildWiredCommandRegistry(WiredCommandDeps)`
+  routes `/trigger`, `/getvar`, `/setvar`, `/inject`, `/toast` to the
+  same services the dedicated bridge methods use. The wired registry
+  is the production default; `buildDefaultCommandRegistry()` is kept
+  for unit tests / CMS discovery.
 
 ## Final state — JS Extensions MVP
 
