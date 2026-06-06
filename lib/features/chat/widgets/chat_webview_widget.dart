@@ -5,7 +5,6 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/preset.dart';
 import '../../../core/state/active_regex_provider.dart';
@@ -18,7 +17,6 @@ import '../bridge/chat_webview_keep_alive.dart';
 import '../bridge/chat_webview_settings.dart';
 import '../bridge/chat_webview_theme_builder.dart';
 import '../chat_provider.dart';
-import '../chat_state.dart';
 import '../editing_message_provider.dart';
 import '../../../core/models/chat_message.dart';
 import '../../extensions/models/info_block.dart';
@@ -29,7 +27,9 @@ import '../../extensions/services/ext_blocks_panel_builder.dart';
 import '../../extensions/services/js_engine_service.dart';
 import '../../extensions/services/panel_host_service.dart';
 import '../bridge/chat_bridge_registry.dart';
+import '../chat_state.dart';
 import 'chat_message_sync.dart';
+import 'chat_webview_callbacks.dart';
 import 'chat_webview_ext_block_callbacks.dart';
 import 'chat_webview_sync_dispatcher.dart';
 import 'webview_callbacks.dart';
@@ -731,102 +731,39 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                     source: 'if(window.bridge) window.bridge.clearAll();',
                   ),
                 );
-                _bridge!.onMessageContext = (id, isUser, isSystem, content) {
-                  final allMsgs =
-                      ref.read(chatProvider(widget.charId)).value?.messages ??
-                      [];
-                  final idx = allMsgs.indexWhere((m) => m.id == id);
-                  if (idx < 0) return;
-                  widget.messageActions.onMessageContext?.call(
-                    idx,
-                    id,
-                    isUser,
-                    isSystem,
-                    content,
-                  );
-                };
-                _bridge!.onSwipe = (id, direction) {
-                  widget.messageActions.onSwipe?.call(id, direction);
-                };
-                _bridge!.onChangeGreeting = (id, dir) {
-                  widget.messageActions.onChangeGreeting?.call(id, dir);
-                };
-                _bridge!.onHeaderScroll = (hidden) {
-                  widget.scrollActions.onHeaderScroll?.call(hidden);
-                };
-                _bridge!.onScrollToBottomVisibility = (visible) {
-                  widget.scrollActions.onScrollToBottomVisibility?.call(
-                    visible,
-                  );
-                };
-                _bridge!.onRegenerate = (id) {
-                  widget.messageActions.onRegenerate?.call(id);
-                };
-                _bridge!.onSelectionAction = (action, text) {
-                  widget.miscActions.onSelectionAction?.call(action, text);
-                };
-                _bridge!.onSelectionChange = (ids) {
-                  widget.miscActions.onSelectionChange?.call(ids);
-                };
-                _bridge!.onEditSave = (id, text) {
-                  widget.editActions.onEditSave?.call(id, text);
-                };
-                _bridge!.onEditCancel = (id) {
-                  widget.editActions.onEditCancel?.call(id);
-                };
-                _bridge!.onEditFocusChange = (id, focused) {
-                  widget.editActions.onEditFocusChange?.call(id, focused);
-                };
-                _bridge!.onImageClick = (imageUrl) {
-                  widget.miscActions.onImageClick?.call(imageUrl);
-                };
-                _bridge!.onGuidedSwipe = (id, guidanceText) {
-                  widget.messageActions.onGuidedSwipe?.call(id, guidanceText);
-                };
-                _bridge!.onMemoryClick = (id) {
-                  widget.messageActions.onMemoryClick?.call(id);
-                };
-                _bridge!.onToggleHidden = (id) {
-                  widget.messageActions.onToggleHidden?.call(id);
-                };
-                _bridge!.onInjectClick = (id) {
-                  widget.messageActions.onInjectClick?.call(id);
-                };
-                _bridge!.onImgRetry = (instruction, messageId) {
-                  widget.imageGenActions.onImgRetry?.call(
-                    instruction,
-                    messageId,
-                  );
-                };
-                _bridge!.onImgFind = (instruction, messageId) {
-                  widget.imageGenActions.onImgFind?.call(
-                    instruction,
-                    messageId,
-                  );
-                };
-                _bridge!.onImgRegen = (instruction, messageId) {
-                  widget.imageGenActions.onImgRegen?.call(
-                    instruction,
-                    messageId,
-                  );
-                };
-                _bridge!.onImgCancel = () {
-                  widget.imageGenActions.onImgCancel?.call();
-                };
-                _bridge!.onStop = () {
-                  widget.miscActions.onStop?.call();
-                };
-                _bridge!.onLinkClick = (url) {
-                  launchUrl(
-                    Uri.parse(url),
-                    mode: LaunchMode.externalApplication,
-                  );
-                };
-                _bridge!.onLoadMore = () {
-                  ref
-                      .read(chatProvider(widget.charId).notifier)
-                      .loadOlderMessages();
-                };
+                final callbacks = ChatWebViewCallbacks(
+                  ref: ref,
+                  charId: widget.charId,
+                  messageActions: widget.messageActions,
+                  editActions: widget.editActions,
+                  imageGenActions: widget.imageGenActions,
+                  scrollActions: widget.scrollActions,
+                  miscActions: widget.miscActions,
+                );
+                _bridge!.onMessageContext = callbacks.onMessageContext;
+                _bridge!.onSwipe = callbacks.onSwipe;
+                _bridge!.onChangeGreeting = callbacks.onChangeGreeting;
+                _bridge!.onHeaderScroll = callbacks.onHeaderScroll;
+                _bridge!.onScrollToBottomVisibility =
+                    callbacks.onScrollToBottomVisibility;
+                _bridge!.onRegenerate = callbacks.onRegenerate;
+                _bridge!.onSelectionAction = callbacks.onSelectionAction;
+                _bridge!.onSelectionChange = callbacks.onSelectionChange;
+                _bridge!.onEditSave = callbacks.onEditSave;
+                _bridge!.onEditCancel = callbacks.onEditCancel;
+                _bridge!.onEditFocusChange = callbacks.onEditFocusChange;
+                _bridge!.onImageClick = callbacks.onImageClick;
+                _bridge!.onGuidedSwipe = callbacks.onGuidedSwipe;
+                _bridge!.onMemoryClick = callbacks.onMemoryClick;
+                _bridge!.onToggleHidden = callbacks.onToggleHidden;
+                _bridge!.onInjectClick = callbacks.onInjectClick;
+                _bridge!.onImgRetry = callbacks.onImgRetry;
+                _bridge!.onImgFind = callbacks.onImgFind;
+                _bridge!.onImgRegen = callbacks.onImgRegen;
+                _bridge!.onImgCancel = callbacks.onImgCancel;
+                _bridge!.onStop = callbacks.onStop;
+                _bridge!.onLinkClick = callbacks.onLinkClick;
+                _bridge!.onLoadMore = callbacks.onLoadMore;
                 final extBlocks = ChatWebViewExtBlockCallbacks(
                   ref: ref,
                   charId: widget.charId,
