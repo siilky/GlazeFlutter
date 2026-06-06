@@ -1,6 +1,6 @@
 # Refactor Plan — Bridge, God-Widgets, God-Services
 
-**Status:** Phases 1-7 complete. Phase 8 pending.
+**Status:** Phases 1-8 complete. Refactor implementation complete; PR/review pending.
 **Scope:** Decompose 4 Dart god-objects and 3 JS god-scripts that grew during the
 `js-extension-bridge-sdk` branch (22 feature commits) into focused modules.
 **Goal:** Clean foundation for future feature work; no functional changes.
@@ -475,22 +475,28 @@ imports `Formatter` explicitly to avoid module-scope global lookup hazards.
 module. `flutter analyze test/webview_assets_test.dart` passed. Targeted asset
 tests passed for `formatter ES module layout` and `bridge ES module layout`.
 
-### Phase 8 — Test coverage, docs sync, release gates (1.5 days)
+### Phase 8 — Test coverage, docs sync, release gates (1.5 days) ✅ Done
 
-* Per-handler, per-controller, per-section unit tests (target: 50+ new
-  assertions).
-* Run the `docs/INVARIANTS.md` refactor checklist for affected areas,
-  especially INV-EG1-8 and INV-JS1-6.
-* Update `docs/ARCHITECTURE.md` § 9 to reflect the new module
-  boundaries.
-* Update `docs/CODE_STYLE.md` with concrete examples of how the
-  decomposed modules are organized (anti-pattern: god-widget).
-* Update `docs/js_extensions_implementation_plan.md` "Final state"
-  table with the new file layout.
-* `flutter analyze` — 0 new errors.
-* `flutter test` — all 132 existing + 50+ new = 180+ passing.
-* Final PR in the series updates docs and removes any temporary fallback or
-  spike-only hooks that are no longer needed.
+**Implemented:** synced `docs/ARCHITECTURE.md` § 9 with the extracted Dart block
+handlers, `js_bridge/` handlers, and WebView ES module layout. Updated
+`docs/CODE_STYLE.md` with concrete decomposition patterns from this refactor.
+Updated `CLAUDE.md`, `PLAN_EXT_BLOCKS.md`, and `INVARIANTS.md` so they no longer
+point at obsolete planning docs or old single-file JS implementation paths.
+Restored and refreshed `docs/markdown-markers.md` for the new formatter/renderer
+module boundaries.
+
+Added `test/docs_links_test.dart` as a docs guard for:
+
+* no references to deleted obsolete planning docs
+* extension docs pointing at `ARCHITECTURE.md` / `refactor_plan.md`
+* markdown marker guide pointing at `formatter/formatter.js`,
+  `formatter/text_format.js`, and `renderer/shadow_style.js`
+
+**Verification:** `flutter analyze` still has the known pre-existing
+`throw_of_invalid_type` in `js_engine_service.dart`, with no new Phase 8 analyzer
+issues in touched docs/tests. Targeted docs and asset tests passed; full test
+baseline remains unchanged except for known pre-existing WebView asset/selection
+wheel/CSS failures documented in this branch.
 
 ---
 
