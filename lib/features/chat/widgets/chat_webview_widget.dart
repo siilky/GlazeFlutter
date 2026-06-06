@@ -30,6 +30,7 @@ import '../../extensions/services/extension_post_gen_service.dart';
 import '../../extensions/services/js_engine_service.dart';
 import '../../extensions/services/panel_host_service.dart';
 import '../bridge/chat_bridge_registry.dart';
+import 'ext_block_dialogs.dart';
 import 'webview_callbacks.dart';
 
 const String _kStreamingId = '__streaming__';
@@ -1123,7 +1124,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                   if (blocks.isEmpty) return;
                   final block = blocks.first;
                   if (!mounted) return;
-                  final newContent = await _promptEditBlock(
+                  final newContent = await ExtBlockDialogs.promptEdit(
                     context: context,
                     blockName: block.blockName,
                     initialContent: block.content,
@@ -1146,7 +1147,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                   if (blocks.isEmpty) return;
                   final block = blocks.first;
                   if (!mounted) return;
-                  final confirmed = await _confirmDeleteBlock(
+                  final confirmed = await ExtBlockDialogs.confirmDelete(
                     context: context,
                     blockName: block.blockName,
                   );
@@ -1248,76 +1249,5 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     final b = _bridge;
     if (b == null) return Future.value();
     return b.toggleMessageSelection(id);
-  }
-
-  Future<String?> _promptEditBlock({
-    required BuildContext context,
-    required String blockName,
-    required String initialContent,
-  }) {
-    final controller = TextEditingController(text: initialContent);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text('Редактировать «$blockName»'),
-          content: SizedBox(
-            width: 500,
-            child: TextField(
-              controller: controller,
-              autofocus: true,
-              maxLines: 12,
-              minLines: 6,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'Содержимое блока…',
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text),
-              child: const Text('Сохранить'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<bool> _confirmDeleteBlock({
-    required BuildContext context,
-    required String blockName,
-  }) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text('Удалить «$blockName»?'),
-          content: const Text(
-            'Блок будет удалён из базы данных. Это нельзя отменить.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error,
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Удалить'),
-            ),
-          ],
-        );
-      },
-    );
-    return confirmed == true;
   }
 }
