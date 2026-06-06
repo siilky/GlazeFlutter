@@ -42,8 +42,8 @@ class InfoBlockService {
   }) async {
     if (cancelToken?.isCancelled == true) return null;
 
-    // Build context from recent messages (fixed window of last 10).
-    final contextMessages = _buildContextMessages(messages, 10);
+    // Build context from recent messages using blockConfig.contextMessageCount.
+    final contextMessages = _buildContextMessages(messages, blockConfig.contextMessageCount);
 
     // Build injected history: last `injectLastN` assistant messages that
     // already have a block result for this block name.
@@ -53,8 +53,13 @@ class InfoBlockService {
       blockConfig: blockConfig,
     );
 
-    // Build prompt.
-    final prompt = _buildInfoblockPrompt(
+    // Build system message (template + prompt) and user message (context).
+    final resolvedTemplate = _resolveTemplate(blockConfig);
+    final systemContent = _buildSystemMessage(
+      blockConfig: blockConfig,
+      template: resolvedTemplate,
+    );
+    final userContent = _buildUserMessage(
       blockConfig: blockConfig,
       character: character,
       persona: persona,
@@ -79,12 +84,25 @@ class InfoBlockService {
 
     if (cancelToken?.isCancelled == true) return null;
 
-    return _callLLM(
+    final rawResponse = await _callLLM(
       apiConfig: apiConfig,
       blockConfig: blockConfig,
-      prompt: prompt,
+      systemContent: systemContent,
+      userContent: userContent,
       cancelToken: cancelToken,
     );
+
+    if (rawResponse == null) return null;
+
+    // Extract content from the LLM's response: parse out the <name>...</name>
+    // block if present. Falls back to the raw response (trimmed) when no
+    // matching tags are found so the user still sees *something* in the panel.
+    final extracted = _extractBlockContent(rawResponse, blockConfig.name);
+    if (extracted == null) {
+      debugPrint('[InfoBlockService] WARNING: response not wrapped in <${blockConfig.name}> tags; storing raw output');
+      return rawResponse.trim();
+    }
+    return extracted;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -93,8 +111,28 @@ class InfoBlockService {
 
   List<ChatMessage> _buildContextMessages(List<ChatMessage> messages, int count) {
     if (messages.isEmpty) return [];
+    if (count == 0) return [];
+    if (count < 0) return List<ChatMessage>.from(messages); // entire history
     final startIdx = (messages.length - count).clamp(0, messages.length);
     return messages.sublist(startIdx);
+  }
+
+  /// Substitutes SillyTavern-style macros in [text].
+  String _applyMacros(String text, {Character? character, String? persona}) {
+    var result = text;
+    result = result.replaceAll('{{char}}', character?.name ?? '');
+    result = result.replaceAll('{{user}}', persona ?? '');
+    result = result.replaceAll('{{description}}', character?.description ?? '');
+    result = result.replaceAll('{{personality}}', character?.personality ?? '');
+    return result;
+  }
+
+  /// Replaces `{{name}}` in the template with the block's actual name.
+  /// Falls back to a minimal default when the template is empty.
+  String _resolveTemplate(BlockConfig blockConfig) {
+    final raw = blockConfig.template.trim();
+    final tpl = raw.isEmpty ? '<${blockConfig.name}>\n\n</${blockConfig.name}>' : raw;
+    return tpl.replaceAll('{{name}}', blockConfig.name);
   }
 
   /// Collects past results of this block from the last [injectLastN] assistant
@@ -124,10 +162,33 @@ class InfoBlockService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Prompt building
+  // Prompt building (system + user)
   // ─────────────────────────────────────────────────────────────────────────
 
-  String _buildInfoblockPrompt({
+  /// Builds the system message: shows the model the exact template layout it
+  /// must produce, plus optional user-defined prompt instructions.
+  /// Mirrors upstream `BlockService.getBlocksFullPrompt`.
+  String _buildSystemMessage({
+    required BlockConfig blockConfig,
+    required String template,
+  }) {
+    final buffer = StringBuffer();
+    buffer.writeln('Block template (output the content inside these tags):');
+    buffer.writeln(template);
+    buffer.writeln();
+
+    if (blockConfig.prompt.isNotEmpty) {
+      buffer.writeln('Instructions:');
+      buffer.writeln(blockConfig.prompt);
+      buffer.writeln();
+    }
+    return buffer.toString().trimRight();
+  }
+
+  /// Builds the user message: the conversation context, character, persona,
+  /// and previous block history. The model is meant to fill in the template
+  /// based on this material.
+  String _buildUserMessage({
     required BlockConfig blockConfig,
     required Character? character,
     required String? persona,
@@ -137,9 +198,13 @@ class InfoBlockService {
   }) {
     final buffer = StringBuffer();
 
-    if (blockConfig.prompt.isNotEmpty) {
-      buffer.writeln('Instructions:');
-      buffer.writeln(blockConfig.prompt);
+    if (blockConfig.contextSystemPrompt.isNotEmpty) {
+      final sysPrompt = _applyMacros(
+        blockConfig.contextSystemPrompt,
+        character: character,
+        persona: persona,
+      );
+      buffer.writeln(sysPrompt);
       buffer.writeln();
     }
 
@@ -181,12 +246,32 @@ class InfoBlockService {
       buffer.writeln();
     }
 
-    buffer.writeln('Output the infoblock in the following format:');
-    buffer.writeln('<${blockConfig.name}>');
-    buffer.writeln('... block content ...');
-    buffer.writeln('</${blockConfig.name}>');
+    return buffer.toString().trimRight();
+  }
 
-    return buffer.toString();
+  // ─────────────────────────────────────────────────────────────────────────
+  // Block content extraction
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Extracts the first `<name ...>...</name>` block from [response] and
+  /// returns it with the original tags preserved. Returns null when the
+  /// response does not contain a matching tag pair.
+  ///
+  /// Tolerates attributes on the opening tag (e.g. `<name attr="x">`) and
+  /// matches across newlines, matching the behaviour of upstream's
+  /// `getBlockFromMessage` while keeping this implementation regex-based
+  /// for simplicity.
+  String? _extractBlockContent(String response, String name) {
+    if (response.isEmpty) return null;
+    final escaped = RegExp.escape(name);
+    final pattern = RegExp(
+      '<$escaped(\\s+[^>]*)?>[\\s\\S]*?<\\/$escaped>',
+      multiLine: true,
+    );
+    final match = pattern.firstMatch(response);
+    if (match == null) return null;
+    final inner = (match.group(2) ?? '').trim();
+    return '<$name>$inner</$name>';
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -196,15 +281,13 @@ class InfoBlockService {
   Future<String?> _callLLM({
     required ApiConfig apiConfig,
     required BlockConfig blockConfig,
-    required String prompt,
+    required String systemContent,
+    required String userContent,
     CancelToken? cancelToken,
   }) async {
-    const systemPrompt =
-        'You are an AI assistant that generates structured infoblocks describing current scene state.';
-
-    final messages = [
-      {'role': 'system', 'content': systemPrompt},
-      {'role': 'user', 'content': prompt},
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': systemContent},
+      {'role': 'user', 'content': userContent},
     ];
 
     try {

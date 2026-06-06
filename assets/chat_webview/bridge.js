@@ -671,6 +671,8 @@ class InteractionDispatch {
       'ext-blocks-click': (e, el) => bridge._sendToFlutter('onExtBlocksClick', [el.dataset.messageId]),
       'ext-block-stop': (e, el) => bridge._sendToFlutter('onExtBlockStop', [el.dataset.blockId, el.dataset.messageId]),
       'ext-block-regen': (e, el) => bridge._sendToFlutter('onExtBlockRegen', [el.dataset.blockId, el.dataset.messageId]),
+      'ext-block-edit': (e, el) => bridge._sendToFlutter('onExtBlockEdit', [el.dataset.blockId, el.dataset.messageId]),
+      'ext-block-delete': (e, el) => bridge._sendToFlutter('onExtBlockDelete', [el.dataset.blockId, el.dataset.messageId]),
       'toggle-hidden': (e, el) => bridge._sendToFlutter('onToggleHidden', [el.dataset.messageId]),
       'toggle-image-hidden': (e, el) => {
         const section = el.closest('.message-section');
@@ -1423,9 +1425,15 @@ class Bridge {
       const item = document.createElement('div');
       item.className = `ext-block-item ${block.status || 'done'}`;
 
-      // Header row
+      // Collapsible header row (acts as the toggle).
       const header = document.createElement('div');
       header.className = 'ext-block-header';
+
+      // Caret that rotates when expanded/collapsed.
+      const caret = document.createElement('span');
+      caret.className = 'ext-block-caret';
+      caret.textContent = '▸';
+      header.appendChild(caret);
 
       const name = document.createElement('span');
       name.className = 'ext-block-name';
@@ -1437,9 +1445,34 @@ class Bridge {
       statusEl.textContent = block.status || 'done';
       header.appendChild(statusEl);
 
-      // Buttons
+      // Buttons — no per-btnGroup listener so the click bubbles up to the
+      // document-level delegation in `_interaction.handleClick` (which
+      // dispatches via `_actionMap`). The header's own click listener has
+      // a `closest('.ext-block-btn')` guard so it won't toggle collapse.
       const btnGroup = document.createElement('span');
       btnGroup.className = 'ext-block-actions';
+
+      // Edit button — always present.
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'ext-block-btn ext-block-btn-icon';
+      editBtn.dataset.action = 'ext-block-edit';
+      editBtn.dataset.blockId = block.blockId;
+      editBtn.dataset.messageId = messageId;
+      editBtn.title = 'Редактировать';
+      editBtn.textContent = '✎';
+      btnGroup.appendChild(editBtn);
+
+      // Delete button — always present.
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'ext-block-btn ext-block-btn-icon ext-block-btn-danger';
+      deleteBtn.dataset.action = 'ext-block-delete';
+      deleteBtn.dataset.blockId = block.blockId;
+      deleteBtn.dataset.messageId = messageId;
+      deleteBtn.title = 'Удалить';
+      deleteBtn.textContent = '✕';
+      btnGroup.appendChild(deleteBtn);
 
       if (block.status === 'running') {
         const stopBtn = document.createElement('button');
@@ -1462,10 +1495,22 @@ class Bridge {
       }
 
       header.appendChild(btnGroup);
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.ext-block-btn')) return;
+        item.classList.toggle('collapsed');
+      });
       item.appendChild(header);
 
-      // Content
-      if (block.content) {
+      // Content body (collapsible).
+      const body = document.createElement('div');
+      body.className = 'ext-block-body';
+      const hasContent = block.content && block.content.trim().length > 0;
+      if (!hasContent) {
+        const empty = document.createElement('div');
+        empty.className = 'ext-block-content empty';
+        empty.textContent = '(пусто)';
+        body.appendChild(empty);
+      } else {
         const imgMatch = block.content.match(/\[IMG:RESULT:([^\]]+)\]/);
         if (imgMatch) {
           const img = document.createElement('img');
@@ -1474,14 +1519,19 @@ class Bridge {
           if (pipeIdx !== -1) path = path.substring(0, pipeIdx);
           img.src = path.startsWith('file://') ? path : `file:///${path.replace(/\\/g, '/')}`;
           img.className = 'ext-block-image';
-          item.appendChild(img);
-        } else if (block.content.trim()) {
-          const pre = document.createElement('div');
-          pre.className = 'ext-block-content';
-          pre.textContent = block.content;
-          item.appendChild(pre);
+          body.appendChild(img);
+        } else {
+          // Render the block content as HTML so user-authored markup
+          // (e.g. <details><summary>, custom tags like <loomledger>) is
+          // preserved. Only the model output is inserted here — never
+          // untrusted data from outside the model.
+          const html = document.createElement('div');
+          html.className = 'ext-block-content';
+          html.innerHTML = block.content;
+          body.appendChild(html);
         }
       }
+      item.appendChild(body);
 
       panel.appendChild(item);
     }
@@ -1506,5 +1556,82 @@ class Bridge {
     const section = document.querySelector(`[data-message-id="${msg.id}"]`);
     if (!section) return;
     this.renderer.updateMessageMeta(section, msg);
+  }
+
+  /**
+   * Runs user-provided JS in a sandboxed iframe and returns a Promise<string>.
+   *
+   * Security model:
+   *   - iframe uses sandbox="allow-scripts" WITHOUT allow-same-origin
+   *   - This gives the iframe a null origin, blocking access to window.parent
+   *     and window.flutter_inappwebview (cross-origin barrier)
+   *   - Context is passed via srcdoc (not postMessage) to avoid the timing
+   *     issue of the iframe not being ready yet
+   *   - Only text data is passed: messages, character fields, previousOutput
+   *   - API keys are never in JS context (they live in Dart/SQLite)
+   *   - Source-check: e.source !== iframe.contentWindow guards against spoofing
+   *   - Timeout: 55 s (Dart side gives 60 s — races without leaking)
+   *
+   * @param {string} script - User JS. Must return a string (via `return`).
+   * @param {string} contextJson - JSON string with messages/character/previousOutput.
+   * @returns {Promise<string>}
+   */
+  runSandboxedScript(script, contextJson) {
+    return new Promise((resolve, reject) => {
+      let iframe = null;
+
+      const cleanup = () => {
+        if (iframe) {
+          iframe.remove();
+          iframe = null;
+        }
+      };
+
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error('JS runner timeout (55s)'));
+      }, 55000);
+
+      // Escape script and contextJson for safe embedding in srcdoc attribute.
+      // We use a JSON string as the JS literal so that any quotes/backslashes
+      // inside the user script are properly escaped.
+      const escapedScript = JSON.stringify(script);
+      const escapedContext = contextJson;
+
+      const sandboxHtml = `<!DOCTYPE html><html><body><script>
+(function() {
+  var context;
+  try { context = ${escapedContext}; } catch(e) { context = {}; }
+  var userScript = ${escapedScript};
+  (new Function('context', '"use strict"; return (async function() { ' + userScript + ' })();'))(context)
+    .then(function(r) {
+      parent.postMessage({ ok: true, result: String(r !== undefined && r !== null ? r : '') }, '*');
+    })
+    .catch(function(e) {
+      parent.postMessage({ ok: false, error: String(e && e.message ? e.message : e) }, '*');
+    });
+})();
+<\/script></body></html>`;
+
+      const handler = (e) => {
+        if (!iframe || e.source !== iframe.contentWindow) return;
+        clearTimeout(timeoutId);
+        window.removeEventListener('message', handler);
+        cleanup();
+        if (e.data && e.data.ok) {
+          resolve(e.data.result);
+        } else {
+          reject(new Error(e.data && e.data.error ? e.data.error : 'JS runner error'));
+        }
+      };
+
+      window.addEventListener('message', handler);
+
+      iframe = document.createElement('iframe');
+      iframe.sandbox = 'allow-scripts';
+      iframe.style.display = 'none';
+      iframe.srcdoc = sandboxHtml;
+      document.body.appendChild(iframe);
+    });
   }
 }

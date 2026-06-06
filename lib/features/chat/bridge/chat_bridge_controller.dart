@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -196,8 +197,10 @@ class ChatBridgeController {
   void Function()? onImgCancel;
   void Function()? onStop;
   void Function(String messageId)? onExtBlocksClick;
-  void Function(String messageId, String blockId)? onExtBlockStop;
-  void Function(String messageId, String blockId)? onExtBlockRegen;
+  void Function(String blockId, String messageId)? onExtBlockStop;
+  void Function(String blockId, String messageId)? onExtBlockRegen;
+  void Function(String blockId, String messageId)? onExtBlockEdit;
+  void Function(String blockId, String messageId)? onExtBlockDelete;
 
   /// Register JS handlers for every callback declared on this host. The
   /// declarations live in [bridgeHandlers] (data-driven) so the actual
@@ -349,6 +352,8 @@ class ChatBridgeController {
       case 'onImgRegen': onImgRegen?.call(instr, msgId);
       case 'onExtBlockStop': onExtBlockStop?.call(instr, msgId);
       case 'onExtBlockRegen': onExtBlockRegen?.call(instr, msgId);
+      case 'onExtBlockEdit': onExtBlockEdit?.call(instr, msgId);
+      case 'onExtBlockDelete': onExtBlockDelete?.call(instr, msgId);
     }
   }
 
@@ -478,6 +483,7 @@ class ChatBridgeController {
     }
     // Push minimal updateMessage with just blockStatus so the badge updates.
     final payload = jsonEncode({'id': messageId, 'blockStatus': status});
+    debugPrint('[BlockBadge] updateBlockStatus: msgId=$messageId status=$status');
     await callJs('updateMessageMeta', payload);
   }
 
@@ -488,5 +494,69 @@ class ChatBridgeController {
   ) async {
     final payload = jsonEncode({'messageId': messageId, 'blocks': blocks});
     await callJs('showExtBlocksPanel', payload);
+  }
+
+  /// Runs [script] inside a sandboxed iframe in the Chat WebView and returns
+  /// the string result. Throws on timeout (>60 s) or script error.
+  ///
+  /// Context passed to the script:
+  ///   - messages: last [contextMessageCount] messages (role + text)
+  ///   - character: name, description, personality, scenario
+  ///   - previousOutput: output of the previous block in the chain (or null)
+  Future<String> runJsBlock({
+    required String script,
+    required List<ChatMessage> messages,
+    required Character? character,
+    required String? previousOutput,
+    int contextMessageCount = 10,
+    CancelToken? cancelToken,
+  }) async {
+    if (cancelToken?.isCancelled == true) {
+      throw Exception('Cancelled before JS execution');
+    }
+
+    // Build context object for the script.
+    final int take = contextMessageCount < 0
+        ? messages.length
+        : contextMessageCount;
+    final startIdx = (messages.length - take).clamp(0, messages.length);
+    final contextMessages = messages
+        .sublist(startIdx)
+        .map((m) => {'role': m.role, 'text': m.content})
+        .toList();
+
+    final contextMap = <String, dynamic>{
+      'messages': contextMessages,
+      'character': character != null
+          ? {
+              'name': character.name,
+              'description': character.description ?? '',
+              'personality': character.personality ?? '',
+              'scenario': character.scenario ?? '',
+            }
+          : null,
+      'previousOutput': previousOutput,
+    };
+    final contextJson = jsonEncode(contextMap);
+
+    // callAsyncJavaScript returns the JS Promise result.
+    // bridge.runSandboxedScript returns a Promise<string>.
+    final result = await _controller.callAsyncJavaScript(
+      functionBody: '''
+        return window.bridge.runSandboxedScript(script, contextJson);
+      ''',
+      arguments: {
+        'script': script,
+        'contextJson': contextJson,
+      },
+    ).timeout(
+      const Duration(seconds: 60),
+      onTimeout: () => throw TimeoutException('JS runner timed out', const Duration(seconds: 60)),
+    );
+
+    if (result == null) return '';
+    final value = result.value;
+    if (value is String) return value;
+    return value?.toString() ?? '';
   }
 }

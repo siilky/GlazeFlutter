@@ -304,6 +304,27 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 2px 0;
+  border-radius: 4px;
+}
+.ext-block-header:hover { background: rgba(255, 255, 255, 0.03); }
+.ext-block-caret {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  display: inline-block;
+  width: 12px;
+  transition: transform 0.15s ease;
+}
+.ext-block-item.collapsed .ext-block-caret { transform: rotate(0deg); }
+.ext-block-item:not(.collapsed) .ext-block-caret { transform: rotate(90deg); }
+.ext-block-item.collapsed .ext-block-body { display: none; }
+.ext-block-body {
+  margin-top: 4px;
+  padding-left: 20px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 .ext-block-name {
   font-size: 12px;
@@ -329,12 +350,61 @@
   font-family: inherit;
 }
 .ext-block-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.ext-block-btn-icon {
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+.ext-block-btn-danger {
+  border-color: rgba(255, 123, 123, 0.25);
+  color: rgba(255, 123, 123, 0.8);
+}
+.ext-block-btn-danger:hover {
+  background: rgba(255, 123, 123, 0.15);
+  border-color: rgba(255, 123, 123, 0.45);
+}
 
 .ext-block-content {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
-  white-space: pre-wrap;
   line-height: 1.5;
+}
+.ext-block-content.empty {
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+}
+.ext-block-content pre {
+  white-space: pre-wrap;
+  font-family: inherit;
+  margin: 0;
+}
+.ext-block-content h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 6px 0 4px 0;
+}
+.ext-block-content ul {
+  margin: 4px 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.ext-block-content li { margin: 2px 0; }
+.ext-block-content strong { color: rgba(255, 255, 255, 0.85); font-weight: 600; }
+.ext-block-content details {
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.ext-block-content details summary {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 2px 0;
 }
 .ext-block-image {
   max-width: 100%;

@@ -5,6 +5,20 @@ import '../../../core/state/db_provider.dart';
 import '../models/block_run_status.dart';
 import '../models/info_block.dart';
 
+extension InfoBlockBridgeMap on InfoBlock {
+  /// Converts an InfoBlock to a plain map suitable for sending to the WebView
+  /// bridge (showExtBlocksPanel / updateExtBlocksPanel).
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'blockId': blockId,
+        'name': blockName,
+        'type': blockType,
+        'status': status.name,
+        'content': content,
+        'order': order,
+      };
+}
+
 final infoBlocksProvider = StateNotifierProvider.family<
     InfoBlocksNotifier, List<InfoBlock>, String>(
   (ref, sessionId) => InfoBlocksNotifier(ref, sessionId),
@@ -52,6 +66,16 @@ class InfoBlocksNotifier extends StateNotifier<List<InfoBlock>> {
     if (idx < 0) return;
     final updated = List<InfoBlock>.from(state);
     updated[idx] = updated[idx].copyWith(status: status);
+    state = updated;
+  }
+
+  /// Updates the content of a block in state and in the DB.
+  Future<void> updateContent(String id, String content) async {
+    final idx = state.indexWhere((b) => b.id == id);
+    if (idx < 0) return;
+    await _repo.updateContent(id, content);
+    final updated = List<InfoBlock>.from(state);
+    updated[idx] = updated[idx].copyWith(content: content);
     state = updated;
   }
 

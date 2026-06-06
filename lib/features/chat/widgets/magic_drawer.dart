@@ -43,6 +43,8 @@ import 'summary_sheet.dart';
 import '../state/token_breakdown_cache.dart';
 import 'tokenizer_sheet.dart';
 import '../../glossary/glossary_sheet.dart';
+import '../../extensions/providers/extension_presets_provider.dart';
+import '../../extensions/providers/extensions_settings_provider.dart';
 import '../../extensions/widgets/ext_blocks_settings_sheet.dart';
 
 class MagicDrawerPanel extends ConsumerStatefulWidget {
@@ -674,6 +676,30 @@ class _MagicDrawerPanelState extends ConsumerState<MagicDrawerPanel> {
     });
     ref.listen(lorebookActivationsProvider, (prev, next) {
       if (prev != next) _scheduleRefresh();
+    });
+    ref.listen(extensionsSettingsProvider, (prev, next) {
+      if (prev == null) {
+        _scheduleRefresh();
+        return;
+      }
+      if (prev.enabled != next.enabled ||
+          prev.activePresetId != next.activePresetId) {
+        _scheduleRefresh();
+      }
+    });
+    ref.listen(extensionPresetsProvider, (prev, next) {
+      // Active preset name may have changed (renamed/edited).
+      final pl = prev ?? const [];
+      if (pl.length != next.length) {
+        _scheduleRefresh();
+      } else {
+        for (int i = 0; i < pl.length; i++) {
+          if (pl[i].name != next[i].name) {
+            _scheduleRefresh();
+            break;
+          }
+        }
+      }
     });
 
     final items = _displayItems;

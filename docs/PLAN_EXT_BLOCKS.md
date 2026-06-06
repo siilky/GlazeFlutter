@@ -1,245 +1,379 @@
-# Plan: Ext Blocks Redesign — ВЫПОЛНЕНО ✓
+# Plan: Ext Blocks Redesign
 
 > Local-only file — gitignored. Do not commit.
 
-**Статус:** все фазы завершены (1–7). Документация обновлена.
-**Схема:** v22. Тесты: 490/490.
+---
+
+## Статус
+
+| Фаза | Описание | Статус |
+|------|----------|--------|
+| 1 | Модели и DB (schema v22) | ✓ |
+| 2 | Логика выполнения (цепочка, cancel, rerun) | ✓ |
+| 3 | Провайдер статуса | ✓ |
+| 4 | WebView: badge + inline-раскрытие | ✓ |
+| 5 | UI: PresetEditorScreen + Magic Drawer | ✓ |
+| 6 | Чистка | ✓ |
+| 7 | Документация | ✓ |
+| 8 | Bridge callbacks (подключить обработчики) | ⏳ |
+| 9 | Context Builder (contextMessageCount + contextSystemPrompt) | ⏳ |
+| 10 | JS Runner (iframe sandbox) | ⏳ |
 
 ---
 
-## Концепция
+## Концепция (исходная)
 
 - Блоки **привязаны к сообщению** (messageId уже есть в DB)
 - **Badge** рядом с memory-badge в WebView → клик → **inline-раскрытие** под сообщением
-- `ExtBlocksSettingsSheet` и `InfoBlockDrawerWidget` — **удалить полностью**
 - Управление пресетами: Magic Drawer → Ext Blocks → шит выбора пресета → Edit → `PresetEditorScreen`
 - Порядок выполнения: `order` + флаг `dependsOnPrevious`, параллельно где можно
 - Картинки: тот же формат `[IMG:RESULT:<filepath>]`, файл через `ImageStorageService`, путь в `InfoBlock.content`
 
 ---
 
-## Фаза 1 — Модели и DB (schema v22) ✓
+## Фаза 1–7 ✓ (выполнено в коммите 73e9afa)
 
-### 1.1 Новый enum
-`lib/features/extensions/models/block_run_status.dart`
+Детали в git history.
+
+---
+
+## Фаза 8 — Bridge callbacks ⏳
+
+> **Критично**: без этого пользователь не может взаимодействовать с ext-blocks панелью в WebView.
+> Три handler-а объявлены и зарегистрированы в `bridge_handlers.dart`, но нигде не назначены.
+
+### 8.1 Найти место назначения callbacks
+
+В `ChatWebViewWidget` (или там где назначаются `onMemoryClick`, `onImgRegen` и т.д.) назначить:
+
 ```dart
-enum BlockRunStatus { pending, running, done, error, stopped }
+bridgeController.onExtBlocksClick = (messageId) async {
+  final blocks = ref.read(infoBlocksProvider(sessionId))
+      .getByMessageId(messageId);
+  final json = blocks.map((b) => b.toMap()).toList();
+  await bridgeController.showExtBlocksPanel(messageId, json);
+};
+
+bridgeController.onExtBlockStop = (blockId, messageId) {
+  ref.read(extensionPostGenServiceProvider).cancelBlocks();
+};
+
+bridgeController.onExtBlockRegen = (blockId, messageId) async {
+  await ref.read(extensionPostGenServiceProvider)
+      .rerunBlock(blockId, messageId, sessionId);
+};
 ```
 
-### 1.2 `BlockConfig` (freezed)
-- **Убрать:** `contextMessageCount`, `contextBlockCount`
-- **Переименовать:** `injectDepth` → `injectLastN: int` (к скольким последним assistant-сообщениям инжектировать)
-- **Добавить:** `order: int` (default 0), `dependsOnPrevious: bool` (default false)
+### 8.2 `InfoBlock.toMap()` для bridge
 
-### 1.3 `InfoBlock` (freezed)
-- **Добавить:** `status: BlockRunStatus` (default `done` — обратная совместимость), `order: int` (default 0)
+Добавить метод `toMap()` → `Map<String, dynamic>` с полями:
+`id`, `blockId`, `name` (из BlockConfig), `status`, `content`, `order`, `type`.
 
-### 1.4 Migration v22 — `lib/core/db/app_db.dart`
+Имя (`name`) и тип (`type`) берутся из пресета по `blockId` — нужно передавать их при вызове или
+хранить денормализованно в `InfoBlock`.
+
+**Решение:** денормализовать `blockName: String` и `blockType: String` в `InfoBlock` при создании —
+не нужно каждый раз читать пресет из провайдера в bridge callback.
+
+### 8.3 `showExtBlocksPanel` — формат блоков для JS
+
+```json
+[
+  { "id": "...", "blockId": "...", "name": "Сцена", "type": "infoblock",
+    "status": "done", "content": "...", "order": 0 },
+  { "id": "...", "blockId": "...", "name": "Картинка", "type": "imageGen",
+    "status": "running", "content": "", "order": 1 }
+]
+```
+
+Для `imageGen` с `status=done` — content содержит `[IMG:RESULT:<path>]`,
+JS парсит путь и рендерит `<img src="...">`.
+
+### 8.4 Файлы
+
+| Файл | Изменение |
+|------|-----------|
+| `models/info_block.dart` | +`blockName`, +`blockType` (денормализация) |
+| `models/info_block.freezed.dart` | регенерировать |
+| `providers/info_blocks_provider.dart` | `toMap()` или extension метод |
+| `chat/widgets/chat_webview_widget.dart` | назначить 3 callback-а |
+| `chat/bridge/chat_bridge_controller.dart` | убедиться что `showExtBlocksPanel` корректен |
+
+---
+
+## Фаза 9 — Context Builder (минимальный) ⏳
+
+> Самая полезная пользовательская фича. Без неё imageGen-блок получает 10 последних сообщений
+> — слишком много, нерелевантно. Пользователь не может настроить контекст второй модели.
+
+Не делаем полный drag-n-drop Context Builder как в ExtBlocks.
+Добавляем **два поля** в `BlockConfig` — это закрывает 90% use-cases.
+
+### 9.1 `BlockConfig` — два новых поля
+
 ```dart
-if (from < 22) {
-  await m.addColumn(infoBlocks, infoBlocks.order_);   // INTEGER DEFAULT 0
-  await m.addColumn(infoBlocks, infoBlocks.status);   // TEXT DEFAULT 'done'
+@Default(10) int contextMessageCount,  // сколько последних сообщений видит блок
+@Default('') String contextSystemPrompt, // произвольный system-текст (описание персонажей, стиль и т.д.)
+```
+
+`contextMessageCount`:
+- `0` = только системный промпт + карточка персонажа, без истории сообщений
+- `n` = последние n сообщений (user + assistant чередуются)
+- `-1` = весь контекст
+
+`contextSystemPrompt`:
+- Вставляется как system-сообщение перед историей
+- Поддерживает макросы: `{{char}}`, `{{user}}`, `{{description}}`, `{{personality}}`
+- Для imageGen: здесь описываем внешность персонажей, стиль изображений
+
+### 9.2 `InfoBlockService` — использовать `contextMessageCount`
+
+Заменить хардкод `_buildContextMessages(messages, 10)` на `_buildContextMessages(messages, blockConfig.contextMessageCount)`.
+
+### 9.3 `InfoBlockService` — вставить `contextSystemPrompt`
+
+После подстановки макросов добавить как первое system-сообщение в список для LLM.
+
+### 9.4 UI — `_BlockEditDialog` в `PresetEditorScreen`
+
+Добавить два поля в диалог редактирования блока:
+
+```
+[Числовое поле] "Сообщений контекста"
+  helper: "0 — только карточка персонажа, -1 — весь чат"
+
+[Многострочный TextField] "Системный контекст"
+  hint: "Описание персонажей, стиль, дополнительные инструкции..."
+  maxLines: 5
+```
+
+Показывать оба поля для типов `infoblock` и `imageGen`.
+
+### 9.5 DB — schema v23
+
+```dart
+// tables.dart — InfoBlocks: без изменений (contextMessageCount и contextSystemPrompt хранятся в ExtensionPreset.blocks JSON)
+// Нет изменений в DB — оба поля в BlockConfig (freezed JSON в Drift ExtensionPresets.blocksJson)
+```
+
+Миграция DB **не нужна** — `BlockConfig` сериализуется как JSON в `extension_presets.blocks_json`,
+новые поля с default-значениями подхватятся автоматически при десериализации.
+
+### 9.6 Файлы
+
+| Файл | Изменение |
+|------|-----------|
+| `models/block_config.dart` | +`contextMessageCount`, +`contextSystemPrompt` |
+| `models/block_config.freezed.dart` | регенерировать |
+| `services/info_block_service.dart` | использовать `contextMessageCount`, вставлять `contextSystemPrompt` |
+| `screens/preset_editor_screen.dart` | два новых поля в `_BlockEditDialog` |
+| `docs/ARCHITECTURE.md` | обновить таблицу полей BlockConfig |
+
+---
+
+## Фаза 10 — JS Runner ⏳
+
+### Решение по безопасности: iframe sandbox в Chat WebView
+
+**Почему не QuickJS (`flutter_js`):** нет новых зависимостей; пользовательский скрипт
+может делать `fetch` — это намеренно разрешено (полезно для интеграций).
+
+**Почему не тот же WebView напрямую:** скрипт получил бы доступ к `window.bridge`,
+`window.flutter_inappwebview` и мог бы вызвать любой bridge-handler.
+
+**Почему не Shadow DOM:** Shadow DOM изолирует CSS/DOM-дерево, но не JS-execution context.
+Скрипт в Shadow DOM всё равно имеет полный доступ к `window`.
+
+**Выбор — `<iframe sandbox="allow-scripts">`:**
+- Выполняется в том же Chat WebView через `callAsyncJavaScript()`
+- `sandbox="allow-scripts"` без `allow-same-origin` → iframe получает null origin
+- Нет доступа к `window.parent` (cross-origin barrier)
+- Нет доступа к `window.flutter_inappwebview` (он в parent)
+- API keys физически недостижимы — они в Drift (нативная сторона), в JS их нет
+- `fetch` разрешён — пользователь может вызвать внешние API намеренно
+- Данные (messages, character) передаются через `postMessage` — только то что мы решим передать
+
+**Аналог:** JS-Slash-Runner (831 stars) использует тот же паттерн: `<iframe srcdoc>` +
+`postMessage` для изоляции пользовательских скриптов. Они честно предупреждают что
+абсолютной защиты нет — но ключи не в JS-контексте у нас по архитектуре.
+
+### 10.1 `BlockConfig` — поле `script`
+
+```dart
+@Default('') String script,  // JS-код для jsRunner блока
+```
+
+### 10.2 `ExtensionPostGenService._runJsRunner()`
+
+```dart
+Future<InfoBlock?> _runJsRunner({
+  required InfoBlock placeholder,
+  required BlockConfig blockConfig,
+  required List<ChatMessage> messages,
+  required Character? character,
+  required String? previousOutput,
+}) async {
+  final controller = _ref.read(chatBridgeControllerProvider(charId));
+  final result = await controller.runJsBlock(
+    script: blockConfig.script,
+    messages: messages,
+    character: character,
+    previousOutput: previousOutput,
+    cancelToken: _blocksCancelToken,
+  );
+  // result — строка из postMessage или null при отмене/ошибке
+  ...
 }
-// schemaVersion => 22
-```
-`lib/core/db/tables.dart` — добавить `IntColumn get order_` и `TextColumn get status` в `InfoBlocks`.
-
-### 1.5 `InfoBlocksRepository` — новые методы
-- `getByMessageId(sessionId, messageId)` → `List<InfoBlock>` ordered by `order` asc
-- `updateStatus(id, BlockRunStatus)` — атомарный update одного поля
-- Обновить `getRecentBlocks` — сортировать по `order` asc внутри группы
-
-### 1.6 Регенерация
-```
-dart run build_runner build
 ```
 
----
+### 10.3 `ChatBridgeController.runJsBlock()`
 
-## Фаза 2 — Логика выполнения ✓
+Новый метод. Алгоритм:
 
-> Читать перед правками: `docs/rules/generation.md`, `docs/rules/race-conditions.md`
-
-### 2.1 `ExtensionPostGenService` — переписать
 ```
-blocks = preset.blocks.where(enabled).sortBy(order)
-prevOutput = null
-for block in blocks:
-  if block.dependsOnPrevious: await последовательно
-  else: Future без await (параллельно с предыдущим)
-
-  repo.updateStatus(block.id, running)
-  result = await _runBlock(block, prevOutput)
-  repo.updateStatus(block.id, done/error)
-  prevOutput = result.content
+1. Сериализовать контекст в JSON (messages последние N, character fields без id/avatarPath)
+2. Вызвать callAsyncJavaScript(functionBody: _runSandboxedScript(script, contextJson))
+3. Ждать результата (таймаут 60s)
+4. Вернуть строку результата или бросить исключение
 ```
 
-### 2.2 `_runBlock` — диспетчер по типу блока
-- `BlockType.infoblock` → `InfoBlockService._generateSingleBlock(block, prevOutput)`
-- `BlockType.imageGen` → inline логика (см. 2.3)
-- `BlockType.jsRunner` → заглушка (тип зарегистрирован, выполнение placeholder)
+### 10.4 `bridge.js` / `sandbox_runner` — функция `_runSandboxedScript`
 
-### 2.3 `BlockType.imageGen` в цепочке (убрать `ImageBlockService`)
-- Получает `previousBlockOutput` (вывод infoblock)
-- Ищет `[img gen:...]` в ответе ассистента ИЛИ в `previousBlockOutput`
-- Генерирует через `ImageGenService.generateImage()`
-- Сохраняет через `ImageStorageService`
-- Записывает в `InfoBlock.content` → `[IMG:RESULT:<filepath>]`
-
-### 2.4 `injectLastN` в `InfoBlockService._buildInfoblockPrompt`
-- При сборке промпта: берём историю, находим последние `injectLastN` assistant-сообщений
-- Для каждого — `getByMessageId()` → вставляем как system-блок перед тем сообщением
-
-### 2.5 Стоп блоков
-- Отдельный `extensionBlocksCancelToken` — проверяем в каждом `await` внутри `_runBlock`
-- При отмене → `updateStatus(id, stopped)` для всех `running`
-- Guard: если основная генерация прервана до финала → блоки не запускаются
-
-### 2.6 Ре-генерация одного блока
-Новый метод `ExtensionPostGenService.rerunBlock(blockId, messageId, sessionId)`.
-
----
-
-## Фаза 3 — Провайдер статуса ✓
-
-### 3.1 Новый провайдер
-`extensionBlockRunProvider(sessionId)` — `StateNotifierProvider` с `Map<messageId, List<InfoBlock>>`.
-Загружается по требованию + получает live-обновления через `updateStatus`.
-
-### 3.2 Bridge-обновление при смене статуса
-При смене статуса блока → `ChatBridgeController.updateBlockStatus(messageId, aggregatedStatus)` → `callJs('updateMessage', ...)`.
-
----
-
-## Фаза 4 — WebView: badge + inline-раскрытие ✓
-
-### 4.1 `ChatMessageMapper.toMap()` — добавить `blockStatus: String?`
-- `'running'` если хоть один блок running
-- `'done'` если все done
-- `'error'` если есть error
-- `null` если нет блоков
-- Данные из `ChatMessageMapperContext.blockStatusByMessageId`
-
-### 4.2 `ChatBridgeController`
-- Добавить `Map<String, String> blockStatusByMessageId`
-- Новый метод `updateBlockStatus(messageId, status)` → `callJs('updateMessage', ...)`
-
-### 4.3 `renderer.js` — ext-blocks badge в `_createHeader()` (после memory badge, line ~361)
 ```javascript
-if (m.blockStatus) {
-  const badge = document.createElement('button');
-  badge.type = 'button';
-  badge.className = `msg-ext-badge ${m.blockStatus}`;
-  badge.dataset.action = 'ext-blocks-click';
-  badge.dataset.messageId = m.id;
-  badge.textContent = '⬡';
-  nameEl.appendChild(badge);
+async function _runSandboxedScript(script, contextJson) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      iframe.remove();
+      reject(new Error('JS runner timeout'));
+    }, 55000);
+
+    const sandboxHtml = `
+      <!DOCTYPE html><html><body><script>
+        const context = ${contextJson};
+        window.addEventListener('message', () => {});
+        // пользовательский скрипт оборачивается в async IIFE
+        (async () => { ${script} })()
+          .then(r => parent.postMessage({ok: true, result: String(r ?? '')}, '*'))
+          .catch(e => parent.postMessage({ok: false, error: e.message}, '*'));
+      <\/script></body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-scripts';  // БЕЗ allow-same-origin
+    iframe.style.display = 'none';
+    iframe.srcdoc = sandboxHtml;
+
+    window.addEventListener('message', function handler(e) {
+      if (e.source !== iframe.contentWindow) return;
+      clearTimeout(timeout);
+      iframe.remove();
+      window.removeEventListener('message', handler);
+      if (e.data.ok) resolve(e.data.result);
+      else reject(new Error(e.data.error));
+    });
+
+    document.body.appendChild(iframe);
+  });
 }
 ```
 
-### 4.4 `updateMessageMeta()` (line ~1033) — обновлять ext-blocks badge аналогично memory badge
+**Ключевые моменты безопасности:**
+- `sandbox="allow-scripts"` без `allow-same-origin` → null origin → нет доступа к parent
+- `e.source !== iframe.contentWindow` — проверяем источник postMessage
+- Таймаут 55s (чуть меньше Dart-таймаута 60s)
+- iframe удаляется сразу после ответа
+- В `contextJson` не передаём: `apiConfigId`, `id` персонажа, пути к файлам, другие сессии
 
-### 4.5 `styles.css` — новые классы
-```css
-.msg-ext-badge { /* аналог .msg-memory-badge */ }
-.msg-ext-badge.running { color: #ffd700; animation: pending-pulse 2s ease-in-out infinite; }
-.msg-ext-badge.done    { color: #4caf50; }
-.msg-ext-badge.error   { color: #ff7b7b; }
-/* В .native-lite: .msg-ext-badge.running { animation: none; } */
+### 10.5 Контекст, доступный скрипту
+
+```js
+const context = {
+  messages: [
+    { role: 'user'|'assistant', text: '...' },
+    ...  // последние contextMessageCount сообщений
+  ],
+  character: {
+    name: '...',
+    description: '...',
+    personality: '...',
+    scenario: '...',
+  },
+  previousOutput: '...' | null,  // вывод предыдущего блока в цепочке
+};
 ```
 
-### 4.6 `bridge.js` — handler `ext-blocks-click`
-```javascript
-case 'ext-blocks-click':
-  this._sendToFlutter('onExtBlocksClick', [el.dataset.messageId]);
-  break;
+Скрипт должен вернуть строку — она станет `InfoBlock.content`.
+
+**Пример скрипта:**
+```js
+// Подсчитать количество реплик персонажа
+const count = context.messages.filter(m => m.role === 'assistant').length;
+return `Реплик персонажа: ${count}`;
 ```
 
-### 4.7 `bridge.js` — новый метод `showExtBlocksPanel(messageId, blocksJson)`
-- Вставляет/убирает `<div class="ext-blocks-panel">` внутри секции сообщения
-- Содержимое: список блоков (имя, статус, контент; для imageGen — `<img>` по `file://...` пути)
-- Кнопки: "Стоп" → `_sendToFlutter('onExtBlockStop', [messageId, blockId])`
-- Кнопки: "Регенерировать" → `_sendToFlutter('onExtBlockRegen', [messageId, blockId])`
+### 10.6 Редактор блока — `jsRunner` тип в UI
 
-### 4.8 `ChatBridgeController` — слушать handlers
-- `onExtBlocksClick(messageId)` → загрузить блоки из провайдера → `callJs('showExtBlocksPanel', ...)`
-- `onExtBlockStop(messageId, blockId)` → отменить через `extensionBlocksCancelToken`
-- `onExtBlockRegen(messageId, blockId)` → `ExtensionPostGenService.rerunBlock(...)`
+Когда выбран `jsRunner`:
+- Скрыть `prompt`, `apiConfigId`, `model`, `inject`, `injectLastN`
+- Показать `TextField` для `script` — моноширинный шрифт (`fontFamily: 'monospace'`), много строк (`maxLines: 20, minLines: 8`)
+- Подпись: "JavaScript", helper: "Скрипт получает `context` и должен вернуть строку"
 
-### 4.9 `bridge.js` — новый метод `updateExtBlocksPanel(messageId, blocksJson)`
-Вызывается при обновлении статуса, обновляет открытую панель если она видима.
+### 10.7 `BlockType.jsRunner` в сегментированной кнопке
 
----
+Добавить третий сегмент:
+```dart
+ButtonSegment(
+  value: BlockType.jsRunner,
+  label: Text('JS'),
+  icon: Icon(Icons.code),
+),
+```
 
-## Фаза 5 — UI: PresetEditorScreen + Magic Drawer ✓
+### 10.8 Файлы
 
-### 5.1 `PresetEditorScreen` (`_BlockEditDialog`)
-- Убрать поля: `contextMessageCount`, `contextBlockCount`
-- Переименовать: `injectDepth` → `injectLastN`, подпись: "К скольким посл. сообщениям ассистента"
-- Добавить: toggle `dependsOnPrevious` ("Ждать завершения предыдущего блока")
-- Список блоков: `ReorderableListView` → drag-to-reorder → обновляет `order` у всех блоков
+| Файл | Изменение |
+|------|-----------|
+| `models/block_config.dart` | +`script: String` |
+| `models/block_config.freezed.dart` | регенерировать |
+| `services/extension_post_gen_service.dart` | `_runJsRunner()` |
+| `chat/bridge/chat_bridge_controller.dart` | `runJsBlock()` |
+| `assets/chat_webview/bridge.js` | `_runSandboxedScript()` |
+| `screens/preset_editor_screen.dart` | jsRunner сегмент + code editor field |
+| `docs/ARCHITECTURE.md` | JS Runner секция |
+| `docs/INVARIANTS.md` | INV-EG8: sandbox isolation |
 
-### 5.2 Удалить
-- `lib/features/extensions/widgets/ext_blocks_settings_sheet.dart`
-- `lib/features/extensions/widgets/info_block_drawer_widget.dart`
+### 10.9 INV-EG8 (добавить в INVARIANTS.md)
 
-### 5.3 Magic Drawer (`magic_drawer.dart`)
-Тап по "Ext Blocks" → новый упрощённый шит: выбор активного пресета + кнопка Edit → `PresetEditorScreen`.
+**INV-EG8: JS Runner выполняется в изолированном iframe-sandbox без доступа к bridge**
 
----
-
-## Фаза 6 — Чистка ✓
-
-- Удалить `ImageBlockService` и `imageBlockServiceProvider`
-- Удалить `contextMessageCount` / `contextBlockCount` из всего кода
-- Убрать `InfoBlockDrawerWidget` из `chat_screen.dart`
-- `flutter analyze` → исправить все ошибки
-
----
-
-## Фаза 7 — Документация ✓
-
-### 7.1 `docs/ARCHITECTURE.md`
-- DB tables: schema v22, новые колонки `info_blocks.order`, `info_blocks.status`
-- Extensions: обновить диаграмму цепочки блоков
-- Generation pipeline шаг 6: новая логика
-- Удалить упоминания `InfoBlockDrawerWidget`, `ImageBlockService`
-
-### 7.2 `docs/INVARIANTS.md`
-Обновить INV-EG1–3. Добавить:
-- **INV-EG4**: Блоки не запускаются если основная генерация прервана до финала
-- **INV-EG5**: Стоп блоков (`extensionBlocksCancelToken`) не прерывает основную генерацию
-- **INV-EG6**: `dependsOnPrevious=true` — блок не стартует пока предыдущий не завершился (done или error)
-- **INV-EG7**: img-gen блок сохраняет результат через `ImageStorageService`; `InfoBlock.content` хранит `[IMG:RESULT:<path>]`
-
-### 7.3 `docs/rules/database.md`
-- Добавить schema v22 в историю миграций
-- Упомянуть `updateStatus` как пример атомарного single-column update
+`ChatBridgeController.runJsBlock()` создаёт `<iframe sandbox="allow-scripts">` (без
+`allow-same-origin`) через `callAsyncJavaScript`. Null origin блокирует доступ к
+`window.parent` и `window.flutter_inappwebview`. Контекст передаётся только через
+`postMessage` и содержит исключительно текстовые данные чата (без API keys, без путей,
+без id других сессий). Таймаут 60s — после него iframe удаляется и блок помечается `error`.
 
 ---
 
-## Карта изменений по файлам
+## Итоговый порядок реализации
 
-| Файл | Действие |
-|------|----------|
-| `models/block_run_status.dart` | Создать |
-| `models/block_config.dart` | Изменить |
-| `models/info_block.dart` | Изменить |
-| `core/db/tables.dart` | +2 колонки в InfoBlocks |
-| `core/db/app_db.dart` | Migration v22, schemaVersion→22 |
-| `core/db/repositories/info_blocks_repository.dart` | Новые методы |
-| `services/extension_post_gen_service.dart` | Переписать |
-| `services/info_block_service.dart` | Добавить injectLastN |
-| `services/image_block_service.dart` | **Удалить** |
-| `screens/preset_editor_screen.dart` | Изменить |
-| `widgets/ext_blocks_settings_sheet.dart` | **Удалить** |
-| `widgets/info_block_drawer_widget.dart` | **Удалить** |
-| `chat/widgets/magic_drawer.dart` | Новый шит Ext Blocks |
-| `chat/bridge/chat_message_mapper.dart` | +`blockStatus` |
-| `chat/bridge/chat_bridge_controller.dart` | +`blockStatusByMessageId`, +`updateBlockStatus` |
-| `assets/chat_webview/renderer.js` | Badge + inline panel |
-| `assets/chat_webview/bridge.js` | Handlers + `showExtBlocksPanel` |
-| `assets/chat_webview/styles.css` | `.msg-ext-badge` стили |
-| `docs/ARCHITECTURE.md` | Обновить |
-| `docs/INVARIANTS.md` | Обновить |
-| `docs/rules/database.md` | Обновить |
+```
+Фаза 8  — Bridge callbacks    [критично, ~1-2ч]
+Фаза 9  — Context Builder     [высокий приоритет, ~2-3ч]
+Фаза 10 — JS Runner           [средний приоритет, ~4-6ч]
+```
+
+---
+
+## Карта файлов (фазы 8–10)
+
+| Файл | Фаза | Действие |
+|------|------|----------|
+| `models/info_block.dart` | 8 | +`blockName`, +`blockType` |
+| `chat/widgets/chat_webview_widget.dart` | 8 | назначить 3 callback-а |
+| `models/block_config.dart` | 9, 10 | +`contextMessageCount`, +`contextSystemPrompt`, +`script` |
+| `services/info_block_service.dart` | 9 | использовать `contextMessageCount` + `contextSystemPrompt` |
+| `screens/preset_editor_screen.dart` | 9, 10 | новые поля в диалоге + jsRunner UI |
+| `services/extension_post_gen_service.dart` | 10 | `_runJsRunner()` |
+| `chat/bridge/chat_bridge_controller.dart` | 8, 10 | callbacks + `runJsBlock()` |
+| `assets/chat_webview/bridge.js` | 10 | `_runSandboxedScript()` |
+| `docs/ARCHITECTURE.md` | 10 | JS Runner секция |
+| `docs/INVARIANTS.md` | 10 | INV-EG8 |

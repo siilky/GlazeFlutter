@@ -33,6 +33,24 @@ class BlockConfig with _$BlockConfig {
     // Image-specific
     @Default('') String imagePromptInstruction,
     @Default(true) bool imageGenEnabled,
+    // Context control (Phase 9)
+    /// Number of recent messages to include as context for this block.
+    /// 0 = only character card + system prompt, -1 = entire history.
+    @Default(10) int contextMessageCount,
+    /// Additional system text prepended before chat history.
+    /// Supports macros: {{char}}, {{user}}, {{description}}, {{personality}}.
+    @Default('') String contextSystemPrompt,
+    // JS Runner (Phase 10)
+    /// JavaScript source code for jsRunner blocks.
+    /// The script receives a `context` object and must return a string.
+    @Default('') String script,
+    // Template (upstream parity)
+    /// XML-like skeleton that defines the block's shape. Sent to the LLM as
+    /// part of the system message so the model knows the exact tag layout to
+    /// output. Supports `{{name}}` macro (substituted with [name] at runtime).
+    /// When non-empty, the LLM response is also extracted by parsing this
+    /// template's tag pair out of the raw reply.
+    @Default('<{{name}}>\n\n</{{name}}>') String template,
   }) = _BlockConfig;
 
   factory BlockConfig.fromJson(Map<String, dynamic> json) =>

@@ -117,8 +117,27 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(apiConfigs, apiConfigs.cacheControlTtl);
           }
           if (from < 22) {
-            await m.addColumn(infoBlocks, infoBlocks.order_);
-            await m.addColumn(infoBlocks, infoBlocks.status);
+            // Guard: only add columns if the table existed before v20.
+            // If the table was created in the `from < 20` branch above,
+            // Drift already applied the current schema (including order/status),
+            // so adding them again would cause "duplicate column" errors.
+            //
+            // Additionally, if the table was created at v20 by a version of
+            // the code that already had order/status in the Dart schema, the
+            // same duplicate would occur — so we use a SQL-level existence
+            // check that works on all SQLite versions supported by the app.
+            if (from >= 20) {
+              final cols = await customSelect(
+                'PRAGMA table_info("info_blocks")',
+              ).get();
+              final colNames = cols.map((r) => r.read<String>('name')).toSet();
+              if (!colNames.contains('order')) {
+                await m.addColumn(infoBlocks, infoBlocks.order_);
+              }
+              if (!colNames.contains('status')) {
+                await m.addColumn(infoBlocks, infoBlocks.status);
+              }
+            }
           }
         },
       );
