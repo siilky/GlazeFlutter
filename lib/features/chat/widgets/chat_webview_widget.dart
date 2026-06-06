@@ -30,6 +30,7 @@ import '../chat_state.dart';
 import 'chat_message_sync.dart';
 import 'chat_webview_callbacks.dart';
 import 'chat_webview_ext_block_callbacks.dart';
+import 'chat_webview_initializer.dart';
 import 'chat_webview_panel_refresher.dart';
 import 'chat_webview_sync_dispatcher.dart';
 import 'webview_callbacks.dart';
@@ -215,103 +216,52 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     return false;
   }
 
-  Future<void> _syncIdentityFromWidget() async {
-    final bridge = _bridge;
-    if (bridge == null) return;
-
-    await bridge.setIdentity(
-      charName: widget.charName,
-      charColor: widget.charColor,
-      personaName: widget.personaName,
-      layout: widget.chatLayout,
-      charAvatarPath: widget.charAvatarPath,
-      personaAvatarPath: widget.personaAvatarPath,
-      greetingTotal: widget.greetingTotal,
-    );
-  }
-
   Future<void> _initWebView() async {
     final bridge = _bridge;
     if (bridge == null) return;
-
-    final character = ref.read(characterByIdProvider(widget.charId));
-    final effectivePersona = ref.read(
-      effectivePersonaForChatProvider((
+    await ChatWebViewInitializer(
+      ref: ref,
+      bridge: bridge,
+      input: ChatWebViewInitInput(
         charId: widget.charId,
         sessionId: widget.sessionId,
-      )),
-    );
-    final displayRegexes = ref.read(displayRegexesProvider).valueOrNull ?? [];
-    bridge.setRegexContext(displayRegexes, character, effectivePersona);
-
-    await _syncIdentityFromWidget();
-
-    await _applyThemeToBridge();
-
-    await _bridge!.setBackgroundNoise(
-      widget.bgNoiseOpacity,
-      widget.bgNoiseIntensity,
-    );
-
-    await _bridge!.setChatFont(
-      fontName: widget.chatFontName,
-      fontDataUrl: widget.chatFontDataUrl,
-      fontSize: widget.chatFontSize,
-      letterSpacing: widget.chatLetterSpacing,
-    );
-
-    await _bridge!.setMessageSettings(
-      batterySaver: widget.batterySaver,
-      hideMessageId: widget.hideMessageId,
-      hideGenerationTime: widget.hideGenerationTime,
-      hideTokenCount: widget.hideTokenCount,
-      disableSwipeRegeneration: widget.disableSwipeRegeneration,
-    );
-
-    // Persona/char identity can resolve while theme and assets load above.
-    await _syncIdentityFromWidget();
-    await _bridge!.setMessages(
-      widget.messages,
-      visibleStartIndex: widget.visibleStartIndex,
-    );
-    _bridge!.updateMemoryBookData(
-      entries: widget.memoryEntries
-          .map((e) => {'status': e.status, 'messageIds': e.messageIds})
-          .toList(),
-      pendingDrafts: widget.memoryDrafts
-          .map((e) => {'messageIds': e.messageIds})
-          .toList(),
-    );
-    if (widget.bottomInset > 0) {
-      await _bridge!.setBottomPadding(widget.bottomInset);
-    }
-    if (widget.topInset > 0) {
-      await _bridge!.setTopPadding(widget.topInset);
-    }
-    await _bridge!.setHeaderOverlay(
-      widget.headerOverlayTop,
-      widget.headerOverlayHeight,
-    );
-    await _bridge!.setInputOverlay(widget.inputOverlayHeight);
-    if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
-      await _bridge!.setSearch(
-        query: widget.searchQuery!,
-        activeIndex: widget.searchCurrentIndex,
-      );
-    }
-    await _bridge!.setSelectionMode(widget.isSelectionMode);
-    await _bridge!.scrollToBottom();
-    final initialAnyGen = widget.isGenerating || widget.isGeneratingImage;
-    _bridge!.isGenerating = initialAnyGen;
-    unawaited(
-      _bridge!.evalJs(
-        'if (window.bridge) window.bridge.isGenerating = $initialAnyGen;',
+        charName: widget.charName,
+        charColor: widget.charColor,
+        personaName: widget.personaName,
+        chatLayout: widget.chatLayout,
+        charAvatarPath: widget.charAvatarPath,
+        personaAvatarPath: widget.personaAvatarPath,
+        greetingTotal: widget.greetingTotal,
+        bgNoiseOpacity: widget.bgNoiseOpacity,
+        bgNoiseIntensity: widget.bgNoiseIntensity,
+        chatFontName: widget.chatFontName,
+        chatFontDataUrl: widget.chatFontDataUrl,
+        chatFontSize: widget.chatFontSize,
+        chatLetterSpacing: widget.chatLetterSpacing,
+        batterySaver: widget.batterySaver,
+        hideMessageId: widget.hideMessageId,
+        hideGenerationTime: widget.hideGenerationTime,
+        hideTokenCount: widget.hideTokenCount,
+        disableSwipeRegeneration: widget.disableSwipeRegeneration,
+        messages: widget.messages,
+        visibleStartIndex: widget.visibleStartIndex,
+        memoryEntries: widget.memoryEntries,
+        memoryDrafts: widget.memoryDrafts,
+        bottomInset: widget.bottomInset,
+        topInset: widget.topInset,
+        headerOverlayTop: widget.headerOverlayTop,
+        headerOverlayHeight: widget.headerOverlayHeight,
+        inputOverlayHeight: widget.inputOverlayHeight,
+        searchQuery: widget.searchQuery,
+        searchCurrentIndex: widget.searchCurrentIndex,
+        isSelectionMode: widget.isSelectionMode,
+        isGenerating: widget.isGenerating,
+        isGeneratingImage: widget.isGeneratingImage,
       ),
-    );
-    _ready = true;
-
-    // Push initial ext-block panels on first load.
-    unawaited(_syncExtBlockPanels());
+      onReady: () => _ready = true,
+      onSyncExtBlockPanels: _syncExtBlockPanels,
+      applyTheme: _applyThemeToBridge,
+    ).run();
   }
 
   Future<void> applyIdentity({
