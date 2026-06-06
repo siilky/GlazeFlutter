@@ -62,6 +62,7 @@ flutter:
     - assets/hydall.jpg
     - assets/danvitv.png
     - assets/chat_webview/
+    - assets/chat_webview/bridge/
     - assets/translations/
     - .env
   fonts:

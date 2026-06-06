@@ -1,6 +1,6 @@
 # Refactor Plan — Bridge, God-Widgets, God-Services
 
-**Status:** Phases 1-4 complete. Phases 5-7 pending.
+**Status:** Phases 1-5 complete. Phases 6-7 pending.
 **Scope:** Decompose 4 Dart god-objects and 3 JS god-scripts that grew during the
 `js-extension-bridge-sdk` branch (22 feature commits) into focused modules.
 **Goal:** Clean foundation for future feature work; no functional changes.
@@ -27,7 +27,7 @@ MVP. Some files accumulated responsibilities well past the project's
 
 | File | Lines | What |
 |---|---:|---|
-| `assets/chat_webview/bridge.js` | **2141** | ChatBridgeController, runSandboxedScript, PanelHost, scrollback, settings, periodic dispatch, afterUser — everything |
+| `assets/chat_webview/bridge.js` | **2141 → 3 shim / ES modules** | ChatBridgeController, runSandboxedScript, PanelHost, scrollback, settings, gestures |
 | `assets/chat_webview/renderer.js` | **1234** | Message rendering, markdown, code highlighting, image embeds |
 | `assets/chat_webview/formatter.js` | **443** | ST-macro expansion, text formatting |
 
@@ -370,6 +370,34 @@ tests confirm the module entrypoint is stable.
 each new module is referenced from `index.js` and that no required asset is
 orphaned. Syntax validation should use a static check available in the repo
 environment; do not depend on `dart:js_util` in VM Flutter tests.
+
+**Implemented:** `index.html` now loads the chat bridge through
+`<script type="module" src="bridge/index.js">`. The old `bridge.js` path is a
+3-line compatibility marker and the pre-module snapshot is retained as
+`bridge.legacy.js` fallback for this refactor. Bootstrap that previously lived
+in the inline script now lives in `bridge/index.js`, preserving construction of
+`window.bridge`, `window.Bridge`, the scaled chat wheel listener, and
+`onWebViewReady` dispatch.
+
+| File | Lines | Responsibility |
+|---|---:|---|
+| `bridge/index.js` | 34 | Module entrypoint, public re-exports, bootstrap |
+| `bridge/chat_bridge_controller.js` | 1029 | Main `Bridge` facade, Flutter transport, message list API, ext-block panel, sandbox runner |
+| `bridge/panel_host.js` | 193 | Interactive iframe island lifecycle and `glaze:*` relay |
+| `bridge/swipe_gesture_handler.js` | 239 | Touch swipe and guided swipe UI |
+| `bridge/interaction_dispatch.js` | 170 | Document click/data-action dispatch |
+| `bridge/selection_manager.js` | 122 | Selection mode and selection toolbar |
+| `bridge/edit_controller.js` | 88 | Inline edit DOM lifecycle |
+| `bridge/gen_timer.js` | 50 | Generation timer display updates |
+| `bridge/message_update_batcher.js` | 25 | rAF batching for streaming message updates |
+
+**Verification:** `node --check` passed for every new module. Targeted module
+asset tests passed: `flutter test test/webview_assets_test.dart --plain-name
+"bridge ES module layout"` and `--plain-name "window.glaze SDK"`. Updated
+`test/characterization/bridge_selection_edit_swipe_test.dart` to read extracted
+module files; the only remaining failure in that file is the pre-existing
+textarea wheel listener assertion. Full `test/webview_assets_test.dart` still
+has the same 5 pre-existing wheel/CSS failures called out in the project notes.
 
 ### Phase 6 — `renderer.js` → modules (1 day)
 
