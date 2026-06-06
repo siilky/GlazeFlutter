@@ -26,6 +26,7 @@ import '../../extensions/models/info_block.dart';
 import '../../extensions/models/preset_permissions.dart';
 import '../../extensions/models/trigger_mode.dart';
 import '../../extensions/models/trigger_result.dart';
+import '../../extensions/providers/global_variables_repo_provider.dart';
 import '../../extensions/providers/info_blocks_provider.dart';
 import '../../extensions/providers/extension_presets_provider.dart';
 import '../../extensions/providers/extensions_settings_provider.dart';
@@ -38,6 +39,7 @@ import '../../extensions/services/js_engine_service.dart';
 import '../../extensions/services/panel_host_service.dart';
 import '../../extensions/services/runtime_prompt_injection_service.dart';
 import '../../extensions/services/trigger_generation_handler.dart';
+import '../../extensions/state/message_variables_notifier.dart';
 import '../../settings/api_list_provider.dart';
 import '../bridge/chat_bridge_registry.dart';
 import 'webview_callbacks.dart';
@@ -1041,9 +1043,15 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
                 mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
               ),
               onWebViewCreated: (controller) async {
+                final globalRepo = await ref.read(
+                  globalVariablesRepoProvider.future,
+                );
                 final jsBridgeService = JsBridgeService(
                   chatRepo: ref.read(chatRepoProvider),
                   characterRepo: ref.read(characterRepoProvider),
+                  globalVariablesRepo: globalRepo,
+                  messageVariables: () =>
+                      ref.read(messageVariablesProvider.notifier),
                   currentSessionId: () => widget.sessionId,
                   currentCharacterId: () => widget.charId,
                   generateText: _generateBridgeText,

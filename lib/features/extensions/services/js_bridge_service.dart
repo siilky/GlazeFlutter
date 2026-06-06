@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/db/repositories/character_repo.dart';
 import '../../../core/db/repositories/chat_repo.dart';
+import '../../../core/db/repositories/global_variables_repo.dart';
+import '../state/message_variables_notifier.dart';
 
 typedef GenerateTextHandler =
     Future<String> Function(
@@ -44,6 +46,13 @@ typedef TriggerGenerationHandlerFn =
 /// (see [GlazeCapability.id]).
 typedef PermissionCheck = bool Function(String capabilityId);
 
+/// Snapshot accessor for the [MessageVariablesNotifier]. The bridge
+/// never holds onto the notifier directly — the notifier is a Riverpod
+/// state notifier and the bridge service is intentionally Riverpod-free
+/// for testability. Production code in `ChatWebViewWidget` injects a
+/// function that reads from `ref.read(messageVariablesProvider.notifier)`.
+typedef MessageVariablesAccessor = MessageVariablesNotifier Function();
+
 class JsBridgeService {
   static const _chatVarsKey = '__glaze_variables';
   static const _characterVarsKey = 'glaze_variables';
@@ -51,6 +60,8 @@ class JsBridgeService {
 
   final ChatRepo? _chatRepo;
   final CharacterRepo? _characterRepo;
+  final GlobalVariablesRepo? _globalVariablesRepo;
+  final MessageVariablesAccessor? _messageVariables;
   final String? Function()? _currentSessionId;
   final String? Function()? _currentCharacterId;
   final GenerateTextHandler? _generateText;
@@ -62,6 +73,8 @@ class JsBridgeService {
   JsBridgeService({
     ChatRepo? chatRepo,
     CharacterRepo? characterRepo,
+    GlobalVariablesRepo? globalVariablesRepo,
+    MessageVariablesAccessor? messageVariables,
     String? Function()? currentSessionId,
     String? Function()? currentCharacterId,
     GenerateTextHandler? generateText,
@@ -72,6 +85,8 @@ class JsBridgeService {
   }) : this._(
          chatRepo,
          characterRepo,
+         globalVariablesRepo,
+         messageVariables,
          currentSessionId,
          currentCharacterId,
          generateText,
@@ -84,6 +99,8 @@ class JsBridgeService {
   const JsBridgeService._(
     this._chatRepo,
     this._characterRepo,
+    this._globalVariablesRepo,
+    this._messageVariables,
     this._currentSessionId,
     this._currentCharacterId,
     this._generateText,
@@ -401,6 +418,12 @@ class JsBridgeService {
           throw StateError('Character "$charId" was not found');
         }
         return _decodeCharacterVars(character.extensions);
+      case 'global':
+        final repo = _globalVariablesRepo ??
+            (throw StateError('Global variables repo is not available'));
+        return await repo.read();
+      case 'message':
+        return _readMessageScope(context);
       default:
         throw ArgumentError('Unsupported variable scope "$scope"');
     }
@@ -443,9 +466,42 @@ class JsBridgeService {
           return extensions;
         });
         return Map<String, dynamic>.from(nextRoot);
+      case 'global':
+        final repo = _globalVariablesRepo ??
+            (throw StateError('Global variables repo is not available'));
+        return await repo.update(update);
+      case 'message':
+        return _updateMessageScope(context, update);
       default:
         throw ArgumentError('Unsupported variable scope "$scope"');
     }
+  }
+
+  Map<String, dynamic> _readMessageScope(Map<String, dynamic> context) {
+    final accessor = _messageVariables ??
+        (throw StateError('Message variables accessor is not available'));
+    final sessionId = _sessionId(context);
+    final messageId = _messageId(context);
+    return accessor().read(sessionId, messageId);
+  }
+
+  Map<String, dynamic> _updateMessageScope(
+    Map<String, dynamic> context,
+    Map<String, dynamic> Function(Map<String, dynamic> root) update,
+  ) {
+    final accessor = _messageVariables ??
+        (throw StateError('Message variables accessor is not available'));
+    final sessionId = _sessionId(context);
+    final messageId = _messageId(context);
+    return accessor().update(sessionId, messageId, update);
+  }
+
+  String _messageId(Map<String, dynamic> context) {
+    final value = context['messageId'] as String?;
+    if (value == null || value.isEmpty) {
+      throw StateError('Message id context is not available');
+    }
+    return value;
   }
 
   String _scope(Map<String, dynamic> params) {
