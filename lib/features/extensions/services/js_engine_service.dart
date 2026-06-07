@@ -285,7 +285,8 @@ class JsEngineService {
         jsFuture.then((r) => _RaceResult.js(r)),
         runCompleter.future.then(
           (_) => _RaceResult.cancelled(),
-          onError: (e) => throw e,
+          onError: (Object error, StackTrace stackTrace) =>
+              Error.throwWithStackTrace(error, stackTrace),
         ),
       ]).timeout(timeout, onTimeout: () {
         throw TimeoutException('Headless JS run timed out', timeout);
