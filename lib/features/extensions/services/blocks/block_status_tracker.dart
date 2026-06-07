@@ -9,8 +9,12 @@ import '../../models/info_block.dart';
 import '../../providers/info_blocks_provider.dart';
 import 'block_context.dart';
 
-typedef BlockPanelRefresh =
-    void Function(String charId, String sessionId, String messageId);
+typedef BlockPanelRefresh = void Function(
+  String charId,
+  String sessionId,
+  String messageId,
+  int swipeId,
+);
 
 class PreparedBlockRun {
   const PreparedBlockRun({
@@ -37,6 +41,7 @@ class BlockStatusTracker {
     required String charId,
     required String sessionId,
     required String messageId,
+    required int swipeId,
     required BlockConfig blockConfig,
     String? reuseBlockId,
   }) async {
@@ -45,6 +50,7 @@ class BlockStatusTracker {
         charId: charId,
         sessionId: sessionId,
         messageId: messageId,
+        swipeId: swipeId,
         blockConfig: blockConfig,
         reuseBlockId: reuseBlockId,
       );
@@ -52,6 +58,7 @@ class BlockStatusTracker {
     return _prepareNew(
       sessionId: sessionId,
       messageId: messageId,
+      swipeId: swipeId,
       blockConfig: blockConfig,
     );
   }
@@ -86,16 +93,21 @@ class BlockStatusTracker {
       status: BlockRunStatus.error,
     );
     ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(errored);
-    refreshPanelForMessage(charId, sessionId, messageId);
+    refreshPanelForMessage(charId, sessionId, messageId, placeholder.swipeId);
     return errored;
   }
 
   Future<String?> dedupeForConfig({
     required String sessionId,
     required String messageId,
+    required int swipeId,
     required String blockId,
   }) async {
-    final existing = await repo.getByMessageId(sessionId, messageId);
+    final existing = await repo.getByMessageId(
+      sessionId,
+      messageId,
+      swipeId: swipeId,
+    );
     final matching = existing.where((b) => b.blockId == blockId).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (matching.isEmpty) return null;
@@ -111,10 +123,15 @@ class BlockStatusTracker {
     required String charId,
     required String sessionId,
     required String messageId,
+    required int swipeId,
     required BlockConfig blockConfig,
     required String reuseBlockId,
   }) async {
-    final existing = await repo.getByMessageId(sessionId, messageId);
+    final existing = await repo.getByMessageId(
+      sessionId,
+      messageId,
+      swipeId: swipeId,
+    );
     final row = existing.where((b) => b.id == reuseBlockId).firstOrNull;
     final placeholder =
         (row ??
@@ -122,6 +139,7 @@ class BlockStatusTracker {
                   id: reuseBlockId,
                   sessionId: sessionId,
                   messageId: messageId,
+                  swipeId: swipeId,
                   blockId: blockConfig.id,
                   blockName: blockConfig.name,
                   blockType: blockConfig.type.name,
@@ -134,7 +152,7 @@ class BlockStatusTracker {
     await repo.updateContent(reuseBlockId, '');
     await repo.updateStatus(reuseBlockId, BlockRunStatus.running);
     ref.read(infoBlocksProvider(sessionId).notifier).addOrReplace(placeholder);
-    refreshPanelForMessage(charId, sessionId, messageId);
+    refreshPanelForMessage(charId, sessionId, messageId, placeholder.swipeId);
     debugPrint(
       '[ExtPostGen] reused block id=$reuseBlockId messageId=$messageId status=running',
     );
@@ -147,6 +165,7 @@ class BlockStatusTracker {
   Future<PreparedBlockRun> _prepareNew({
     required String sessionId,
     required String messageId,
+    required int swipeId,
     required BlockConfig blockConfig,
   }) async {
     final placeholderId = generateId();
@@ -154,6 +173,7 @@ class BlockStatusTracker {
       id: placeholderId,
       sessionId: sessionId,
       messageId: messageId,
+      swipeId: swipeId,
       blockId: blockConfig.id,
       blockName: blockConfig.name,
       blockType: blockConfig.type.name,

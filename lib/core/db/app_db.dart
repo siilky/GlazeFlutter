@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
@@ -30,7 +30,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 28;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -211,6 +211,21 @@ class AppDatabase extends _$AppDatabase {
         );
         await customStatement(
           "UPDATE api_configs SET session_id_mode = 'openrouter' WHERE session_id_mode IS NULL",
+        );
+      }
+      if (from < 28) {
+        // v28 adds swipe_id but existing rows can remain NULL (partial upgrade
+        // or SQLite ADD COLUMN without a backfill). Drift reads swipe_id as
+        // non-null, so NULL rows crash InfoBlocksRepository.getBySessionId.
+        final cols = await customSelect(
+          'PRAGMA table_info("info_blocks")',
+        ).get();
+        final colNames = cols.map((r) => r.read<String>('name')).toSet();
+        if (!colNames.contains('swipe_id')) {
+          await m.addColumn(infoBlocks, infoBlocks.swipeId);
+        }
+        await customStatement(
+          'UPDATE info_blocks SET swipe_id = 0 WHERE swipe_id IS NULL',
         );
       }
     },

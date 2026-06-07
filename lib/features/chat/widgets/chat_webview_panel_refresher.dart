@@ -1,8 +1,12 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/chat_message.dart';
+import '../../../core/state/character_provider.dart';
+import '../../../core/state/persona_resolution.dart';
 import '../../extensions/providers/info_blocks_provider.dart';
 import '../../extensions/services/ext_blocks_panel_builder.dart';
+import '../../extensions/services/macro_expander.dart';
 import '../bridge/chat_bridge_controller.dart';
 
 /// Refresh / sync helpers for the inline ext-block panels rendered
@@ -17,12 +21,14 @@ class ChatWebViewPanelRefresher {
     required this.ref,
     required this.bridge,
     required this.ready,
+    required this.charId,
     required this.messages,
   });
 
   final WidgetRef ref;
   final ChatBridgeController? bridge;
   final bool Function() ready;
+  final String charId;
   final List<ChatMessage> Function() messages;
 
   /// Refresh the ext-block panel for a single message: hide it if the
@@ -32,17 +38,26 @@ class ChatWebViewPanelRefresher {
     final b = bridge;
     if (b == null || !ready()) return;
     final isLastAssistant = messageId == _lastAssistantMessageId();
-    final panelKey = (sessionId: sessionId, messageId: messageId);
+    final swipeId = _swipeIdForMessage(messageId);
+    final panelKey = (
+      sessionId: sessionId,
+      messageId: messageId,
+      swipeId: swipeId,
+    );
     final visibilityKey = (
       sessionId: sessionId,
       messageId: messageId,
       isLastAssistant: isLastAssistant,
+      swipeId: swipeId,
     );
     if (!ref.read(extBlocksPanelVisibleProvider(visibilityKey))) {
       await b.hideExtBlocksPanel(messageId);
       return;
     }
-    final blocks = ref.read(extBlocksPanelBlocksProvider(panelKey));
+    final blocks = _expandBlockPayloads(
+      ref.read(extBlocksPanelBlocksProvider(panelKey)),
+      sessionId,
+    );
     final canRunAll = ref.read(extBlocksPanelCanRunAllProvider(panelKey));
     await b.showExtBlocksPanel(messageId, blocks, canRunAll: canRunAll);
   }
@@ -60,6 +75,30 @@ class ChatWebViewPanelRefresher {
       if (msg.role != 'assistant' && msg.role != 'character') continue;
       await refreshForMessage(sid, msg.id);
     }
+  }
+
+  List<Map<String, dynamic>> _expandBlockPayloads(
+    List<Map<String, dynamic>> blocks,
+    String sessionId,
+  ) {
+    final character = ref.read(characterByIdProvider(charId));
+    final persona = ref.read(
+      effectivePersonaForChatProvider((charId: charId, sessionId: sessionId)),
+    );
+    final macroCtx = MacroContext(character: character, persona: persona?.name);
+    return [
+      for (final block in blocks)
+        {
+          ...block,
+          if (block['content'] is String)
+            'content': expand(block['content'] as String, macroCtx),
+        },
+    ];
+  }
+
+  int _swipeIdForMessage(String messageId) {
+    final msg = messages().where((m) => m.id == messageId).firstOrNull;
+    return msg?.swipeId ?? 0;
   }
 
   String? _lastAssistantMessageId() {
