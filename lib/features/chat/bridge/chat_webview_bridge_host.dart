@@ -5,7 +5,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/llm/sse_client.dart';
+import '../../../core/llm/transport/chat_transport_request.dart';
+import '../../../core/llm/transport/llm_protocol.dart';
+import '../../../core/llm/transport/transport_factory.dart';
 import '../../../core/state/db_provider.dart';
 import '../../extensions/models/connection_profiles.dart';
 import '../../extensions/models/preset_permissions.dart';
@@ -153,33 +155,38 @@ class ChatWebViewBridgeHost {
     if (apiConfig == null) {
       throw StateError('No active API config available');
     }
-    if (apiConfig.endpoint.isEmpty || apiConfig.model.isEmpty) {
+    final endpointRequired = apiConfig.protocol != LlmProtocol.openrouter;
+    if ((endpointRequired && apiConfig.endpoint.isEmpty) ||
+        apiConfig.model.isEmpty) {
       throw StateError('Active API config is incomplete');
     }
 
     final cancelToken = CancelToken();
     final completer = Completer<String>();
+    final transport = pickChatTransport(apiConfig.protocol);
     unawaited(
-      SseClient().streamChatCompletion(
-        endpoint: apiConfig.endpoint,
-        apiKey: apiConfig.apiKey,
-        model: apiConfig.model,
-        messages: [
-          {'role': 'user', 'content': prompt},
-        ],
-        maxTokens: apiConfig.maxTokens,
-        temperature: apiConfig.temperature,
-        topP: apiConfig.topP,
-        stream: false,
+      transport.stream(
+        request: ChatTransportRequest(
+          endpoint: apiConfig.endpoint,
+          apiKey: apiConfig.apiKey,
+          model: apiConfig.model,
+          messages: [
+            {'role': 'user', 'content': prompt},
+          ],
+          maxTokens: apiConfig.maxTokens,
+          temperature: apiConfig.temperature,
+          topP: apiConfig.topP,
+          stream: false,
+          requestReasoning: apiConfig.requestReasoning,
+          reasoningEffort: apiConfig.reasoningEffort,
+          omitTemperature: apiConfig.omitTemperature,
+          omitTopP: apiConfig.omitTopP,
+          omitReasoning: apiConfig.omitReasoning,
+          omitReasoningEffort: apiConfig.omitReasoningEffort,
+          sessionId: currentSessionId(),
+          cacheControlTtl: apiConfig.cacheControlTtl,
+        ),
         cancelToken: cancelToken,
-        requestReasoning: apiConfig.requestReasoning,
-        reasoningEffort: apiConfig.reasoningEffort,
-        omitTemperature: apiConfig.omitTemperature,
-        omitTopP: apiConfig.omitTopP,
-        omitReasoning: apiConfig.omitReasoning,
-        omitReasoningEffort: apiConfig.omitReasoningEffort,
-        sessionId: currentSessionId(),
-        cacheControlTtl: apiConfig.cacheControlTtl,
         onComplete: (text, _, {rawResponseJson}) {
           if (!completer.isCompleted) completer.complete(text);
         },

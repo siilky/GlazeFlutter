@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/llm/sse_client.dart';
+import '../../core/llm/transport/chat_transport_request.dart';
+import '../../core/llm/transport/llm_protocol.dart';
+import '../../core/llm/transport/transport_factory.dart';
 import '../../core/models/memory_book.dart';
 import '../../core/services/memory_prompt_presets.dart';
 import '../../core/state/memory_settings_provider.dart';
@@ -11,7 +13,6 @@ import '../settings/api_list_provider.dart';
 
 class MemoryDraftGenerator {
   final WidgetRef _ref;
-  final SseClient _client = SseClient();
 
   MemoryDraftGenerator(this._ref);
 
@@ -34,11 +35,13 @@ class MemoryDraftGenerator {
     String endpoint;
     String apiKey;
     String model;
+    String protocol;
 
     if (isCustom) {
       endpoint = settings.generationEndpoint;
       apiKey = settings.generationApiKey;
       model = settings.generationModel;
+      protocol = LlmProtocol.openai;
     } else {
       await _ref.read(apiListProvider.future);
       final chatConfig = _ref.read(activeApiConfigProvider);
@@ -50,9 +53,11 @@ class MemoryDraftGenerator {
       model = settings.generationModel.isNotEmpty
           ? settings.generationModel
           : chatConfig.model;
+      protocol = chatConfig.protocol;
     }
 
-    if (endpoint.isEmpty || model.isEmpty) {
+    final endpointRequired = protocol != LlmProtocol.openrouter;
+    if ((endpointRequired && endpoint.isEmpty) || model.isEmpty) {
       throw Exception('API not configured for memory generation');
     }
 
@@ -62,18 +67,21 @@ class MemoryDraftGenerator {
     final temperature = settings.generationTemperature ?? 0.4;
 
     final completer = Completer<String>();
+    final transport = pickChatTransport(protocol);
 
-    await _client.streamChatCompletion(
-      endpoint: endpoint,
-      apiKey: apiKey,
-      model: model,
-      messages: [
-        {'role': 'user', 'content': prompt},
-      ],
-      maxTokens: maxTokens,
-      temperature: temperature,
-      topP: 1.0,
-      stream: false,
+    await transport.stream(
+      request: ChatTransportRequest(
+        endpoint: endpoint,
+        apiKey: apiKey,
+        model: model,
+        messages: [
+          {'role': 'user', 'content': prompt},
+        ],
+        maxTokens: maxTokens,
+        temperature: temperature,
+        topP: 1.0,
+        stream: false,
+      ),
       cancelToken: cancelToken,
       onComplete: (text, _, {rawResponseJson}) {
         if (!completer.isCompleted) completer.complete(text);

@@ -4,7 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/llm/sse_client.dart';
+import '../../../core/llm/transport/chat_transport_request.dart';
+import '../../../core/llm/transport/transport_factory.dart';
 import '../../../core/models/api_config.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/character.dart';
@@ -263,7 +264,7 @@ class InfoBlockService {
     CancelToken? cancelToken,
     void Function(String accumulated)? onStreamUpdate,
   }) async {
-    final messages = <Map<String, String>>[
+    final messages = <Map<String, dynamic>>[
       {'role': 'system', 'content': systemContent},
       {'role': 'user', 'content': userContent},
     ];
@@ -271,19 +272,28 @@ class InfoBlockService {
     final useStream = onStreamUpdate != null;
 
     try {
-      final sseClient = SseClient();
+      final transport = pickChatTransport(apiConfig.protocol);
       final completer = Completer<String>();
       final buffer = StringBuffer();
 
-      await sseClient.streamChatCompletion(
-        endpoint: apiConfig.endpoint,
-        apiKey: apiConfig.apiKey,
-        model: blockConfig.model.isNotEmpty ? blockConfig.model : apiConfig.model,
-        messages: messages,
-        maxTokens: apiConfig.maxTokens,
-        temperature: apiConfig.temperature,
-        topP: apiConfig.topP,
-        stream: useStream,
+      await transport.stream(
+        request: ChatTransportRequest(
+          endpoint: apiConfig.endpoint,
+          apiKey: apiConfig.apiKey,
+          model: blockConfig.model.isNotEmpty ? blockConfig.model : apiConfig.model,
+          messages: messages,
+          maxTokens: apiConfig.maxTokens,
+          temperature: apiConfig.temperature,
+          topP: apiConfig.topP,
+          stream: useStream,
+          requestReasoning: apiConfig.requestReasoning,
+          reasoningEffort: apiConfig.reasoningEffort,
+          omitTemperature: apiConfig.omitTemperature,
+          omitTopP: apiConfig.omitTopP,
+          omitReasoning: apiConfig.omitReasoning,
+          omitReasoningEffort: apiConfig.omitReasoningEffort,
+          cacheControlTtl: apiConfig.cacheControlTtl,
+        ),
         cancelToken: cancelToken,
         onUpdate: useStream
             ? (delta, _) {

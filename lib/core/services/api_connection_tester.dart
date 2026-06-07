@@ -1,5 +1,8 @@
 import '../llm/embedding_service.dart';
-import '../llm/sse_client.dart';
+import '../llm/transport/chat_transport.dart';
+import '../llm/transport/chat_transport_request.dart';
+import '../llm/transport/llm_protocol.dart';
+import '../llm/transport/transport_factory.dart';
 
 sealed class ApiTestResult {
   const ApiTestResult();
@@ -16,31 +19,40 @@ class ApiTestFailure extends ApiTestResult {
 }
 
 class ApiConnectionTester {
-  final SseClient _client = SseClient();
+  final ChatTransport Function(String protocol) _pickTransport;
+
+  ApiConnectionTester({
+    ChatTransport Function(String protocol)? pickTransport,
+  }) : _pickTransport = pickTransport ?? pickChatTransport;
 
   Future<ApiTestResult> testLlm({
     required String endpoint,
     required String apiKey,
     required String model,
+    String protocol = LlmProtocol.openai,
   }) async {
     try {
-      final models = await _client.fetchModels(
+      final effectiveProtocol = _normalizedProtocol(protocol);
+      final transport = _pickTransport(effectiveProtocol);
+      final models = await transport.fetchModels(
         endpoint: endpoint,
         apiKey: apiKey,
       );
       if (models.isEmpty) {
         String? responseText;
-        await _client.streamChatCompletion(
-          endpoint: endpoint,
-          apiKey: apiKey,
-          model: model,
-          messages: [
-            {'role': 'user', 'content': 'Hi'},
-          ],
-          maxTokens: 8,
-          temperature: 0.0,
-          topP: 1.0,
-          stream: false,
+        await transport.stream(
+          request: ChatTransportRequest(
+            endpoint: endpoint,
+            apiKey: apiKey,
+            model: model,
+            messages: const [
+              {'role': 'user', 'content': 'Hi'},
+            ],
+            maxTokens: 8,
+            temperature: 0.0,
+            topP: 1.0,
+            stream: false,
+          ),
           onComplete: (text, _, {rawResponseJson}) => responseText = text,
           onError: (e) => throw e,
         );
@@ -56,6 +68,10 @@ class ApiConnectionTester {
     } catch (e) {
       return ApiTestFailure(e);
     }
+  }
+
+  String _normalizedProtocol(String protocol) {
+    return LlmProtocol.isValid(protocol) ? protocol : LlmProtocol.openai;
   }
 
   Future<ApiTestResult> testEmbedding({

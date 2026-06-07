@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/llm/sse_client.dart';
 import '../../core/llm/transport/llm_protocol.dart';
+import '../../core/llm/transport/transport_factory.dart';
 import '../../core/services/api_connection_tester.dart';
 import '../../core/models/api_config.dart';
 import '../../core/state/shared_prefs_provider.dart';
@@ -893,13 +893,14 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
   Future<void> _fetchModels() async {
     final endpoint = _endpointCtrl.text.trim();
     final apiKey = _keyCtrl.text.trim();
-    if (endpoint.isEmpty || apiKey.isEmpty) {
+    final endpointRequired = _protocol != LlmProtocol.openrouter;
+    if ((endpointRequired && endpoint.isEmpty) || apiKey.isEmpty) {
       GlazeToast.show(context, 'settings_err_endpoint_key'.tr());
       return;
     }
     setState(() => _isLoadingModels = true);
     try {
-      final models = await SseClient().fetchModels(
+      final models = await pickChatTransport(_protocol).fetchModels(
         endpoint: endpoint,
         apiKey: apiKey,
       );
@@ -921,7 +922,10 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
     final endpoint = _endpointCtrl.text.trim();
     final apiKey = _keyCtrl.text.trim();
     final model = _modelCtrl.text.trim();
-    if (endpoint.isEmpty || apiKey.isEmpty || model.isEmpty) {
+    final endpointRequired = _protocol != LlmProtocol.openrouter;
+    if ((endpointRequired && endpoint.isEmpty) ||
+        apiKey.isEmpty ||
+        model.isEmpty) {
       GlazeToast.show(context, 'settings_err_fill_all'.tr());
       return;
     }
@@ -933,6 +937,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
       endpoint: endpoint,
       apiKey: apiKey,
       model: model,
+      protocol: _protocol,
     );
     if (!mounted) return;
     switch (result) {

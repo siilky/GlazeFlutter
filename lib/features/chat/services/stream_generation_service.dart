@@ -5,8 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/llm/prompt_isolate.dart';
 import '../../../core/llm/prompt_payload_builder.dart';
-import '../../../core/llm/sse_client.dart';
 import '../../../core/llm/stream_accumulator.dart';
+import '../../../core/llm/transport/chat_transport_request.dart';
+import '../../../core/llm/transport/transport_factory.dart';
 import '../../../core/llm/tokenizer.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/state/active_selection_provider.dart';
@@ -116,7 +117,7 @@ class StreamGenerationService {
           .toList();
 
       final startGenTime = DateTime.now();
-      final sseClient = SseClient();
+      final transport = pickChatTransport(apiConfig.protocol);
       ChatState? finalState;
       final coverage = payload.memoryCoverage;
       final triggeredLorebooks = promptResult.triggeredLorebooks;
@@ -126,24 +127,26 @@ class StreamGenerationService {
 
       bool frameScheduled = false;
 
-      await sseClient.streamChatCompletion(
-        endpoint: apiConfig.endpoint,
-        apiKey: apiConfig.apiKey,
-        model: apiConfig.model,
-        messages: apiMessages,
-        maxTokens: apiConfig.maxTokens,
-        temperature: apiConfig.temperature,
-        topP: apiConfig.topP,
-        stream: apiConfig.stream,
+      await transport.stream(
+        request: ChatTransportRequest(
+          endpoint: apiConfig.endpoint,
+          apiKey: apiConfig.apiKey,
+          model: apiConfig.model,
+          messages: apiMessages,
+          maxTokens: apiConfig.maxTokens,
+          temperature: apiConfig.temperature,
+          topP: apiConfig.topP,
+          stream: apiConfig.stream,
+          requestReasoning: apiConfig.requestReasoning,
+          reasoningEffort: apiConfig.reasoningEffort,
+          omitTemperature: apiConfig.omitTemperature,
+          omitTopP: apiConfig.omitTopP,
+          omitReasoning: apiConfig.omitReasoning,
+          omitReasoningEffort: apiConfig.omitReasoningEffort,
+          sessionId: session.id,
+          cacheControlTtl: apiConfig.cacheControlTtl,
+        ),
         cancelToken: cancelToken,
-        requestReasoning: apiConfig.requestReasoning,
-        reasoningEffort: apiConfig.reasoningEffort,
-        omitTemperature: apiConfig.omitTemperature,
-        omitTopP: apiConfig.omitTopP,
-        omitReasoning: apiConfig.omitReasoning,
-        omitReasoningEffort: apiConfig.omitReasoningEffort,
-        sessionId: session.id,
-        cacheControlTtl: apiConfig.cacheControlTtl,
         onUpdate: (delta, reasoningDelta) {
           if (_isAborted()) return;
           accumulator.consumeDelta(delta, reasoningDelta: reasoningDelta);

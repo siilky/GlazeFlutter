@@ -93,7 +93,7 @@ lib/core/llm/converters/
 5. `AnthropicChatTransport` (incl. prefill + thinking).
 6. `GeminiChatTransport` (incl. thinking + safety).
 7. `OpenRouterChatTransport` (incl. cache_control depth + signatures).
-8. `ApiConnectionTester` branches per protocol.
+8. `ApiConnectionTester` branches per protocol + chat/runtime consumers (`StreamGenerationService`, bridge text generation, `InfoBlockService`, `MemoryDraftGenerator`) go through `ChatTransport` factory instead of `SseClient`.
 9. Manual smoke test by user via `flutter run` for each protocol.
 
 ## Open items (track if discovered mid-impl)
