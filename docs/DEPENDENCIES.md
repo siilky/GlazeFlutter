@@ -22,6 +22,7 @@ Flutter SDK: `Z:\GlazeProject\flutter`. Dart/Flutter версии см. в ло�
 | `dart run build_runner build` | pass | build_runner не зависает, генерация проходит |
 | `flutter analyze` | pass with warnings | errors нет, остаются существующие warnings/info |
 | `flutter test` | pass | 712 tests passed |
+| `flutter build apk --debug` | pass | Android wrapper restored via `flutter create --platforms=android .`; APK built |
 
 Если снова появляются странные ошибки пакетов или codegen, сначала восстановить Pub cache:
 
@@ -195,9 +196,9 @@ Verification for this batch:
 |---|---:|---:|---|
 | `app_links` | 7.1.1 | 7.1.1 | done; source-compatible, analyze/test pass |
 | `flutter_dotenv` | 6.0.1 | 6.0.1 | done; `.env` load API source-compatible, analyze/test pass |
-| `flutter_foreground_task` | 8.17.0 | 9.2.2 | Android foreground-service risk |
+| `flutter_foreground_task` | 9.2.2 | 9.2.2 | done; Android foreground service compiles, analyze/test/Android debug build pass |
 | `flutter_local_notifications` | 18.0.1 | 22.0.0 | platform setup risk |
-| `share_plus` | 12.0.2 | 13.1.0 | done to highest resolvable; migrated to `SharePlus.instance.share`, AGP 8.12.1; local Android build blocked by ignored no-op Gradle wrapper |
+| `share_plus` | 12.0.2 | 13.1.0 | done to highest resolvable; migrated to `SharePlus.instance.share`, AGP 8.12.1; Android debug build pass after wrapper restore |
 | `sqlite3_flutter_libs` | 0.6.0+eol | 0.6.0+eol | done; no Dart API usage, analyze/test pass |
 
 Do not batch all of these together. One package or one tightly related group per commit.
@@ -207,6 +208,7 @@ Do not batch all of these together. One package or one tightly related group per
 | Item | Status | Rule |
 |---|---|---|
 | `path_provider_foundation` override removal | blocked | wait for `dart-lang/native#2480` or verified Windows build |
+| `share_plus` 13.x | blocked | waits for `file_picker` compatibility with `win32 ^6` |
 | `drift` 3.x | unavailable | revisit when stable release exists |
 | Riverpod code generation migration | deferred | separate refactor after Riverpod 3 works manually |
 
