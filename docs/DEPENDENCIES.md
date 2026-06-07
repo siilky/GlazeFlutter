@@ -47,7 +47,7 @@ Remove-Item -LiteralPath "Z:\Pub\Cache\hosted" -Recurse -Force
 | `freezed` | 3.2.5 | done |
 | `freezed_annotation` | 3.1.0 | done |
 | `drift` / `drift_dev` | 2.33.0 | latest stable на момент проверки |
-| `flutter_riverpod` / `riverpod` | 2.6.1 | next major migration candidate |
+| `flutter_riverpod` / `riverpod` | 3.3.1 / 3.2.1 | done |
 | `go_router` | 17.3.0 | done |
 | `gpt_markdown` | 1.1.7 | patched, `imageBuilder` API changed |
 | `path_provider` | 2.1.5 | overridden |
@@ -150,6 +150,8 @@ Verification for this batch:
 ```
 
 ### 3. `flutter_riverpod` 2.6.1 -> 3.x
+
+Status: done. Upgraded to `flutter_riverpod 3.3.1` / `riverpod 3.2.1`; `flutter analyze`, `test/navigation_smoke_test.dart`, `test/trigger_generation_test.dart`, and full `flutter test` pass.
 
 Приоритет: medium/high только после зелёного `go_router` batch.
 

@@ -127,7 +127,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
   }
 
   void _persistActiveId(String? id) async {
-    final prefs = ref.read(sharedPreferencesProvider).valueOrNull;
+    final prefs = ref.read(sharedPreferencesProvider).value;
     if (prefs == null) return;
     if (id != null) {
       await prefs.setString('activeApiConfigId', id);
@@ -309,7 +309,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
       });
     }
 
-    final list = asyncList.valueOrNull ?? [];
+    final list = asyncList.value ?? [];
     final activeName = _activeName(activeConfig, list);
 
     return SheetView(
@@ -332,7 +332,8 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
   }
 
   String _activeName(ApiConfig? config, List<ApiConfig> list) {
-    if (config == null) return list.isEmpty ? 'no_active_connections'.tr() : 'unnamed_entry'.tr();
+    if (config == null)
+      return list.isEmpty ? 'no_active_connections'.tr() : 'unnamed_entry'.tr();
     if (config.name.isNotEmpty) return config.name;
     if (config.model.isNotEmpty) return config.model;
     return 'unnamed_entry'.tr();
@@ -346,7 +347,10 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
         GlazeTabBar(
           tabs: [
             GlazeTabItem(label: 'LLM', icon: Icons.chat_bubble_outline_rounded),
-            GlazeTabItem(label: 'tab_embeddings'.tr(), icon: Icons.layers_outlined),
+            GlazeTabItem(
+              label: 'tab_embeddings'.tr(),
+              icon: Icons.layers_outlined,
+            ),
           ],
           activeIndex: _tab,
           onChanged: (i) => setState(() => _tab = i),
@@ -798,10 +802,7 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
       context,
       title: 'settings_api_configs_title'.tr(),
       headerAction: IconButton(
-        icon: Icon(
-          Icons.add_circle_outline_rounded,
-          color: context.cs.primary,
-        ),
+        icon: Icon(Icons.add_circle_outline_rounded, color: context.cs.primary),
         tooltip: 'settings_new_config_tooltip'.tr(),
         onPressed: () {
           Navigator.of(context, rootNavigator: true).pop();
@@ -815,13 +816,16 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
             : config.model.isNotEmpty
             ? config.model
             : 'unnamed_entry'.tr();
-        
+
         String? faviconUrl;
         if (config.endpoint.isNotEmpty) {
           try {
             final uri = Uri.parse(config.endpoint);
-            if (uri.host.isNotEmpty && !uri.host.contains('127.0.0.1') && !uri.host.contains('localhost')) {
-              faviconUrl = 'https://www.google.com/s2/favicons?domain=${uri.host}&sz=128';
+            if (uri.host.isNotEmpty &&
+                !uri.host.contains('127.0.0.1') &&
+                !uri.host.contains('localhost')) {
+              faviconUrl =
+                  'https://www.google.com/s2/favicons?domain=${uri.host}&sz=128';
             }
           } catch (_) {}
         }
@@ -830,9 +834,9 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
           label: name,
           sublabel: config.endpoint.isNotEmpty
               ? config.endpoint
-                  .replaceAll(RegExp(r'https?://'), '')
-                  .split('/')
-                  .first
+                    .replaceAll(RegExp(r'https?://'), '')
+                    .split('/')
+                    .first
               : null,
           icon: isActive
               ? Icons.radio_button_checked_rounded
@@ -903,7 +907,8 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
       if (_fetchedModels.isEmpty) return;
     }
     if (!mounted) return;
-    final models = _fetchedModels.map((m) => m['id'] as String).toList()..sort();
+    final models = _fetchedModels.map((m) => m['id'] as String).toList()
+      ..sort();
     final current = _modelCtrl.text;
     if (current.isNotEmpty && !models.contains(current)) {
       models.insert(0, current);
@@ -911,15 +916,19 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
     await GlazeBottomSheet.show<void>(
       context,
       title: 'onboarding_select_model'.tr(),
-      items: models.map((m) => BottomSheetItem(
-        label: m,
-        icon: m == current ? Icons.check : null,
-        iconColor: context.cs.primary,
-        onTap: () {
-          Navigator.of(context, rootNavigator: true).pop();
-          _modelCtrl.text = m;
-        },
-      )).toList(),
+      items: models
+          .map(
+            (m) => BottomSheetItem(
+              label: m,
+              icon: m == current ? Icons.check : null,
+              iconColor: context.cs.primary,
+              onTap: () {
+                Navigator.of(context, rootNavigator: true).pop();
+                _modelCtrl.text = m;
+              },
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -1030,7 +1039,8 @@ class _ApiSettingsScreenState extends ConsumerState<ApiSettingsScreen> {
         _fetchedModels = models;
         _isLoadingModels = false;
       });
-      if (models.isEmpty) GlazeToast.show(context, 'settings_err_no_models'.tr());
+      if (models.isEmpty)
+        GlazeToast.show(context, 'settings_err_no_models'.tr());
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingModels = false);
