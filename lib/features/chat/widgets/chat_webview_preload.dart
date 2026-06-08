@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../bridge/chat_webview_environment.dart';
 import '../bridge/chat_webview_keep_alive.dart';
 import '../bridge/chat_webview_settings.dart';
 
@@ -35,22 +36,9 @@ class _ChatWebViewPreloaderState extends State<ChatWebViewPreloader> {
                 height: 1,
                 child: InAppWebView(
                   keepAlive: chatWebViewKeepAlive,
-                  initialFile: 'assets/chat_webview/index.html',
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    domStorageEnabled: true,
-                    transparentBackground: chatWebViewTransparentBackground(),
-                    isInspectable: true,
-                    useHybridComposition: true,
-                    cacheEnabled: true,
-                    allowFileAccess: true,
-                    allowContentAccess: true,
-                    allowFileAccessFromFileURLs:
-                        chatWebViewAllowFileAccessFromFileUrls(),
-                    allowUniversalAccessFromFileURLs: false,
-                    mixedContentMode:
-                        MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
-                  ),
+                  initialFile: chatWebViewInitialFile(),
+                  initialUrlRequest: chatWebViewInitialUrlRequest(),
+                  initialSettings: chatWebViewInAppSettings(),
                   onLoadStop: (_, _) {
                     if (mounted) setState(() => _preloaded = true);
                   },

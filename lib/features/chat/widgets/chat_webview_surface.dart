@@ -132,29 +132,7 @@ class ChatWebViewSurface extends ConsumerWidget {
               keepAlive: chatWebViewKeepAliveForPlatform(),
               initialFile: chatWebViewInitialFile(),
               initialUrlRequest: chatWebViewInitialUrlRequest(),
-              initialSettings: InAppWebViewSettings(
-                javaScriptEnabled: true,
-                domStorageEnabled: true,
-                transparentBackground: chatWebViewTransparentBackground(),
-                isInspectable: true,
-                useHybridComposition: true,
-                cacheEnabled: true,
-                useWideViewPort: true,
-                loadWithOverviewMode: true,
-                allowFileAccess: true,
-                allowContentAccess: true,
-                // The chat page is loaded from bundled assets. Windows uses
-                // a loopback origin for ES modules; mobile keeps file assets.
-                // Universal file URL access stays disabled so extension JS
-                // cannot fetch arbitrary local files.
-                allowFileAccessFromFileURLs:
-                    chatWebViewAllowFileAccessFromFileUrls(),
-                allowUniversalAccessFromFileURLs: false,
-                // Mixed content is opt-in. The chat WebView itself does
-                // not load HTTP resources, but the iframe panels do
-                // receive base64 data: URIs only — never http(s).
-                mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
-              ),
+              initialSettings: chatWebViewInAppSettings(),
               onWebViewCreated: (controller) async {
                 final jsBridgeService = await bridgeHost.buildJsBridgeService();
                 final bridge = ChatBridgeController(
