@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 // Pinned via dependency_overrides to keep Windows builds green; see docs/BUILD_NOTES.md.
@@ -7,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 class FileExportService {
+  static const _shareOrigin = Rect.fromLTWH(0, 0, 1, 1);
+
   static Future<String> export({
     required String data,
     required String filename,
@@ -163,7 +166,9 @@ class FileExportService {
     final tempDir = await getTemporaryDirectory();
     final file = File('${tempDir.path}/$filename');
     await file.writeAsString(data);
-    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path)], sharePositionOrigin: _shareOrigin),
+    );
     return file.path;
   }
 
@@ -172,7 +177,9 @@ class FileExportService {
     final tempDir = await getTemporaryDirectory();
     final file = File('${tempDir.path}/$filename');
     await file.writeAsBytes(bytes);
-    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path)], sharePositionOrigin: _shareOrigin),
+    );
     return file.path;
   }
 
@@ -217,7 +224,9 @@ class FileExportService {
   }
 
   static Future<String> _shareFile(String sourcePath, String filename) async {
-    await SharePlus.instance.share(ShareParams(files: [XFile(sourcePath)]));
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(sourcePath)], sharePositionOrigin: _shareOrigin),
+    );
     return sourcePath;
   }
 }
