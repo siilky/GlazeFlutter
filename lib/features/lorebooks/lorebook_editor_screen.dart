@@ -79,7 +79,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     final errorLabels = <String, String>{};
     for (final entry in _entries) {
       if (!entry.vectorSearch || !entry.enabled || entry.constant) continue;
-      final record = await repo.getByEntryId('${widget.lorebookId}_${entry.id}');
+      final record = await repo.getByEntryId(
+        '${widget.lorebookId}_${entry.id}',
+      );
       if (record == null) {
         statuses[entry.id] = 'none';
       } else if (record.errorJson != null) {
@@ -101,8 +103,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   }
 
   Future<void> _save() async {
-    final existing = ref.read(lorebooksProvider).value
-        ?.where((l) => l.id == widget.lorebookId).firstOrNull;
+    final existing = ref
+        .read(lorebooksProvider)
+        .value
+        ?.where((l) => l.id == widget.lorebookId)
+        .firstOrNull;
     final lb = Lorebook(
       id: widget.lorebookId,
       name: _nameController.text.trim().isEmpty
@@ -124,7 +129,10 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
   void _addEntry() async {
     final entry = await showDialog<LorebookEntry>(
       context: context,
-      builder: (_) => EntryEditorDialog(lorebookId: widget.lorebookId, embeddingTarget: _settings?.embeddingTarget ?? 'content'),
+      builder: (_) => EntryEditorDialog(
+        lorebookId: widget.lorebookId,
+        embeddingTarget: _settings?.embeddingTarget ?? 'content',
+      ),
     );
     if (entry != null) {
       setState(() => _entries.add(entry));
@@ -159,10 +167,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     if (!mounted) return;
     final config = ref.read(embeddingConfigProvider);
     if (config.endpoint.isEmpty) {
-      GlazeToast.show(
-        context,
-        'vector_error_config_endpoint'.tr(),
-      );
+      GlazeToast.show(context, 'vector_error_config_endpoint'.tr());
       return;
     }
 
@@ -176,7 +181,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
 
     setState(() {
       _isIndexing = true;
-      _indexStatus = 'index_progress'.tr(namedArgs: {'done': '0', 'total': '${vectorEntries.length}'});
+      _indexStatus = 'index_progress'.tr(
+        namedArgs: {'done': '0', 'total': '${vectorEntries.length}'},
+      );
     });
 
     try {
@@ -187,7 +194,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         config,
         embeddingTarget: _settings?.embeddingTarget ?? 'content',
         onProgress: (current, total, name) {
-          setState(() => _indexStatus = 'index_progress'.tr(namedArgs: {'done': '$current', 'total': '$total'}));
+          setState(
+            () => _indexStatus = 'index_progress'.tr(
+              namedArgs: {'done': '$current', 'total': '$total'},
+            ),
+          );
         },
       );
 
@@ -204,14 +215,14 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         if (!mounted) return;
         final statusParts = [
           'index_done'.tr(namedArgs: {'count': '${result.indexed}'}),
-          if (result.skipped > 0) 'index_skipped'.tr(namedArgs: {'skipped': '${result.skipped}'}),
-          if (result.failed > 0) 'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
-          if (result.rateLimited) ' (${"btn_rate_limited".tr(namedArgs: {"seconds": "${result.retryAfter}"})})',
+          if (result.skipped > 0)
+            'index_skipped'.tr(namedArgs: {'skipped': '${result.skipped}'}),
+          if (result.failed > 0)
+            'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
+          if (result.rateLimited)
+            ' (${"btn_rate_limited".tr(namedArgs: {"seconds": "${result.retryAfter}"})})',
         ];
-        GlazeToast.show(
-          context,
-          statusParts.join(),
-        );
+        GlazeToast.show(context, statusParts.join());
       }
     } catch (e) {
       if (mounted) {
@@ -249,7 +260,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         retryFailedOnly: true,
         embeddingTarget: _settings?.embeddingTarget ?? 'content',
         onProgress: (current, total, name) {
-          setState(() => _indexStatus = 'index_progress'.tr(namedArgs: {'done': '$current', 'total': '$total'}));
+          setState(
+            () => _indexStatus = 'index_progress'.tr(
+              namedArgs: {'done': '$current', 'total': '$total'},
+            ),
+          );
         },
       );
 
@@ -266,9 +281,12 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         if (!mounted) return;
         final statusParts = [
           'index_done'.tr(namedArgs: {'count': '${result.indexed}'}),
-          if (result.skipped > 0) 'index_skipped'.tr(namedArgs: {'skipped': '${result.skipped}'}),
-          if (result.failed > 0) 'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
-          if (result.rateLimited) ' (${"btn_rate_limited".tr(namedArgs: {"seconds": "${result.retryAfter}"})})',
+          if (result.skipped > 0)
+            'index_skipped'.tr(namedArgs: {'skipped': '${result.skipped}'}),
+          if (result.failed > 0)
+            'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
+          if (result.rateLimited)
+            ' (${"btn_rate_limited".tr(namedArgs: {"seconds": "${result.retryAfter}"})})',
         ];
         GlazeToast.show(context, statusParts.join());
       }
@@ -317,7 +335,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
       return;
     }
 
-    final vectorEntries = _entries.where((e) => e.vectorSearch && e.enabled && !e.constant).toList();
+    final vectorEntries = _entries
+        .where((e) => e.vectorSearch && e.enabled && !e.constant)
+        .toList();
     if (vectorEntries.isEmpty) {
       GlazeToast.show(context, 'no_entries_found'.tr());
       return;
@@ -339,7 +359,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         forceReindex: true,
         embeddingTarget: _settings?.embeddingTarget ?? 'content',
         onProgress: (current, total, name) {
-          setState(() => _indexStatus = 'index_progress'.tr(namedArgs: {'done': '$current', 'total': '$total'}));
+          setState(
+            () => _indexStatus = 'index_progress'.tr(
+              namedArgs: {'done': '$current', 'total': '$total'},
+            ),
+          );
         },
       );
 
@@ -356,14 +380,19 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
         if (!mounted) return;
         final statusParts = [
           'index_done'.tr(namedArgs: {'count': '${result.indexed}'}),
-          if (result.failed > 0) 'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
-          if (result.rateLimited) ' (${"btn_rate_limited".tr(namedArgs: {"seconds": "${result.retryAfter}"})})',
+          if (result.failed > 0)
+            'index_failed'.tr(namedArgs: {'failed': '${result.failed}'}),
+          if (result.rateLimited)
+            ' (${"btn_rate_limited".tr(namedArgs: {"seconds": "${result.retryAfter}"})})',
         ];
         GlazeToast.show(context, statusParts.join());
       }
     } catch (e) {
       if (mounted) {
-        setState(() { _isIndexing = false; _indexStatus = ''; });
+        setState(() {
+          _isIndexing = false;
+          _indexStatus = '';
+        });
         await _loadEmbeddingStatuses();
         if (!mounted) return;
         GlazeToast.error(context, '${'settings_err_failed'.tr()} ', e);
@@ -448,7 +477,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
     _loadEmbeddingStatuses();
     GlazeToast.show(
       context,
-      alreadyAll ? 'action_disable_vector_all'.tr() : 'action_enable_vector_all'.tr(),
+      alreadyAll
+          ? 'action_disable_vector_all'.tr()
+          : 'action_enable_vector_all'.tr(),
     );
   }
 
@@ -461,7 +492,10 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
           builder: (ctx, setDialogState) {
             return AlertDialog(
               backgroundColor: context.cs.surfaceContainerHighest,
-              title: Text('btn_test_connection'.tr(), style: TextStyle(color: context.cs.onSurface)),
+              title: Text(
+                'btn_test_connection'.tr(),
+                style: TextStyle(color: context.cs.onSurface),
+              ),
               content: SizedBox(
                 width: 400,
                 child: Column(
@@ -475,7 +509,11 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                       style: TextStyle(color: context.cs.onSurface),
                       decoration: InputDecoration(
                         hintText: 'placeholder_search_lore'.tr(),
-                        hintStyle: TextStyle(color: context.cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                        hintStyle: TextStyle(
+                          color: context.cs.onSurfaceVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        ),
                         filled: true,
                         fillColor: Colors.white.withValues(alpha: 0.05),
                       ),
@@ -484,34 +522,61 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                       onChanged: (_) => setDialogState(() {}),
                     ),
                     const SizedBox(height: 12),
-                    Text('label_entries'.tr(), style: TextStyle(color: context.cs.onSurfaceVariant, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    ..._matchEntries(testCtrl.text).map((e) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle, size: 14, color: Colors.green),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              e.comment.isNotEmpty ? e.comment : e.keys.join(', '),
-                              style: TextStyle(color: context.cs.onSurface, fontSize: 13),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      'label_entries'.tr(),
+                      style: TextStyle(
+                        color: context.cs.onSurfaceVariant,
+                        fontSize: 12,
                       ),
-                    )),
-                    if (testCtrl.text.isNotEmpty && _matchEntries(testCtrl.text).isEmpty)
-                      Text('no_results'.tr(), style: TextStyle(color: context.cs.onSurfaceVariant, fontSize: 13)),
+                    ),
+                    const SizedBox(height: 4),
+                    ..._matchEntries(testCtrl.text).map(
+                      (e) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                e.comment.isNotEmpty
+                                    ? e.comment
+                                    : e.keys.join(', '),
+                                style: TextStyle(
+                                  color: context.cs.onSurface,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (testCtrl.text.isNotEmpty &&
+                        _matchEntries(testCtrl.text).isEmpty)
+                      Text(
+                        'no_results'.tr(),
+                        style: TextStyle(
+                          color: context.cs.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
+                      ),
                   ],
                 ),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: Text('btn_close'.tr(), style: TextStyle(color: context.cs.onSurfaceVariant)),
+                  child: Text(
+                    'btn_close'.tr(),
+                    style: TextStyle(color: context.cs.onSurfaceVariant),
+                  ),
                 ),
               ],
             );
@@ -528,7 +593,8 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
       if (!e.enabled) return false;
       for (final key in e.keys) {
         if (key.isEmpty) continue;
-        final caseSensitive = e.caseSensitive ?? _settings?.caseSensitive ?? false;
+        final caseSensitive =
+            e.caseSensitive ?? _settings?.caseSensitive ?? false;
         if (caseSensitive) {
           if (text.contains(key)) return true;
         } else {
@@ -537,7 +603,8 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
       }
       for (final secKey in e.secondaryKeys) {
         if (secKey.isEmpty) continue;
-        final caseSensitive = e.caseSensitive ?? _settings?.caseSensitive ?? false;
+        final caseSensitive =
+            e.caseSensitive ?? _settings?.caseSensitive ?? false;
         if (caseSensitive) {
           if (text.contains(secKey)) return true;
         } else {
@@ -611,14 +678,17 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                   child: GlazeAppBar(
                     titleWidget: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          '${'header_editor'.tr()} (${'label_lorebooks'.tr()})',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: context.cs.onSurface,
+                        Flexible(
+                          child: Text(
+                            '${'header_editor'.tr()} (${'label_lorebooks'.tr()})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: context.cs.onSurface,
+                            ),
                           ),
                         ),
                         const HelpTip(term: 'lorebook'),
@@ -640,10 +710,13 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                               : Icons.hub_outlined,
                           size: 20,
                         ),
-                        tooltip: _entries.every((e) => e.vectorSearch || e.constant)
+                        tooltip:
+                            _entries.every((e) => e.vectorSearch || e.constant)
                             ? 'action_disable_vector_all'.tr()
                             : 'action_enable_vector_all'.tr(),
-                        onPressed: _entries.isEmpty ? null : _enableVectorForAll,
+                        onPressed: _entries.isEmpty
+                            ? null
+                            : _enableVectorForAll,
                       ),
                       if (_isIndexing || _rateLimitCooldown > 0)
                         Padding(
@@ -651,18 +724,27 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                           child: Center(
                             child: Text(
                               _rateLimitCooldown > 0
-                                  ? 'btn_rate_limited'.tr(namedArgs: {'seconds': '$_rateLimitCooldown'})
+                                  ? 'btn_rate_limited'.tr(
+                                      namedArgs: {
+                                        'seconds': '$_rateLimitCooldown',
+                                      },
+                                    )
                                   : _indexStatus,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: _rateLimitCooldown > 0 ? Colors.orangeAccent : context.cs.primary,
+                                color: _rateLimitCooldown > 0
+                                    ? Colors.orangeAccent
+                                    : context.cs.primary,
                               ),
                             ),
                           ),
                         )
-                       else ...[
+                      else ...[
                         IconButton(
-                          icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                          icon: const Icon(
+                            Icons.delete_sweep_outlined,
+                            size: 20,
+                          ),
                           tooltip: 'action_delete_indexes'.tr(),
                           onPressed: _clearAndReindex,
                         ),
@@ -671,7 +753,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                           tooltip: 'action_index_all'.tr(),
                           onPressed: _indexEntries,
                         ),
-                       ],
+                      ],
                     ],
                   ),
                 ),
@@ -685,7 +767,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                       style: TextStyle(color: context.cs.onSurface),
                       decoration: InputDecoration(
                         labelText: 'placeholder_name'.tr(),
-                        labelStyle: TextStyle(color: context.cs.onSurfaceVariant),
+                        labelStyle: TextStyle(
+                          color: context.cs.onSurfaceVariant,
+                        ),
                         filled: true,
                         fillColor: Colors.white.withValues(alpha: 0.05),
                         border: OutlineInputBorder(
@@ -710,22 +794,27 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                           icon: const Icon(Icons.settings_outlined, size: 18),
                           tooltip: 'menu_app_settings'.tr(),
                           onPressed: () async {
-                            final result = await Navigator.push<Map<String, dynamic>>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LorebookPerBookSettingsScreen(
-                                  settings: _settings,
-                                  globalSettings: ref.read(lorebookSettingsProvider),
-                                ),
-                              ),
-                            );
+                            final result =
+                                await Navigator.push<Map<String, dynamic>>(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        LorebookPerBookSettingsScreen(
+                                          settings: _settings,
+                                          globalSettings: ref.read(
+                                            lorebookSettingsProvider,
+                                          ),
+                                        ),
+                                  ),
+                                );
                             if (result != null) {
                               setState(() {
                                 if (result['reset'] == true) {
                                   _settings = null;
-                               } else if (result['settings'] != null) {
+                                } else if (result['settings'] != null) {
                                   _settings = LorebookSettings.fromJson(
-                                      result['settings'] as Map<String, dynamic>);
+                                    result['settings'] as Map<String, dynamic>,
+                                  );
                                 }
                               });
                               unawaited(_save());
@@ -738,7 +827,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                           onPressed: () {
                             GlazeBottomSheet.show<void>(
                               context,
-                              child: LorebookConnectionsSheet(lorebookId: widget.lorebookId),
+                              child: LorebookConnectionsSheet(
+                                lorebookId: widget.lorebookId,
+                              ),
                             );
                           },
                         ),
@@ -757,10 +848,7 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: TextField(
                   controller: _searchController,
-                  style: TextStyle(
-                    color: context.cs.onSurface,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: context.cs.onSurface, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'placeholder_search_lore'.tr(),
                     hintStyle: TextStyle(
@@ -795,65 +883,105 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final actions = Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                              ),
+                              onPressed: _isIndexing ? null : _indexEntries,
+                              child: Text(
+                                _isIndexing ? '...' : 'btn_index_all'.tr(),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: context.cs.onSurfaceVariant,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                ),
+                              ),
+                              onPressed: _isIndexing ? null : _retryFailed,
+                              child: Text(
+                                'btn_retry_failed'.tr(),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.redAccent,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                side: BorderSide(
+                                  color: Colors.redAccent.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
+                              ),
+                              onPressed: _isIndexing ? null : _deleteAllIndexes,
+                              child: Text(
+                                'action_delete_indexes'.tr(),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        );
+                        final message = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'vector_reindex_title'.tr(),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'vector_reindex_desc'.tr(
+                                namedArgs: {'count': '$_missingVectorCount'},
+                              ),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: context.cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        );
+
+                        if (constraints.maxWidth < 520) {
+                          return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'vector_reindex_title'.tr(),
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.orange,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'vector_reindex_desc'.tr(namedArgs: {'count': '$_missingVectorCount'}),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: context.cs.onSurfaceVariant,
-                                ),
-                              ),
+                              message,
+                              const SizedBox(height: 10),
+                              actions,
                             ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                          onPressed: _isIndexing ? null : _indexEntries,
-                          child: Text(
-                            _isIndexing ? '...' : 'btn_index_all'.tr(),
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: context.cs.onSurfaceVariant,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-                          ),
-                          onPressed: _isIndexing ? null : _retryFailed,
-                          child: Text('btn_retry_failed'.tr(), style: const TextStyle(fontSize: 12)),
-                        ),
-                        const SizedBox(width: 6),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.redAccent,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.3)),
-                          ),
-                          onPressed: _isIndexing ? null : _deleteAllIndexes,
-                          child: Text('action_delete_indexes'.tr(), style: const TextStyle(fontSize: 12)),
-                        ),
-                      ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: message),
+                            const SizedBox(width: 8),
+                            actions,
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -871,7 +999,9 @@ class _LorebookEditorScreenState extends ConsumerState<LorebookEditorScreen> {
                             const SizedBox(height: 12),
                             Text(
                               'no_entries_found'.tr(),
-                              style: TextStyle(color: context.cs.onSurfaceVariant),
+                              style: TextStyle(
+                                color: context.cs.onSurfaceVariant,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(
