@@ -21,6 +21,7 @@ import '../../shared/theme/theme_preset.dart';
 import '../../shared/theme/theme_provider.dart';
 
 import '../../shared/widgets/glaze_scaffold.dart';
+import '../../shared/widgets/glaze_toast.dart';
 import '../../shared/widgets/image_viewer.dart';
 import '../settings/app_settings_provider.dart';
 import 'chat_drawer_controller.dart'
@@ -77,6 +78,7 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen>
     with SingleTickerProviderStateMixin {
   bool _sessionApplied = false;
+  bool _sessionSwitchPending = false;
   bool _isHeaderHidden = false;
   late final ChatDrawerController _drawerCtrl;
   late final ChatSearchDelegate _search;
@@ -113,15 +115,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _applySessionPreference() async {
     if (_sessionApplied) return;
     _sessionApplied = true;
-    // Wait for chatProvider's initial build to complete before switching,
-    // otherwise the build's final state may overwrite our switchSession.
-    await ref.read(chatProvider(widget.charId).future);
-    if (!mounted) return;
-    final notifier = ref.read(chatProvider(widget.charId).notifier);
-    if (widget.forceNewSession) {
-      unawaited(notifier.createNewSession());
-    } else if (widget.initialSessionIndex != null) {
-      unawaited(notifier.switchSession(widget.initialSessionIndex!));
+    final needsSwitch =
+        widget.forceNewSession || widget.initialSessionIndex != null;
+    if (needsSwitch && mounted) {
+      setState(() => _sessionSwitchPending = true);
+    }
+    try {
+      // Wait for chatProvider's initial build to complete before switching,
+      // otherwise the build's final state may overwrite our switchSession.
+      await ref.read(chatProvider(widget.charId).future);
+      if (!mounted) return;
+      final notifier = ref.read(chatProvider(widget.charId).notifier);
+      if (widget.forceNewSession) {
+        await notifier.createNewSession();
+      } else if (widget.initialSessionIndex != null) {
+        await notifier
+            .switchSession(widget.initialSessionIndex!)
+            .timeout(const Duration(seconds: 30));
+      }
+    } on TimeoutException catch (e) {
+      if (mounted) {
+        GlazeToast.error(context, 'Failed to open chat session', e);
+      }
+    } catch (e) {
+      if (mounted) {
+        GlazeToast.error(context, 'Failed to open chat session', e);
+      }
+    } finally {
+      if (mounted && _sessionSwitchPending) {
+        setState(() => _sessionSwitchPending = false);
+      }
     }
   }
 
@@ -263,16 +286,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           body: chatStateAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('Error: $e')),
-            data: (state) => _ChatBody(
-              charId: charId,
-              state: state,
-              drawerCtrl: _drawerCtrl,
-              search: _search,
-              keyboardHeight: keyboardHeight,
-              onScrollDirection: _onScrollDirection,
-              virtualKeyboardSend: virtualKeyboardSend,
-              enterToSend: enterToSend,
-            ),
+            data: (state) {
+              final awaitingTargetSession = _sessionSwitchPending ||
+                  (widget.initialSessionIndex != null &&
+                      state.session?.sessionIndex !=
+                          widget.initialSessionIndex);
+              if (awaitingTargetSession) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return _ChatBody(
+                charId: charId,
+                state: state,
+                drawerCtrl: _drawerCtrl,
+                search: _search,
+                keyboardHeight: keyboardHeight,
+                onScrollDirection: _onScrollDirection,
+                virtualKeyboardSend: virtualKeyboardSend,
+                enterToSend: enterToSend,
+              );
+            },
           ),
         ),
       ),

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'chat_webview_settings.dart';
+
 WebViewEnvironment? _chatWebViewEnvironment;
 HttpServer? _chatWebViewAssetServer;
 WebUri? _chatWebViewAssetBaseUrl;
@@ -16,13 +18,20 @@ WebViewEnvironment? get chatWebViewEnvironment => _chatWebViewEnvironment;
 
 String? chatWebViewInitialFile() {
   if (_chatWebViewAssetBaseUrl != null) return null;
+  if (chatWebViewUsesAndroidAssetLoader()) return null;
   return 'assets/chat_webview/index.html';
 }
 
 URLRequest? chatWebViewInitialUrlRequest() {
   final baseUrl = _chatWebViewAssetBaseUrl;
-  if (baseUrl == null) return null;
-  return URLRequest(url: WebUri.uri(baseUrl.uriValue.resolve('index.html')));
+  if (baseUrl != null) {
+    return URLRequest(url: WebUri.uri(baseUrl.uriValue.resolve('index.html')));
+  }
+  final androidUrl = chatWebViewAndroidAssetUrl();
+  if (androidUrl != null) {
+    return URLRequest(url: WebUri(androidUrl));
+  }
+  return null;
 }
 
 String? chatWebViewResolveLocalFileUrl(String? source) {

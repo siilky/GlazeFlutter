@@ -1,4 +1,13 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+
+/// Android reserved domain for [WebViewAssetLoader] (flutter_inappwebview default).
+const String kChatWebViewAndroidAssetDomain = 'appassets.androidplatform.net';
+
+/// HTTPS entry for the chat WebView on Android. ES module imports require a
+/// proper origin; `initialFile` / `file://` leaves modules on an opaque origin.
+const String kChatWebViewAndroidAssetUrl =
+    'https://$kChatWebViewAndroidAssetDomain/assets/flutter_assets/assets/chat_webview/index.html';
 
 /// Value for [InAppWebViewSettings.transparentBackground].
 ///
@@ -15,9 +24,49 @@ bool chatWebViewTransparentBackground() {
 ///
 /// Windows/WebView2 loads Flutter assets through `file://` URLs, and ES module
 /// imports need access to sibling module files in `assets/chat_webview/`.
-/// Keep this disabled elsewhere; universal file URL access stays disabled on
-/// every platform.
+/// Android uses [WebViewAssetLoader] instead. Universal file URL access stays
+/// disabled on every platform.
 bool chatWebViewAllowFileAccessFromFileUrls() {
   if (defaultTargetPlatform == TargetPlatform.windows) return true;
   return false;
+}
+
+/// Whether the chat WebView should load bundled assets through Android's
+/// [WebViewAssetLoader] (HTTPS app-assets origin) instead of `initialFile`.
+bool chatWebViewUsesAndroidAssetLoader() {
+  return !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+}
+
+/// HTTPS URL for the chat WebView entry page on Android, or `null` elsewhere.
+String? chatWebViewAndroidAssetUrl() {
+  if (!chatWebViewUsesAndroidAssetLoader()) return null;
+  return kChatWebViewAndroidAssetUrl;
+}
+
+/// Android [WebViewAssetLoader] for bundled chat assets, or `null` elsewhere.
+WebViewAssetLoader? chatWebViewAssetLoader() {
+  if (!chatWebViewUsesAndroidAssetLoader()) return null;
+  return WebViewAssetLoader(
+    pathHandlers: [AssetsPathHandler(path: '/assets/')],
+  );
+}
+
+/// Shared [InAppWebViewSettings] for the chat WebView and its preloader.
+InAppWebViewSettings chatWebViewInAppSettings({bool isInspectable = true}) {
+  return InAppWebViewSettings(
+    javaScriptEnabled: true,
+    domStorageEnabled: true,
+    transparentBackground: chatWebViewTransparentBackground(),
+    isInspectable: isInspectable,
+    useHybridComposition: true,
+    cacheEnabled: true,
+    useWideViewPort: true,
+    loadWithOverviewMode: true,
+    allowFileAccess: true,
+    allowContentAccess: true,
+    allowFileAccessFromFileURLs: chatWebViewAllowFileAccessFromFileUrls(),
+    allowUniversalAccessFromFileURLs: false,
+    mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
+    webViewAssetLoader: chatWebViewAssetLoader(),
+  );
 }

@@ -11,6 +11,7 @@ import '../bridge/chat_bridge_controller.dart';
 import '../bridge/chat_webview_bridge_host.dart';
 import '../bridge/chat_webview_theme_builder.dart';
 import '../../../core/models/chat_message.dart';
+import '../../../shared/widgets/glaze_toast.dart';
 import '../../extensions/services/panel_host_service.dart';
 import '../bridge/chat_bridge_registry.dart';
 import 'chat_message_sync.dart';
@@ -23,6 +24,8 @@ import 'webview_callbacks.dart';
 
 const String _kStreamingId = '__streaming__';
 const Duration _kBridgeOpTimeout = Duration(seconds: 15);
+const Duration _kWebViewInitTimeout = Duration(seconds: 45);
+const Duration _kJsBridgeReadyTimeout = Duration(seconds: 30);
 
 class ChatWebViewWidget extends ConsumerStatefulWidget {
   final String charId;
@@ -145,6 +148,7 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
   bool _sessionSwitching = false;
   Future<void>? _initFuture;
   ChatWebViewWidget? _deferredSwitchFrom;
+  bool _bridgeFailureNotified = false;
   final ChatWebViewSyncState _syncState = ChatWebViewSyncState();
   late final ChatWebViewSyncDispatcher _syncDispatcher =
       ChatWebViewSyncDispatcher(state: _syncState);
@@ -198,11 +202,30 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     return _initFuture ??= _initWebViewOnce();
   }
 
+  Future<void> _waitForJsBridgeReady() async {
+    final bridge = _bridge;
+    if (bridge == null) return;
+    final deadline = DateTime.now().add(_kJsBridgeReadyTimeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final ready = await bridge.evalJsWithResult(
+        'typeof window.bridge !== "undefined" && window.bridge != null',
+      );
+      if (ready == true) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    throw TimeoutException(
+      'Chat WebView JS bridge did not initialize within '
+      '${_kJsBridgeReadyTimeout.inSeconds}s',
+    );
+  }
+
   Future<void> _initWebViewOnce() async {
     final bridge = _bridge;
     if (bridge == null) return;
     final initSessionId = widget.sessionId;
-    await ChatWebViewInitializer(
+    try {
+      await _waitForJsBridgeReady();
+      await ChatWebViewInitializer(
       ref: ref,
       bridge: bridge,
       input: ChatWebViewInitInput(
@@ -244,7 +267,16 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       onReady: () => _ready = true,
       onSyncExtBlockPanels: _syncExtBlockPanels,
       applyTheme: _applyThemeToBridge,
-    ).run();
+    ).run().timeout(_kWebViewInitTimeout);
+    } on TimeoutException catch (e, st) {
+      _handleWebViewFailure(e, st, phase: 'init');
+      return;
+    } catch (e, st) {
+      _handleWebViewFailure(e, st, phase: 'init');
+      return;
+    } finally {
+      if (!_ready) _initFuture = null;
+    }
 
     if (!mounted) return;
     final deferred = _deferredSwitchFrom;
@@ -256,16 +288,31 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     }
   }
 
+  void _handleWebViewFailure(
+    Object e,
+    StackTrace? st, {
+    required String phase,
+  }) {
+    debugPrint('[ChatWebView] $phase failed: $e\n$st');
+    if (!mounted) return;
+    setState(() => _sessionSwitching = false);
+    if (_bridgeFailureNotified) return;
+    _bridgeFailureNotified = true;
+    GlazeToast.error(context, 'Chat view failed to load', e);
+  }
+
   Future<void> _bridgeOp(
     Future<void> op, {
     required String label,
   }) async {
     try {
       await op.timeout(_kBridgeOpTimeout);
-    } on TimeoutException {
+    } on TimeoutException catch (e, st) {
       debugPrint('[ChatWebView] bridge op timed out: $label');
+      _handleWebViewFailure(e, st, phase: label);
     } catch (e, st) {
       debugPrint('[ChatWebView] bridge op failed ($label): $e\n$st');
+      _handleWebViewFailure(e, st, phase: label);
     }
   }
 
