@@ -22,6 +22,7 @@ import 'chat_webview_sync_dispatcher.dart';
 import 'webview_callbacks.dart';
 
 const String _kStreamingId = '__streaming__';
+const Duration _kBridgeOpTimeout = Duration(seconds: 15);
 
 class ChatWebViewWidget extends ConsumerStatefulWidget {
   final String charId;
@@ -142,6 +143,8 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
   ChatBridgeController? _bridge;
   bool _ready = false;
   bool _sessionSwitching = false;
+  Future<void>? _initFuture;
+  ChatWebViewWidget? _deferredSwitchFrom;
   final ChatWebViewSyncState _syncState = ChatWebViewSyncState();
   late final ChatWebViewSyncDispatcher _syncDispatcher =
       ChatWebViewSyncDispatcher(state: _syncState);
@@ -191,9 +194,14 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     super.dispose();
   }
 
-  Future<void> _initWebView() async {
+  Future<void> _initWebView() {
+    return _initFuture ??= _initWebViewOnce();
+  }
+
+  Future<void> _initWebViewOnce() async {
     final bridge = _bridge;
     if (bridge == null) return;
+    final initSessionId = widget.sessionId;
     await ChatWebViewInitializer(
       ref: ref,
       bridge: bridge,
@@ -237,6 +245,48 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       onSyncExtBlockPanels: _syncExtBlockPanels,
       applyTheme: _applyThemeToBridge,
     ).run();
+
+    if (!mounted) return;
+    final deferred = _deferredSwitchFrom;
+    _deferredSwitchFrom = null;
+    if (deferred != null) {
+      unawaited(_applySessionSwitch(deferred));
+    } else if (initSessionId != widget.sessionId) {
+      unawaited(_syncCurrentSessionToBridge());
+    }
+  }
+
+  Future<void> _bridgeOp(
+    Future<void> op, {
+    required String label,
+  }) async {
+    try {
+      await op.timeout(_kBridgeOpTimeout);
+    } on TimeoutException {
+      debugPrint('[ChatWebView] bridge op timed out: $label');
+    } catch (e, st) {
+      debugPrint('[ChatWebView] bridge op failed ($label): $e\n$st');
+    }
+  }
+
+  Future<void> _syncCurrentSessionToBridge() async {
+    final bridge = _bridge;
+    if (bridge == null || !_ready) return;
+    try {
+      if (mounted) setState(() => _sessionSwitching = true);
+      await _bridgeOp(bridge.clearAll(), label: 'clearAll');
+      await _bridgeOp(
+        bridge.setMessages(
+          widget.messages,
+          visibleStartIndex: widget.visibleStartIndex,
+        ),
+        label: 'setMessages',
+      );
+      unawaited(_syncExtBlockPanels());
+      await _bridgeOp(bridge.scrollToBottom(), label: 'scrollToBottom');
+    } finally {
+      if (mounted) setState(() => _sessionSwitching = false);
+    }
   }
 
   Future<void> applyIdentity({
@@ -263,6 +313,10 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
   Future<void> _applySessionSwitch(ChatWebViewWidget old) async {
     final bridge = _bridge;
     if (bridge == null) return;
+    if (!_ready) {
+      _deferredSwitchFrom = old;
+      return;
+    }
 
     // Drop any interactive panels from the previous session before clearing
     // the WebView DOM. JS-side `clearAll()` also closes panels, but the
@@ -270,52 +324,66 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
     // bind fresh handlers on the (potentially new) bridge.
     unawaited(PanelHostService.instance.disposeAll(charId: old.charId));
     unawaited(bridge.evalJs('window.bridge?.clearAll();'));
-    if (mounted) setState(() => _sessionSwitching = true);
-    if (widget.charId != old.charId) {
-      await bridge.setIdentity(
-        charName: widget.charName,
-        charColor: widget.charColor,
-        personaName: widget.personaName,
-        layout: widget.chatLayout,
-        charAvatarPath: widget.charAvatarPath,
-        personaAvatarPath: widget.personaAvatarPath,
-        greetingTotal: widget.greetingTotal,
-      );
-      await _applyThemeToBridge();
+    try {
+      if (mounted) setState(() => _sessionSwitching = true);
+      if (widget.charId != old.charId) {
+        await _bridgeOp(
+          bridge.setIdentity(
+            charName: widget.charName,
+            charColor: widget.charColor,
+            personaName: widget.personaName,
+            layout: widget.chatLayout,
+            charAvatarPath: widget.charAvatarPath,
+            personaAvatarPath: widget.personaAvatarPath,
+            greetingTotal: widget.greetingTotal,
+          ),
+          label: 'setIdentity',
+        );
+        await _bridgeOp(_applyThemeToBridge(), label: 'applyTheme');
+        await _bridgeOp(
+          bridge.setBackgroundNoise(
+            widget.bgNoiseOpacity,
+            widget.bgNoiseIntensity,
+          ),
+          label: 'setBackgroundNoise',
+        );
+        await _bridgeOp(
+          bridge.setChatFont(
+            fontName: widget.chatFontName,
+            fontDataUrl: widget.chatFontDataUrl,
+            fontSize: widget.chatFontSize,
+            letterSpacing: widget.chatLetterSpacing,
+          ),
+          label: 'setChatFont',
+        );
+      } else {
+        await _bridgeOp(
+          bridge.setIdentity(
+            charName: widget.charName,
+            charColor: widget.charColor,
+            personaName: widget.personaName,
+            layout: widget.chatLayout,
+            charAvatarPath: widget.charAvatarPath,
+            personaAvatarPath: widget.personaAvatarPath,
+            greetingTotal: widget.greetingTotal,
+          ),
+          label: 'setIdentity',
+        );
+      }
 
-      await bridge.setBackgroundNoise(
-        widget.bgNoiseOpacity,
-        widget.bgNoiseIntensity,
+      await _bridgeOp(bridge.clearAll(), label: 'clearAll');
+      await _bridgeOp(
+        bridge.setMessages(
+          widget.messages,
+          visibleStartIndex: widget.visibleStartIndex,
+        ),
+        label: 'setMessages',
       );
-      await bridge.setChatFont(
-        fontName: widget.chatFontName,
-        fontDataUrl: widget.chatFontDataUrl,
-        fontSize: widget.chatFontSize,
-        letterSpacing: widget.chatLetterSpacing,
-      );
-    } else {
-      await bridge.setIdentity(
-        charName: widget.charName,
-        charColor: widget.charColor,
-        personaName: widget.personaName,
-        layout: widget.chatLayout,
-        charAvatarPath: widget.charAvatarPath,
-        personaAvatarPath: widget.personaAvatarPath,
-        greetingTotal: widget.greetingTotal,
-      );
-    }
-
-    await bridge.clearAll();
-    await bridge.setMessages(
-      widget.messages,
-      visibleStartIndex: widget.visibleStartIndex,
-    );
-    // Restore ext-block panels after session switch.
-    unawaited(_syncExtBlockPanels());
-    Future.delayed(const Duration(milliseconds: 150), () {
-      bridge.scrollToBottom();
+      unawaited(_syncExtBlockPanels());
+      await _bridgeOp(bridge.scrollToBottom(), label: 'scrollToBottom');
+    } finally {
       if (mounted) setState(() => _sessionSwitching = false);
-    });
+    }
     _syncState.wasGenerating = widget.isGenerating;
     _syncState.streamingSent = false;
   }
@@ -370,6 +438,11 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
   @override
   void didUpdateWidget(ChatWebViewWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!_ready &&
+        (widget.charId != oldWidget.charId ||
+            widget.sessionId != oldWidget.sessionId)) {
+      _deferredSwitchFrom = oldWidget;
+    }
     final result = _syncDispatcher.dispatch(
       bridge: _bridge,
       old: _fieldsFor(oldWidget),
@@ -391,7 +464,11 @@ class ChatWebViewWidgetState extends ConsumerState<ChatWebViewWidget>
       ready: _ready,
     );
     if (result.sessionSwitched) {
-      unawaited(_applySessionSwitch(oldWidget));
+      if (!_ready) {
+        _deferredSwitchFrom = oldWidget;
+      } else {
+        unawaited(_applySessionSwitch(oldWidget));
+      }
       return;
     }
     if (result.runMessageSync) {
